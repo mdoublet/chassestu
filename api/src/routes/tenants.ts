@@ -1,0 +1,144 @@
+import { Hono } from 'hono';
+import { z } from 'zod';
+import type { AppEnv } from '../env';
+import { notFoundIfNull, tenantTx, userTx } from '../context';
+import { AppError } from '../errors';
+import { randomToken, sha256Hex } from '../auth';
+import { invitationUrl } from './invitations';
+
+export const tenantRoutes = new Hono<AppEnv>();
+
+const TENANT_COLUMNS = `id, name, kind, departement, buffer_distance_m, gps_tolerance_m,
+  position_retention_h, show_all_posts, created_at`;
+
+const tenantCreateSchema = z.object({
+  name: z.string().trim().min(1).max(200),
+  kind: z.enum(['acca', 'societe', 'autre']).default('acca'),
+  departement: z.string().regex(/^([0-9]{2}|2A|2B|97[1-6])$/, 'Département invalide.').nullable().optional(),
+});
+
+/**
+ * Super-admin : crée une association et renvoie le lien d'invitation du
+ * premier président (usage unique, 14 jours).
+ */
+tenantRoutes.post('/admin/tenants', async (c) => {
+  const body = tenantCreateSchema.parse(await c.req.json());
+  const token = randomToken();
+  const tokenHash = await sha256Hex(token);
+  return userTx(c, async (tx) => {
+    const row = await tx.one<{ id: string }>(
+      `SELECT app.create_tenant($1, $2, $3, $4, now() + interval '14 days') AS id`,
+      [body.name, body.kind, body.departement ?? null, tokenHash],
+    );
+    return c.json({ id: row.id, president_invitation_url: invitationUrl(c.env, token) }, 201);
+  });
+});
+
+tenantRoutes.get('/tenant', (c) =>
+  tenantTx(c, null, async (tx, { tenantId, role }) => {
+    const tenant = await tx.one(`SELECT ${TENANT_COLUMNS} FROM tenants WHERE id = $1`, [tenantId]);
+    return c.json({ tenant, role });
+  }),
+);
+
+const tenantPatchSchema = z
+  .object({
+    name: z.string().trim().min(1).max(200),
+    kind: z.enum(['acca', 'societe', 'autre']),
+    departement: z.string().regex(/^([0-9]{2}|2A|2B|97[1-6])$/).nullable(),
+    buffer_distance_m: z.number().int().min(50).max(1000),
+    gps_tolerance_m: z.number().int().min(5).max(200),
+    position_retention_h: z.number().int().min(1).max(720),
+    show_all_posts: z.boolean(),
+  })
+  .partial()
+  .strict();
+
+tenantRoutes.patch('/tenant', async (c) => {
+  const body = tenantPatchSchema.parse(await c.req.json());
+  const entries = Object.entries(body);
+  if (entries.length === 0) throw new AppError(400, 'VALIDATION', 'Aucune modification.');
+  return tenantTx(c, ['president'], async (tx, { tenantId }) => {
+    // Les noms de colonnes viennent du schéma .strict() ci-dessus, jamais du client.
+    const sets = entries.map(([k], i) => `${k} = $${i + 2}`).join(', ');
+    const tenant = await tx.one(
+      `UPDATE tenants SET ${sets} WHERE id = $1 RETURNING ${TENANT_COLUMNS}`,
+      [tenantId, ...entries.map(([, v]) => v)],
+    );
+    return c.json({ tenant });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Membres
+// ---------------------------------------------------------------------------
+
+tenantRoutes.get('/members', (c) =>
+  tenantTx(c, ['president', 'responsable'], async (tx, { tenantId }) => {
+    const members = await tx.query(
+      `SELECT u.id, u.display_name, u.email, u.phone, m.role, m.created_at
+         FROM memberships m JOIN users u ON u.id = m.user_id
+        WHERE m.tenant_id = $1
+        ORDER BY m.role, u.display_name`,
+      [tenantId],
+    );
+    return c.json({ members });
+  }),
+);
+
+const roleSchema = z.object({ role: z.enum(['president', 'responsable', 'chasseur']) });
+
+async function assertNotLastPresident(tx: import('../db').Tx, tenantId: string, userId: string) {
+  const row = await tx.one<{ others: number; is_president: boolean }>(
+    `SELECT count(*) FILTER (WHERE role = 'president' AND user_id <> $2)::int AS others,
+            bool_or(role = 'president' AND user_id = $2) AS is_president
+       FROM memberships WHERE tenant_id = $1`,
+    [tenantId, userId],
+  );
+  if (row.is_president && row.others === 0) {
+    throw new AppError(409, 'SOLE_PRESIDENT', 'L’association doit garder au moins un président.');
+  }
+}
+
+tenantRoutes.patch('/members/:userId', async (c) => {
+  const { role } = roleSchema.parse(await c.req.json());
+  const userId = c.req.param('userId');
+  return tenantTx(c, ['president'], async (tx, { tenantId }) => {
+    if (role !== 'president') await assertNotLastPresident(tx, tenantId, userId);
+    const member = notFoundIfNull(
+      await tx.maybeOne(
+        'UPDATE memberships SET role = $3 WHERE tenant_id = $1 AND user_id = $2 RETURNING user_id, role',
+        [tenantId, userId, role],
+      ),
+      'Membre',
+    );
+    return c.json({ member });
+  });
+});
+
+/** Retirer un membre (président) ou quitter l'association (soi-même). */
+tenantRoutes.delete('/members/:userId', (c) => {
+  const userId = c.req.param('userId');
+  return tenantTx(c, null, async (tx, { tenantId, role }) => {
+    if (role !== 'president' && userId !== c.get('user').id) {
+      throw new AppError(403, 'FORBIDDEN', 'Seul le président peut retirer un membre.');
+    }
+    await assertNotLastPresident(tx, tenantId, userId);
+    const n = await tx.execute('DELETE FROM memberships WHERE tenant_id = $1 AND user_id = $2', [tenantId, userId]);
+    if (n === 0) throw new AppError(404, 'NOT_FOUND', 'Membre introuvable.');
+    return c.body(null, 204);
+  });
+});
+
+tenantRoutes.get('/audit', (c) =>
+  tenantTx(c, ['president'], async (tx, { tenantId }) => {
+    const limit = Math.min(Number(c.req.query('limit') ?? 100) || 100, 500);
+    const entries = await tx.query(
+      `SELECT a.id, a.actor_id, u.display_name AS actor_name, a.action, a.entity, a.entity_id, a.at, a.diff
+         FROM audit_log a LEFT JOIN users u ON u.id = a.actor_id
+        WHERE a.tenant_id = $1 ORDER BY a.at DESC, a.id DESC LIMIT $2`,
+      [tenantId, limit],
+    );
+    return c.json({ entries });
+  }),
+);

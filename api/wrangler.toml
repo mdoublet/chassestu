@@ -1,0 +1,14 @@
+name = "chassestu-api"
+main = "src/index.ts"
+compatibility_date = "2026-10-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Secrets (wrangler secret put …), jamais dans ce fichier :
+#   DATABASE_URL, CLERK_SECRET_KEY, CLERK_JWT_KEY
+[vars]
+ENVIRONMENT = "production"
+AUTH_MODE = "clerk"
+APP_ORIGIN = "https://chassestu.pages.dev"
+CLERK_AUTHORIZED_PARTIES = "https://chassestu.pages.dev"
+
+# Développement local : `npm run dev:api` lit api/.dev.vars (ignoré par git).

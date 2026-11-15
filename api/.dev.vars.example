@@ -1,0 +1,9 @@
+# Copier en api/.dev.vars (ignoré par git).
+DATABASE_URL=postgresql://USER:PASSWORD@HOST/neondb?sslmode=require
+ENVIRONMENT=development
+# "dev" : connexion simulée sans Clerk (jeton dev:<id>:<nom>). Interdit en production.
+AUTH_MODE=dev
+APP_ORIGIN=http://localhost:5173
+# Pour tester avec Clerk : AUTH_MODE=clerk et
+# CLERK_SECRET_KEY=sk_test_...
+# CLERK_AUTHORIZED_PARTIES=http://localhost:5173

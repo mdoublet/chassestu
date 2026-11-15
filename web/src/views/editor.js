@@ -1,0 +1,779 @@
+// Éditeur cartographique (lot 1) : territoires, réserves, parkings, postes et
+// chemins d'accès sur fond IGN. Chaque modification est enregistrée
+// immédiatement côté serveur (source de vérité) ; Ctrl+Z applique l'opération
+// inverse (50 pas).
+import L from '../map/leaflet.js';
+import '@geoman-io/leaflet-geoman-free';
+import '@geoman-io/leaflet-geoman-free/dist/leaflet-geoman.css';
+import { addBasemaps } from '../map/basemap.js';
+import { api } from '../api.js';
+import { state } from '../state.js';
+import { h, fill, toast, errorMessage, confirmDialog, promptDialog, modal } from '../ui.js';
+import { History } from '../lib/history.js';
+import { checkPost, selfIntersects } from '../lib/checks.js';
+import { simplifyMeters, lineLengthMeters, distanceMeters } from '../lib/simplify.js';
+import { parseGeoFile } from '../lib/importer.js';
+
+/** Champs nécessaires pour recréer un objet supprimé (annulation). */
+const FIELDS = {
+  reserves: ['name', 'reason', 'geom'],
+  parkings: ['name', 'geom'],
+  posts: ['number', 'name', 'geom', 'parking_id', 'access_path', 'instructions', 'active'],
+};
+const LABEL = { territories: 'du territoire', reserves: 'de la réserve', parkings: 'du parking', posts: 'du poste' };
+
+// Les clics sur les objets remontent à la carte : Geoman en a besoin pour
+// dessiner par-dessus (réserve dans le territoire, chemin qui finit sur le
+// poste). Le clic de sélection est marqué pour ne pas désélectionner aussitôt.
+const STYLE = {
+  territory: { color: '#1f5130', weight: 4, fillColor: '#2f7d4a', fillOpacity: 0.06 },
+  territorySelected: { color: '#0b6bcb', weight: 4, fillOpacity: 0.08 },
+  reserve: { color: '#c92a2a', weight: 2, fillOpacity: 1, className: 'reserve-shape' },
+  path: { color: '#5c3d1e', weight: 4, dashArray: '2 8', lineCap: 'round' },
+  pathSelected: { color: '#0b6bcb', weight: 5, dashArray: '2 8', lineCap: 'round' },
+  recording: { color: '#d9480f', weight: 4, interactive: false },
+};
+
+const DRAW_HINTS = {
+  territory: 'Cliquez pour placer les sommets du territoire ; cliquez sur le premier sommet pour fermer.',
+  reserves: 'Dessinez la zone de réserve ; cliquez sur le premier sommet pour fermer.',
+  parkings: 'Cliquez sur la carte pour placer le parking.',
+  posts: 'Cliquez sur la carte pour placer le poste (dans le territoire, hors réserve).',
+  path: 'Tracez le chemin à pied du parking jusqu’au poste ; cliquez sur le dernier point pour terminer.',
+};
+
+const escapeHtml = (s) =>
+  String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+
+const pick = (obj, keys) => Object.fromEntries(keys.map((k) => [k, obj[k] ?? null]));
+const toLatLng = ([lon, lat]) => [lat, lon];
+
+function ensureHatchPattern() {
+  if (document.getElementById('hatch-defs')) return;
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.id = 'hatch-defs';
+  svg.setAttribute('width', '0');
+  svg.setAttribute('height', '0');
+  svg.style.position = 'absolute';
+  svg.innerHTML = `<defs>
+    <pattern id="hatch-red" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+      <rect width="8" height="8" fill="rgba(201,42,42,0.08)"/><line x1="0" y1="0" x2="0" y2="8" stroke="#c92a2a" stroke-width="2"/>
+    </pattern></defs>`;
+  document.body.append(svg);
+}
+
+function postIcon(number, cls = '') {
+  return L.divIcon({ className: `post-icon ${cls}`, html: `<span>${Number(number) || '+'}</span>`, iconSize: [30, 30], iconAnchor: [15, 15] });
+}
+const parkingIcon = (cls = '') => L.divIcon({ className: `parking-icon ${cls}`, html: '<span>P</span>', iconSize: [26, 26], iconAnchor: [13, 13] });
+
+export async function editorView(main) {
+  const canEdit = state.role === 'president';
+  const history = new History(50);
+  const ed = {
+    territories: [],
+    territoryId: null,
+    data: null, // { territory, reserves, parkings, posts }
+    selected: null, // { kind, id }
+    mode: null,
+    recording: null,
+    fitted: false,
+  };
+
+  ensureHatchPattern();
+  const panel = h('aside.panel');
+  const mapEl = h('div.map');
+  main.append(h('div.editor', mapEl, panel));
+
+  const map = L.map(mapEl, { zoomControl: true }).setView([46.6, 2.4], 6);
+  addBasemaps(map);
+  map.pm.setLang('fr');
+  map.pm.setGlobalOptions({ snappable: true, snapDistance: 20, allowSelfIntersection: false });
+
+  const groups = {
+    territory: L.featureGroup().addTo(map),
+    reserves: L.featureGroup().addTo(map),
+    paths: L.featureGroup().addTo(map),
+    parkings: L.featureGroup().addTo(map),
+    posts: L.featureGroup().addTo(map),
+  };
+
+  // -------------------------------------------------------------------------
+  // Données et opérations (toutes annulables)
+  // -------------------------------------------------------------------------
+
+  const itemPath = (kind, id) => (kind === 'territories' ? `/territories/${id}` : `/${kind}/${id}`);
+  const find = (kind, id) => ed.data?.[kind]?.find((x) => x.id === id) ?? null;
+
+  async function run(fn) {
+    try {
+      await fn();
+    } catch (err) {
+      toast(errorMessage(err), 'error');
+    }
+    await reload();
+  }
+
+  async function loadTerritories() {
+    ed.territories = (await api.get('/territories')).territories;
+    if (!ed.territories.some((t) => t.id === ed.territoryId)) ed.territoryId = ed.territories[0]?.id ?? null;
+  }
+
+  async function reload() {
+    if (ed.territoryId) {
+      try {
+        ed.data = await api.get(`/territories/${ed.territoryId}`);
+      } catch (err) {
+        ed.data = null;
+        if (err.status === 404) {
+          await loadTerritories();
+          return reload();
+        }
+        toast(errorMessage(err), 'error');
+      }
+    } else {
+      ed.data = null;
+    }
+    if (ed.selected) {
+      ed.selected.id = history.resolve(ed.selected.id);
+      if (ed.selected.kind !== 'territories' && !find(ed.selected.kind, ed.selected.id)) ed.selected = null;
+    }
+    render();
+  }
+
+  async function createItem(kind, body) {
+    const { item } = await api.post(`/territories/${ed.territoryId}/${kind}`, body);
+    history.push({
+      label: `Création ${LABEL[kind]}`,
+      undo: async (hh) => api.del(itemPath(kind, hh.resolve(item.id))),
+    });
+    return item;
+  }
+
+  async function updateItem(kind, item, patch) {
+    const before = pick(item, Object.keys(patch));
+    const res = await api.patch(itemPath(kind, item.id), patch);
+    history.push({
+      label: `Modification ${LABEL[kind]}`,
+      undo: async (hh) => {
+        const b = { ...before };
+        if (b.parking_id) b.parking_id = hh.resolve(b.parking_id);
+        await api.patch(itemPath(kind, hh.resolve(item.id)), b);
+      },
+    });
+    return res.item ?? res.territory;
+  }
+
+  async function deleteItem(kind, item) {
+    await api.del(itemPath(kind, item.id));
+    history.push({
+      label: `Suppression ${LABEL[kind]}`,
+      undo: async (hh) => {
+        const body = pick(item, FIELDS[kind]);
+        if (body.parking_id) body.parking_id = hh.resolve(body.parking_id);
+        const { item: created } = await api.post(`/territories/${hh.resolve(item.territory_id)}/${kind}`, body);
+        hh.alias(item.id, created.id);
+      },
+    });
+  }
+
+  async function undo() {
+    if (ed.mode || ed.recording) return;
+    try {
+      const label = await history.undo();
+      if (label) toast(`Annulé : ${label.toLowerCase()}`);
+    } catch (err) {
+      toast(`Annulation impossible : ${errorMessage(err)}`, 'error');
+    }
+    await loadTerritories().catch(() => {});
+    await reload();
+  }
+
+  // -------------------------------------------------------------------------
+  // Carte
+  // -------------------------------------------------------------------------
+
+  const isSelected = (kind, id) => ed.selected?.kind === kind && ed.selected?.id === id;
+
+  /** Gestionnaire de clic de sélection d'un objet de la carte. */
+  const onPick = (kind, id) => (e) => {
+    if (e?.originalEvent) e.originalEvent.handledByLayer = true;
+    select(kind, id);
+  };
+
+  function select(kind, id, { zoom = false } = {}) {
+    if (ed.mode || ed.recording) return;
+    ed.selected = kind ? { kind, id } : null;
+    render();
+    if (zoom && kind) {
+      const item = kind === 'territories' ? ed.data.territory : find(kind, id);
+      const layer = L.geoJSON(item.geom);
+      if (item.geom.type === 'Point') map.setView(layer.getBounds().getCenter(), Math.max(map.getZoom(), 16));
+      else map.fitBounds(layer.getBounds(), { padding: [30, 30] });
+    }
+  }
+
+  /** Active l'édition des sommets d'un polygone ou d'une ligne, avec enregistrement différé. */
+  function makeEditable(layer, onSave) {
+    if (!canEdit) return;
+    layer.pm.enable({ allowSelfIntersection: false, snappable: true, snapDistance: 20 });
+    let timer;
+    layer.on('pm:edit', () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => onSave(layer.toGeoJSON().geometry), 600);
+    });
+  }
+
+  function render() {
+    for (const g of Object.values(groups)) g.clearLayers();
+    renderPanel();
+    if (!ed.data) return;
+    const { territory, reserves, parkings, posts } = ed.data;
+
+    // Territoire
+    const tLayer = L.polygon(territory.geom.coordinates.map((r) => r.map(toLatLng)), isSelected('territories', territory.id) ? STYLE.territorySelected : STYLE.territory);
+    tLayer.on('click', onPick('territories', territory.id));
+    groups.territory.addLayer(tLayer);
+    if (isSelected('territories', territory.id)) {
+      makeEditable(tLayer, (geom) => saveShape('territories', territory, geom));
+    }
+
+    // Réserves (hachures rouges)
+    for (const r of reserves) {
+      const layer = L.polygon(r.geom.coordinates.map((ring) => ring.map(toLatLng)), STYLE.reserve);
+      layer.bindTooltip(escapeHtml(`Réserve${r.name && r.name !== 'Réserve' ? ` · ${r.name}` : ''}`), { permanent: true, direction: 'center', className: 'reserve-label' });
+      layer.on('click', onPick('reserves', r.id));
+      groups.reserves.addLayer(layer);
+      if (isSelected('reserves', r.id)) makeEditable(layer, (geom) => saveShape('reserves', r, geom));
+    }
+
+    // Chemins d'accès (pointillés)
+    for (const p of posts) {
+      if (!p.access_path) continue;
+      const sel = isSelected('posts', p.id);
+      const layer = L.polyline(p.access_path.coordinates.map(toLatLng), sel ? STYLE.pathSelected : STYLE.path);
+      layer.on('click', onPick('posts', p.id));
+      groups.paths.addLayer(layer);
+      if (sel) {
+        makeEditable(layer, (geom) =>
+          run(async () => {
+            await updateItem('posts', p, { access_path: geom });
+          }),
+        );
+      }
+    }
+
+    // Parkings
+    for (const pk of parkings) {
+      const m = L.marker(toLatLng(pk.geom.coordinates), { icon: parkingIcon(isSelected('parkings', pk.id) ? 'selected' : ''), draggable: canEdit, title: pk.name, bubblingMouseEvents: true });
+      m.bindTooltip(escapeHtml(pk.name), { direction: 'top', offset: [0, -12] });
+      m.on('click', onPick('parkings', pk.id));
+      m.on('dragend', () => {
+        const { lat, lng } = m.getLatLng();
+        run(() => updateItem('parkings', pk, { geom: { type: 'Point', coordinates: [lng, lat] } }));
+      });
+      groups.parkings.addLayer(m);
+    }
+
+    // Postes : contrôle en direct pendant le glisser-déposer
+    const reserveGeoms = reserves.map((r) => r.geom);
+    for (const p of posts) {
+      const cls = [isSelected('posts', p.id) ? 'selected' : '', p.active ? '' : 'inactive'].join(' ');
+      const m = L.marker(toLatLng(p.geom.coordinates), { icon: postIcon(p.number, cls), draggable: canEdit, title: `Poste ${p.number}`, bubblingMouseEvents: true });
+      m.bindTooltip(escapeHtml(`Poste ${p.number}${p.name ? ` · ${p.name}` : ''}`), { direction: 'top', offset: [0, -14] });
+      let origin;
+      m.on('click', onPick('posts', p.id));
+      m.on('dragstart', () => {
+        origin = m.getLatLng();
+      });
+      m.on('drag', () => {
+        const { lat, lng } = m.getLatLng();
+        const check = checkPost([lng, lat], territory.geom, reserveGeoms);
+        m.getElement()?.classList.toggle('invalid', !check.ok);
+        m.setTooltipContent(check.ok ? `Poste ${p.number}` : `⚠ ${check.message}`);
+        m.openTooltip();
+      });
+      m.on('dragend', () => {
+        const { lat, lng } = m.getLatLng();
+        const check = checkPost([lng, lat], territory.geom, reserveGeoms);
+        if (!check.ok) {
+          m.setLatLng(origin);
+          m.getElement()?.classList.remove('invalid');
+          toast(`Poste ${p.number} non déplacé : ${check.message.toLowerCase()}.`, 'error');
+          return;
+        }
+        run(() => updateItem('posts', p, { geom: { type: 'Point', coordinates: [lng, lat] } }));
+      });
+      groups.posts.addLayer(m);
+    }
+
+    if (!ed.fitted) {
+      ed.fitted = true;
+      map.fitBounds(tLayer.getBounds(), { padding: [30, 30] });
+    }
+  }
+
+  function saveShape(kind, item, geom) {
+    if (selfIntersects(geom)) {
+      toast('Le contour se recoupe lui-même : modification refusée.', 'error');
+      return reload();
+    }
+    return run(() => updateItem(kind, item, { geom }));
+  }
+
+  map.on('click', (e) => {
+    if (e.originalEvent?.handledByLayer) return;
+    if (!ed.mode && !ed.recording && ed.selected) select(null);
+  });
+
+  // -------------------------------------------------------------------------
+  // Dessin
+  // -------------------------------------------------------------------------
+
+  function startDraw(mode) {
+    stopDraw();
+    ed.mode = mode;
+    const shape = { territory: 'Polygon', reserves: 'Polygon', parkings: 'Marker', posts: 'Marker', path: 'Line' }[mode];
+    const options = { snappable: true, snapDistance: 20, allowSelfIntersection: false, continueDrawing: false };
+    if (mode === 'posts') options.markerStyle = { icon: postIcon('+') };
+    if (mode === 'parkings') options.markerStyle = { icon: parkingIcon() };
+    map.pm.enableDraw(shape, options);
+    renderPanel();
+  }
+
+  function stopDraw() {
+    map.pm.disableDraw();
+    ed.mode = null;
+  }
+
+  map.on('pm:create', async (e) => {
+    const geom = e.layer.toGeoJSON().geometry;
+    map.removeLayer(e.layer);
+    const mode = ed.mode;
+    stopDraw();
+    renderPanel();
+    await handleDrawn(mode, geom);
+  });
+
+  async function handleDrawn(mode, geom) {
+    if (mode === 'territory') {
+      const name = await promptDialog('Nouveau territoire', 'Nom du territoire');
+      if (!name) return render();
+      try {
+        const { territory } = await api.post('/territories', { name, geom });
+        history.push({ label: 'Création du territoire', undo: async (hh) => api.del(itemPath('territories', hh.resolve(territory.id))) });
+        ed.territoryId = territory.id;
+        ed.selected = null;
+        ed.fitted = false;
+        await loadTerritories();
+      } catch (err) {
+        toast(errorMessage(err), 'error');
+      }
+      return reload();
+    }
+    if (mode === 'reserves') {
+      return run(async () => {
+        const item = await createItem('reserves', { geom });
+        ed.selected = { kind: 'reserves', id: item.id };
+      });
+    }
+    if (mode === 'parkings') {
+      const name = await promptDialog('Nouveau parking', 'Nom du parking', `Parking ${ed.data.parkings.length + 1}`);
+      if (!name) return render();
+      return run(async () => {
+        const item = await createItem('parkings', { name, geom });
+        ed.selected = { kind: 'parkings', id: item.id };
+      });
+    }
+    if (mode === 'posts') {
+      const check = checkPost(geom.coordinates, ed.data.territory.geom, ed.data.reserves.map((r) => r.geom));
+      if (!check.ok) {
+        toast(`Poste refusé : ${check.message.toLowerCase()}.`, 'error');
+        return render();
+      }
+      return run(async () => {
+        const item = await createItem('posts', { geom });
+        ed.selected = { kind: 'posts', id: item.id };
+      });
+    }
+    if (mode === 'path') {
+      const post = find('posts', ed.selected?.id);
+      if (!post) return render();
+      warnIfFarFromParking(post, geom.coordinates);
+      return run(() => updateItem('posts', post, { access_path: geom }));
+    }
+  }
+
+  function warnIfFarFromParking(post, coords) {
+    const parking = find('parkings', post.parking_id);
+    if (parking && distanceMeters(coords[0], parking.geom.coordinates) > 50) {
+      toast('Le chemin ne part pas du parking du poste (à plus de 50 m).', 'warn');
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Enregistrement du trajet en marchant
+  // -------------------------------------------------------------------------
+
+  async function startRecording(post) {
+    if (!('geolocation' in navigator)) {
+      toast('La géolocalisation n’est pas disponible sur cet appareil.', 'error');
+      return;
+    }
+    const rec = { post, coords: [], accuracy: null, line: L.polyline([], STYLE.recording).addTo(map), wakeLock: null };
+    try {
+      rec.wakeLock = await navigator.wakeLock?.request('screen');
+    } catch {
+      /* Wake Lock non disponible : l'écran pourra s'éteindre */
+    }
+    rec.watchId = navigator.geolocation.watchPosition(
+      (pos) => {
+        rec.accuracy = Math.round(pos.coords.accuracy);
+        const c = [pos.coords.longitude, pos.coords.latitude];
+        // On ignore les points trop imprécis et le piétinement sur place.
+        if (pos.coords.accuracy <= 25 && (!rec.coords.length || distanceMeters(rec.coords.at(-1), c) >= 2)) {
+          rec.coords.push(c);
+          rec.line.addLatLng(toLatLng(c));
+          if (rec.coords.length === 1) map.setView(toLatLng(c), 17);
+        }
+        renderPanel();
+      },
+      (err) => toast(`GPS : ${err.message}`, 'error'),
+      { enableHighAccuracy: true, maximumAge: 0, timeout: 30000 },
+    );
+    ed.recording = rec;
+    ed.selected = { kind: 'posts', id: post.id };
+    renderPanel();
+  }
+
+  async function stopRecording(save) {
+    const rec = ed.recording;
+    if (!rec) return;
+    navigator.geolocation.clearWatch(rec.watchId);
+    rec.wakeLock?.release?.().catch(() => {});
+    map.removeLayer(rec.line);
+    ed.recording = null;
+    if (!save) return render();
+    if (rec.coords.length < 2) {
+      toast('Trajet trop court : aucun point précis enregistré.', 'error');
+      return render();
+    }
+    const simplified = simplifyMeters(rec.coords, 3);
+    await run(async () => {
+      await updateItem('posts', rec.post, { access_path: { type: 'LineString', coordinates: simplified } });
+      toast(`Trajet enregistré (${Math.round(lineLengthMeters(simplified))} m, ${rec.coords.length} → ${simplified.length} points). Vous pouvez ajuster le tracé.`);
+    });
+  }
+
+  // -------------------------------------------------------------------------
+  // Import / export
+  // -------------------------------------------------------------------------
+
+  function pickFile() {
+    const input = h('input', { type: 'file', accept: '.geojson,.json,.kml,.gpx' });
+    input.addEventListener('change', async () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      try {
+        const items = parseGeoFile(file.name, await file.text());
+        if (!items.length) throw new Error('Aucune géométrie trouvée dans le fichier.');
+        await importDialog(file.name, items);
+      } catch (err) {
+        toast(errorMessage(err), 'error');
+      }
+    });
+    input.click();
+  }
+
+  async function importDialog(filename, items) {
+    const posts = ed.data?.posts ?? [];
+    const choices = {
+      Polygon: [['territory', ed.data ? 'Contour du territoire (remplace)' : 'Nouveau territoire'], ['reserve', 'Zone de réserve'], ['ignore', 'Ignorer']],
+      Point: [['post', 'Poste'], ['parking', 'Parking'], ['ignore', 'Ignorer']],
+      LineString: [
+        ...posts.map((p) => [`path:${p.id}`, `Chemin du poste ${p.number}`]),
+        ['ignore', 'Ignorer'],
+      ],
+    };
+    const rows = items.map((item, i) => {
+      const opts = choices[item.geometry.type];
+      let initial = item.kind === 'path' ? (opts[0]?.[0] ?? 'ignore') : item.kind;
+      if (item.kind === 'territory' || (!ed.data && item.geometry.type === 'Polygon' && i === items.findIndex((x) => x.geometry.type === 'Polygon'))) initial = 'territory';
+      if (!ed.data && !items.some((x) => x.geometry.type === 'Polygon')) initial = 'ignore';
+      const select = h('select', opts.map(([v, l]) => h('option', { value: v, selected: v === initial }, l)));
+      return { item, select, row: h('tr', h('td', item.label || '—'), h('td', { Polygon: 'Polygone', Point: 'Point', LineString: 'Ligne' }[item.geometry.type]), h('td', select)) };
+    });
+    const ok = await modal(
+      `Importer ${filename}`,
+      [
+        !ed.data ? h('p.small', 'Aucun territoire sélectionné : importez d’abord un polygone comme territoire.') : null,
+        h('table.list', h('thead', h('tr', h('th', 'Nom'), h('th', 'Type'), h('th', 'Importer comme'))), h('tbody', rows.map((r) => r.row))),
+      ],
+      [
+        { label: 'Annuler', value: false },
+        { label: 'Importer', value: true, primary: true },
+      ],
+    );
+    if (!ok) return;
+
+    // Ordre : territoire, réserves, parkings, postes, chemins.
+    const order = ['territory', 'reserve', 'parking', 'post', 'path'];
+    const plan = rows
+      .map((r) => ({ ...r, choice: r.select.value }))
+      .filter((r) => r.choice !== 'ignore')
+      .sort((a, b) => order.indexOf(a.choice.split(':')[0]) - order.indexOf(b.choice.split(':')[0]));
+    const errors = [];
+    for (const { item, choice } of plan) {
+      const label = item.label || item.geometry.type;
+      try {
+        if (choice === 'territory') {
+          if (ed.data) await updateItem('territories', ed.data.territory, { geom: item.geometry });
+          else {
+            const { territory } = await api.post('/territories', { name: item.label || filename.replace(/\.\w+$/, ''), geom: item.geometry });
+            history.push({ label: 'Création du territoire', undo: async (hh) => api.del(itemPath('territories', hh.resolve(territory.id))) });
+            ed.territoryId = territory.id;
+            ed.fitted = false;
+            await loadTerritories();
+          }
+          ed.data = await api.get(`/territories/${ed.territoryId}`);
+        } else if (!ed.data) {
+          errors.push(`${label} : aucun territoire`);
+        } else if (choice === 'reserve') {
+          await createItem('reserves', { name: item.label || 'Réserve', geom: item.geometry });
+        } else if (choice === 'parking') {
+          await createItem('parkings', { name: item.label || 'Parking', geom: item.geometry });
+        } else if (choice === 'post') {
+          const number = Number(String(item.label).match(/\d+/)?.[0]);
+          // « Poste 4 » ne sert qu'à donner le numéro : pas de nom redondant.
+          const body = { name: /^poste\s*\d+$/i.test(item.label.trim()) ? '' : item.label, geom: item.geometry };
+          if (number >= 1 && number <= 999 && !ed.data.posts.some((p) => p.number === number)) body.number = number;
+          const created = await createItem('posts', body);
+          ed.data.posts.push(created);
+        } else if (choice.startsWith('path:')) {
+          const post = ed.data.posts.find((p) => p.id === choice.slice(5));
+          await updateItem('posts', post, { access_path: item.geometry });
+        }
+      } catch (err) {
+        errors.push(`${label} : ${errorMessage(err)}`);
+      }
+    }
+    await reload();
+    if (errors.length) {
+      await modal('Import partiel', h('ul', errors.map((e) => h('li', e))));
+    } else {
+      toast(`${plan.length} élément(s) importé(s).`);
+    }
+  }
+
+  async function exportGeoJSON() {
+    try {
+      const res = await api.raw(`/territories/${ed.territoryId}/export`);
+      const blob = await res.blob();
+      const name = /filename="([^"]+)"/.exec(res.headers.get('Content-Disposition') ?? '')?.[1] ?? 'territoire.geojson';
+      const a = h('a', { href: URL.createObjectURL(blob), download: name });
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    } catch (err) {
+      toast(errorMessage(err), 'error');
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Panneau latéral
+  // -------------------------------------------------------------------------
+
+  function field(label, input) {
+    return h('label', label, input);
+  }
+
+  /** Champ enregistré à la sortie (change), avec annulation. */
+  function bound(kind, item, key, attrs = {}, tag = 'input') {
+    const el = h(tag, { ...attrs, disabled: !canEdit });
+    if (attrs.type === 'checkbox') el.checked = Boolean(item[key]);
+    else el.value = item[key] ?? '';
+    el.addEventListener('change', () => {
+      let value = attrs.type === 'checkbox' ? el.checked : attrs.type === 'number' ? Number(el.value) : el.value;
+      if (tag === 'select' && value === '') value = null;
+      run(() => updateItem(kind, item, { [key]: value }));
+    });
+    return el;
+  }
+
+  function propertiesPanel() {
+    if (!ed.selected || !ed.data) return null;
+    const { kind, id } = ed.selected;
+    if (kind === 'territories') {
+      const t = ed.data.territory;
+      return h(
+        'section.props',
+        h('h3', 'Territoire'),
+        field('Nom', bound('territories', t, 'name', { maxlength: 200 })),
+        field('Notes', bound('territories', t, 'notes', { rows: 3, maxlength: 5000 }, 'textarea')),
+        h('p.small', `${t.area_ha.toLocaleString('fr-FR')} ha. Déplacez les sommets pour modifier le contour (accrochage aux sommets existants).`),
+        canEdit
+          ? h('button.danger', {
+              onclick: async () => {
+                if (!(await confirmDialog('Supprimer le territoire', `Supprimer « ${t.name} » avec ses réserves, parkings, postes et chemins ? Cette suppression ne peut pas être annulée.`, 'Supprimer', true))) return;
+                try {
+                  await api.del(itemPath('territories', t.id));
+                  history.clear();
+                  ed.selected = null;
+                  ed.territoryId = null;
+                  ed.fitted = false;
+                  await loadTerritories();
+                } catch (err) {
+                  toast(errorMessage(err), 'error');
+                }
+                reload();
+              },
+            }, 'Supprimer le territoire')
+          : null,
+      );
+    }
+    const item = find(kind, id);
+    if (!item) return null;
+    const del = canEdit
+      ? h('button.danger', { onclick: () => run(async () => { await deleteItem(kind, item); ed.selected = null; }) }, 'Supprimer')
+      : null;
+
+    if (kind === 'reserves') {
+      return h('section.props', h('h3', 'Zone de réserve'), field('Nom', bound(kind, item, 'name', { maxlength: 200 })), field('Motif', bound(kind, item, 'reason', { maxlength: 1000 })), h('p.small', `${item.area_ha.toLocaleString('fr-FR')} ha`), del);
+    }
+    if (kind === 'parkings') {
+      return h('section.props', h('h3', 'Parking'), field('Nom', bound(kind, item, 'name', { maxlength: 200, required: true })), h('p.small', 'Glissez l’icône pour déplacer le parking.'), del);
+    }
+    // Poste
+    const parkingSelect = bound(kind, item, 'parking_id', {}, 'select');
+    parkingSelect.append(h('option', { value: '' }, '— aucun —'), ...ed.data.parkings.map((pk) => h('option', { value: pk.id, selected: pk.id === item.parking_id }, pk.name)));
+    parkingSelect.value = item.parking_id ?? '';
+    return h(
+      'section.props',
+      h('h3', `Poste ${item.number}`),
+      h('div.row', field('Numéro', bound(kind, item, 'number', { type: 'number', min: 1, max: 999, required: true })), field('Nom', bound(kind, item, 'name', { maxlength: 200 }))),
+      field('Parking', parkingSelect),
+      field('Consignes', bound(kind, item, 'instructions', { rows: 3, maxlength: 2000 }, 'textarea')),
+      h('label.check', bound(kind, item, 'active', { type: 'checkbox' }), 'Poste actif'),
+      h('p.small', item.access_path ? `Chemin d’accès : ${item.access_path_length_m} m. Déplacez ses sommets pour l’ajuster.` : 'Pas encore de chemin d’accès.'),
+      canEdit
+        ? h(
+            'div.buttons',
+            h('button', { onclick: () => startDraw('path') }, item.access_path ? 'Retracer le chemin' : 'Tracer le chemin'),
+            h('button', { onclick: () => startRecording(item) }, 'Enregistrer en marchant'),
+            item.access_path ? h('button', { onclick: () => run(() => updateItem('posts', item, { access_path: null })) }, 'Effacer le chemin') : null,
+          )
+        : null,
+      del,
+    );
+  }
+
+  function listSection(title, kind, items, labelOf) {
+    if (!items.length) return null;
+    return h(
+      'section',
+      h('h3', title),
+      h('ul.objects', items.map((it) => h('li', h('button.link', { class: isSelected(kind, it.id) ? 'active' : '', onclick: () => select(kind, it.id, { zoom: true }) }, labelOf(it))))),
+    );
+  }
+
+  function renderPanel() {
+    const territorySelect = h(
+      'select',
+      {
+        'aria-label': 'Territoire',
+        onchange: (e) => {
+          ed.territoryId = e.target.value;
+          ed.selected = null;
+          ed.fitted = false;
+          history.clear();
+          reload();
+        },
+      },
+      ed.territories.map((t) => {
+        const count = t.id === ed.data?.territory.id ? ed.data.posts.length : t.posts_count;
+        return h('option', { value: t.id, selected: t.id === ed.territoryId }, `${t.name} (${count} poste${count > 1 ? 's' : ''})`);
+      }),
+    );
+
+    const tools = canEdit && ed.data && !ed.mode && !ed.recording
+      ? h(
+          'div.buttons',
+          h('button', { onclick: () => startDraw('reserves') }, '+ Réserve'),
+          h('button', { onclick: () => startDraw('parkings') }, '+ Parking'),
+          h('button', { onclick: () => startDraw('posts') }, '+ Poste'),
+        )
+      : null;
+
+    const undoLabel = history.peekLabel();
+    const rec = ed.recording;
+
+    fill(panel, 
+      h('p.disclaimer', 'Aide au placement uniquement : la responsabilité du placement des postes reste celle du président.'),
+      h(
+        'section',
+        h('div.row', ed.territories.length ? territorySelect : h('p.muted', 'Aucun territoire.'), canEdit && !ed.mode && !ed.recording ? h('button', { onclick: () => startDraw('territory') }, '+ Territoire') : null),
+        ed.data
+          ? h('p.small', h('button.link', { onclick: () => select('territories', ed.data.territory.id, { zoom: true }) }, ed.data.territory.name), ` · ${ed.data.territory.area_ha.toLocaleString('fr-FR')} ha`)
+          : null,
+      ),
+      ed.mode
+        ? h('div.hint', h('p', DRAW_HINTS[ed.mode]), h('button', { onclick: () => { stopDraw(); render(); } }, 'Annuler (Échap)'))
+        : null,
+      rec
+        ? h(
+            'div.hint.recording',
+            h('p', h('strong', `Enregistrement du trajet vers le poste ${rec.post.number}`)),
+            h('p', `${rec.coords.length} points · ${Math.round(lineLengthMeters(rec.coords))} m · précision ${rec.accuracy ?? '…'} m`),
+            h('p.small', 'Gardez l’écran allumé et cette page ouverte pendant la marche.'),
+            h('div.buttons', h('button.primary', { onclick: () => stopRecording(true) }, 'Arrivé au poste'), h('button', { onclick: () => stopRecording(false) }, 'Abandonner')),
+          )
+        : null,
+      tools,
+      canEdit && !ed.mode && !ed.recording
+        ? h(
+            'div.buttons',
+            h('button', { onclick: pickFile }, 'Importer (GeoJSON, KML, GPX)'),
+            ed.data ? h('button', { onclick: exportGeoJSON }, 'Exporter GeoJSON') : null,
+            h('button', { onclick: undo, disabled: !undoLabel, title: undoLabel ? `Annuler : ${undoLabel}` : 'Rien à annuler' }, '↶ Annuler'),
+          )
+        : !canEdit && ed.data
+          ? h('div.buttons', h('button', { onclick: exportGeoJSON }, 'Exporter GeoJSON'))
+          : null,
+      propertiesPanel(),
+      ed.data ? listSection('Postes', 'posts', ed.data.posts, (p) => `${p.number}${p.name ? ` · ${p.name}` : ''}${p.access_path ? '' : ' (sans chemin)'}${p.active ? '' : ' (inactif)'}`) : null,
+      ed.data ? listSection('Parkings', 'parkings', ed.data.parkings, (p) => p.name) : null,
+      ed.data ? listSection('Réserves', 'reserves', ed.data.reserves, (r) => r.name || 'Réserve') : null,
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // Clavier, démarrage, nettoyage
+  // -------------------------------------------------------------------------
+
+  const onKey = (e) => {
+    const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName ?? '');
+    if (e.key === 'Escape' && ed.mode) {
+      stopDraw();
+      render();
+    } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !e.shiftKey && !typing && canEdit) {
+      e.preventDefault();
+      undo();
+    }
+  };
+  document.addEventListener('keydown', onKey);
+  const unsubscribe = history.onChange(() => renderPanel());
+
+  try {
+    await loadTerritories();
+    await reload();
+  } catch (err) {
+    toast(errorMessage(err), 'error');
+  }
+  setTimeout(() => map.invalidateSize(), 0);
+
+  return () => {
+    document.removeEventListener('keydown', onKey);
+    unsubscribe();
+    if (ed.recording) stopRecording(false);
+    map.remove();
+  };
+}

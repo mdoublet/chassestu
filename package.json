@@ -1,0 +1,26 @@
+{
+  "name": "chassestu",
+  "private": true,
+  "description": "Gestion des battues : cartographie des territoires, postes et guidage des chasseurs",
+  "type": "module",
+  "workspaces": [
+    "api",
+    "web"
+  ],
+  "scripts": {
+    "db:migrate": "node --env-file-if-exists=.env db/migrate.mjs",
+    "dev:api": "npm run dev -w api",
+    "dev:web": "npm run dev -w web",
+    "test": "npm test -w api && npm test -w web",
+    "typecheck": "npm run typecheck -w api",
+    "build": "npm run build -w web",
+    "db:status": "node --env-file-if-exists=.env db/migrate.mjs --status",
+    "dev:api:node": "npm run dev:node -w api"
+  },
+  "devDependencies": {
+    "pg": "^8.23.1"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
