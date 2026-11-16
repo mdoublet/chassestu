@@ -119,7 +119,7 @@ DATABASE_URL=postgresql://… npm run db:migrate
 ```
 
 ```bash
-DATABASE_URL=postgresql://… npm run dev:api:node
+npm run dev:api:node        # lit DATABASE_URL dans .env
 ```
 
 ```bash
