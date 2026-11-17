@@ -322,3 +322,10 @@ form.declare select, form.declare input { flex: 1 1 140px; }
 a.current-hunt { display: flex; flex-direction: column; gap: 0.2rem; padding: 0.9rem 1rem; margin-bottom: 1rem; border-radius: var(--radius); text-decoration: none; color: var(--text); border-left: 6px solid var(--accent); background: color-mix(in srgb, var(--accent) 12%, var(--surface)); }
 a.current-hunt.running { border-color: #2f9e44; background: color-mix(in srgb, #2f9e44 18%, var(--surface)); }
 a.current-hunt strong { font-size: 1.15rem; }
+
+/* Positions en direct */
+.positions .dot, .my-position .dot { display: inline-block; width: 0.75rem; height: 0.75rem; border-radius: 50%; margin-right: 0.4rem; vertical-align: middle; border: 2px solid #fff; box-shadow: 0 0 0 1px var(--border); }
+.positions label.share { margin: 0.5rem 0; font-weight: 600; }
+ul.position-list li { display: flex; flex-wrap: wrap; align-items: center; gap: 0 0.4rem; padding: 0.3rem 0; border-bottom: 1px solid var(--border); }
+ul.position-list li .small { flex-basis: 100%; padding-left: 1.15rem; }
+ul.position-list li.locatable { cursor: pointer; }

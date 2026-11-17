@@ -477,6 +477,81 @@ huntRoutes.get('/hunts/:id/revision', (c) => {
 const SPECIES_RE = /^[\p{L}\p{N} '’.\-()]{1,60}$/u;
 const speciesSchema = z.string().trim().min(1).max(60).regex(SPECIES_RE, 'Nom d’espèce invalide.');
 
+// ---------------------------------------------------------------------------
+// Positions GPS en direct (consentement par battue, dernière position seulement)
+// ---------------------------------------------------------------------------
+
+/** Statut d'un participant sur la carte du responsable. */
+export function positionStatus(
+  p: { shared: boolean; age_s: number | null; accuracy_m: number | null; distance_m: number | null },
+  toleranceM: number,
+): 'non_partage' | 'sans_signal' | 'imprecise' | 'sur_poste' | 'en_route' | 'localise' {
+  if (!p.shared) return 'non_partage';
+  if (p.age_s === null || p.age_s > 180) return 'sans_signal';
+  if ((p.accuracy_m ?? Infinity) > 2 * toleranceM) return 'imprecise';
+  if (p.distance_m === null) return 'localise';
+  return p.distance_m <= toleranceM ? 'sur_poste' : 'en_route';
+}
+
+const positionBody = z.object({
+  lon: z.number().min(-180).max(180),
+  lat: z.number().min(-90).max(90),
+  accuracy: z.number().min(0).max(100_000),
+  recorded_at: z.string().datetime({ offset: true }).optional(),
+}).strict();
+
+huntRoutes.put('/hunts/:id/position-sharing', async (c) => {
+  const id = parseId(c.req.param('id'));
+  const { share } = z.object({ share: z.boolean() }).strict().parse(await c.req.json());
+  return tenantTx(c, null, async (tx) => {
+    await tx.query('SELECT app.set_position_sharing($1, $2)', [id, share]);
+    return c.json({ share });
+  });
+});
+
+huntRoutes.post('/hunts/:id/position', async (c) => {
+  const id = parseId(c.req.param('id'));
+  const b = positionBody.parse(await c.req.json());
+  return tenantTx(c, null, async (tx) => {
+    await tx.query('SELECT app.report_position($1, $2, $3, $4, $5)', [id, b.lon, b.lat, b.accuracy, b.recorded_at ?? null]);
+    return c.body(null, 204);
+  });
+});
+
+// Responsables : tous les présents ; chasseur : lui seul (RLS sur hunt_positions).
+huntRoutes.get('/hunts/:id/positions', (c) => {
+  const id = parseId(c.req.param('id'));
+  return tenantTx(c, null, async (tx) => {
+    const hunt = notFoundIfNull(await tx.maybeOne<{ status: string; tolerance: number }>(
+      `SELECT h.status, t.gps_tolerance_m AS tolerance FROM hunts h JOIN tenants t ON t.id = h.tenant_id WHERE h.id = $1`, [id]), 'Battue');
+    const me = await tx.maybeOne<{ shared: boolean }>(
+      'SELECT position_shared_at IS NOT NULL AS shared FROM hunt_participants WHERE hunt_id = $1 AND user_id = app.current_user_id()', [id]);
+    const { manager } = await tx.one<{ manager: boolean }>(`SELECT app.has_role('president', 'responsable') AS manager`);
+    const rows = await tx.query<any>(
+      `SELECT hp.id AS participant_id, coalesce(u.display_name, hp.guest_name) AS name, hp.role,
+              hp.user_id IS NULL AS guest, hp.position_shared_at IS NOT NULL AS shared,
+              hp.user_id = app.current_user_id() AS mine, p.number AS post_number,
+              ST_X(pos.geom::geometry) AS lon, ST_Y(pos.geom::geometry) AS lat, pos.accuracy_m,
+              extract(epoch FROM now() - pos.recorded_at)::int AS age_s,
+              CASE WHEN pos.geom IS NOT NULL AND p.geom IS NOT NULL THEN round(ST_Distance(pos.geom, p.geom::geography))::int END AS distance_m
+         FROM hunt_participants hp
+         LEFT JOIN users u ON u.id = hp.user_id
+         LEFT JOIN hunt_assignments a ON a.participant_id = hp.id
+         LEFT JOIN posts p ON p.id = a.post_id
+         LEFT JOIN hunt_positions pos ON pos.participant_id = hp.id
+        WHERE hp.hunt_id = $1 AND hp.present AND ($2 OR hp.user_id = app.current_user_id())
+        ORDER BY p.number NULLS LAST, lower(coalesce(u.display_name, hp.guest_name))`,
+      [id, manager],
+    );
+    return c.json({
+      status: hunt.status,
+      tolerance_m: hunt.tolerance,
+      sharing: me?.shared ?? false,
+      participants: rows.map((r) => ({ ...r, status: r.guest ? 'invite' : positionStatus(r, hunt.tolerance) })),
+    });
+  });
+});
+
 huntRoutes.put('/hunts/:id/species', async (c) => {
   const id = parseId(c.req.param('id'));
   const { species } = z.object({

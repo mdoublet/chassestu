@@ -23,3 +23,8 @@ AUTH_MODE = "clerk"
 # Journaux du Worker (onglet Observability du tableau de bord).
 [observability]
 enabled = true
+
+# Purge des positions GPS plus anciennes que la durée de conservation
+# (Paramètres de l'association, 24 h par défaut), toutes les heures.
+[triggers]
+crons = ["17 * * * *"]

@@ -267,6 +267,21 @@ jamais écrasée. Les prélèvements sont un **décompte par battue** (le chasse
 déclare les siens pendant la battue, le responsable corrige pendant et après) :
 ce n'est pas le carnet de prélèvements individuel, hors du périmètre V1.
 
+**Positions en direct** (début du lot 5) : pendant une battue en cours,
+chacun peut afficher sa position sur la carte de la vue chasseur (elle reste
+sur le téléphone) avec son statut (« Sur le poste » dans le rayon de
+tolérance, « En route », « Position imprécise ») et sa distance au poste.
+En cochant « Partager ma position avec le responsable pendant cette battue »
+(accord redemandé à chaque battue), elle est envoyée toutes les 15 s en
+mouvement, 60 s à l'arrêt. Seuls le président et les responsables voient les
+positions des autres (carte + liste avec statut, âge, distance au poste) ;
+un chasseur ne voit que la sienne (RLS). Seule la dernière position est
+conservée (pas de trajet), effacée quand le chasseur retire son accord, et
+purgée après `position_retention_h` par une tâche planifiée du Worker
+(`[triggers]` dans `api/wrangler.toml`, toutes les heures). Limite des
+navigateurs : le suivi s'arrête écran verrouillé ou application fermée
+(l'écran est maintenu allumé pendant le partage quand le téléphone le permet).
+
 **Migrations** : l'API applique elle-même les migrations en attente à la
 première requête après un déploiement (`api/src/migrate.ts`, migrations
 embarquées générées par `npm run db:bundle`).

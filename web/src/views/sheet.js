@@ -8,6 +8,8 @@ import { escapeHtml, toLatLng, ensureHatchPattern, postIcon, parkingIcon } from 
 import { api } from '../api.js';
 import { h, fill, toast, errorMessage } from '../ui.js';
 import { watchRevision, every } from '../lib/live.js';
+import { state } from '../state.js';
+import { positionPanel } from './positions.js';
 import {
   STATUS_LABELS, ROLE_LABELS, CATEGORY_LABELS, COMMON_SPECIES,
   formatHuntDate, formatTime, hunterInstruction, navigationLinks,
@@ -29,6 +31,7 @@ function navButtons(label, coords) {
  */
 export function createSheetView(container, actions = {}) {
   ensureHatchPattern();
+  let panel = null;
   const info = h('div.sheet-info');
   const mapEl = h('div.sheet-map');
   fill(container, info, mapEl);
@@ -36,6 +39,7 @@ export function createSheetView(container, actions = {}) {
   addBasemaps(map);
   const layers = L.featureGroup().addTo(map);
   let fittedFor = null;
+  panel = actions.positions?.(map) ?? null;
 
   function renderInfo(sheet) {
     const { hunt, me, post, neighbors, territory } = sheet;
@@ -115,6 +119,7 @@ export function createSheetView(container, actions = {}) {
         h('p', `${formatTime(hunt.meeting_time)}${hunt.meeting_place ? ` · ${hunt.meeting_place}` : ''}`),
         hunt.meeting_point ? navButtons('🚗 Itinéraire :', hunt.meeting_point.coordinates) : null),
       postCard,
+      panel?.el,
       hunt.briefing ? h('section.card', h('h3', 'Consignes'), h('p.pre', hunt.briefing)) : null,
       speciesBox,
       harvestBox,
@@ -152,13 +157,18 @@ export function createSheetView(container, actions = {}) {
   // Pas de rafraîchissement pendant une saisie (formulaire de prélèvement) :
   // la mise à jour attend que le champ perde le focus.
   let pending = null;
-  const editing = () => info.contains(document.activeElement) && /^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement.tagName);
+  // (une case à cocher ou un bouton gardent le focus après un clic : ce n'est pas une saisie)
+  const editing = () => {
+    const a = document.activeElement;
+    return info.contains(a) && (/^(SELECT|TEXTAREA)$/.test(a.tagName) || (a.tagName === 'INPUT' && !/^(checkbox|radio|button|submit)$/.test(a.type)));
+  };
   function apply(sheet) {
     if (editing()) {
       pending = sheet;
       return;
     }
     pending = null;
+    panel?.update(sheet);
     renderInfo(sheet);
     renderMap(sheet);
   }
@@ -168,6 +178,7 @@ export function createSheetView(container, actions = {}) {
   return {
     update: apply,
     destroy() {
+      panel?.destroy();
       map.remove();
     },
   };
@@ -193,6 +204,7 @@ export async function memberSheetView(main, huntId) {
     onRespond: (response) => act(() => api.post(`/hunts/${huntId}/respond`, { response }), 'Réponse enregistrée.'),
     onDeclare: (body) => act(() => api.post(`/hunts/${huntId}/harvests`, body), `${body.species} déclaré.`),
     onWithdraw: (x) => act(() => api.del(`/hunts/${huntId}/harvests/${x.id}`), 'Déclaration retirée.'),
+    positions: (map) => positionPanel(map, { huntId, canSeeAll: ['president', 'responsable'].includes(state.role) }),
   });
   try {
     await load();

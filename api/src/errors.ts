@@ -36,8 +36,12 @@ export function fromPgError(err: any): AppError | null {
       return new AppError(409, 'DUPLICATE', 'Cet élément existe déjà.');
     case '23503':
       return new AppError(422, 'REFERENCE', 'Élément lié introuvable.');
-    case '42501':
+    case '42501': {
+      // Refus levé par nos fonctions (« CODE: message ») ; les refus natifs restent génériques.
+      const m = /^([A-Z_]+): (.*)$/.exec(msg);
+      if (m) return new AppError(403, m[1], capitalize(m[2]));
       return new AppError(403, 'FORBIDDEN', 'Action non autorisée.');
+    }
     case 'P0002':
       return new AppError(404, msg.split(':')[0] || 'NOT_FOUND', 'Introuvable.');
     case 'P0001':

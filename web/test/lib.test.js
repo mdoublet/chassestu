@@ -246,3 +246,31 @@ describe('isLive', () => {
     expect(isLive('publiee', undefined, '2026-11-17')).toBe(false);
   });
 });
+
+import { shouldSend, ownStatus, formatAge, formatDistance } from '../src/lib/geoloc.js';
+describe('positions GPS', () => {
+  const at = 1_000_000;
+  const fix = { lon: 2, lat: 43 };
+  it('envoie la première position, puis toutes les 60 s à l’arrêt, 15 s en mouvement', () => {
+    expect(shouldSend(null, fix, at)).toBe(true);
+    const last = { ...fix, sentAt: at };
+    expect(shouldSend(last, fix, at + 20_000)).toBe(false);          // immobile
+    expect(shouldSend(last, fix, at + 60_000)).toBe(true);
+    const moved = { lon: 2.0003, lat: 43 };                           // ~24 m
+    expect(shouldSend(last, moved, at + 10_000)).toBe(false);         // trop tôt
+    expect(shouldSend(last, moved, at + 15_000)).toBe(true);
+  });
+  it('statut : sur le poste dans la tolérance, imprécise si la précision est mauvaise', () => {
+    expect(ownStatus({ lon: 2, lat: 43, accuracy: 10 }, [2.0002, 43], 30)).toBe('sur_poste');   // ~16 m
+    expect(ownStatus({ lon: 2, lat: 43, accuracy: 10 }, [2.001, 43], 30)).toBe('en_route');     // ~81 m
+    expect(ownStatus({ lon: 2, lat: 43, accuracy: 70 }, [2.0002, 43], 30)).toBe('imprecise');
+    expect(ownStatus({ lon: 2, lat: 43, accuracy: 10 }, null, 30)).toBe('localise');
+  });
+  it('âge et distance lisibles', () => {
+    expect(formatAge(3)).toBe('à l’instant');
+    expect(formatAge(45)).toBe('il y a 45 s');
+    expect(formatAge(200)).toBe('il y a 3 min');
+    expect(formatDistance(84.4)).toBe('84 m');
+    expect(formatDistance(1530)).toBe('1,5 km');
+  });
+});
