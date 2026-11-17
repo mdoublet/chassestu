@@ -1,10 +1,11 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import type { AppEnv } from '../env';
-import { notFoundIfNull, tenantTx, userTx } from '../context';
+import { notFoundIfNull, parseId, tenantTx, userTx } from '../context';
 import { AppError } from '../errors';
 import { randomToken, sha256Hex } from '../auth';
 import { invitationUrl } from './invitations';
+import { deleteClerkUsers } from '../clerk-admin';
 
 export const tenantRoutes = new Hono<AppEnv>();
 
@@ -32,6 +33,47 @@ tenantRoutes.post('/admin/tenants', async (c) => {
     );
     return c.json({ id: row.id, president_invitation_url: invitationUrl(c.env, token) }, 201);
   });
+});
+
+// ---------------------------------------------------------------------------
+// Administration de la plateforme (super-administrateur)
+// ---------------------------------------------------------------------------
+
+tenantRoutes.get('/admin/tenants', (c) =>
+  userTx(c, async (tx) => c.json({ tenants: await tx.query('SELECT * FROM app.admin_list_tenants()') })),
+);
+
+/** Membres d'une association et ce que deviendrait chacun en cas de suppression. */
+tenantRoutes.get('/admin/tenants/:id/members', (c) => {
+  const id = parseId(c.req.param('id'));
+  return userTx(c, async (tx) => c.json({ members: await tx.query('SELECT * FROM app.admin_tenant_members($1)', [id]) }));
+});
+
+const deleteSchema = z.object({ delete_users: z.boolean(), confirm_name: z.string() }).strict();
+
+/**
+ * Supprime une association (et toutes ses données). Avec delete_users, supprime
+ * aussi les utilisateurs qui n'appartiennent à aucune autre association, y
+ * compris leur compte de connexion Clerk. Le nom de l'association doit être
+ * retapé (confirm_name) : action irréversible.
+ */
+tenantRoutes.post('/admin/tenants/:id/delete', async (c) => {
+  const id = parseId(c.req.param('id'));
+  const body = deleteSchema.parse(await c.req.json());
+  const deletedUsers = await userTx(c, async (tx) => {
+    const t = await tx.maybeOne<{ name: string }>('SELECT name FROM app.admin_list_tenants() WHERE id = $1', [id]);
+    if (!t) throw new AppError(404, 'NOT_FOUND', 'Association introuvable.');
+    if (body.confirm_name.trim() !== t.name) {
+      throw new AppError(422, 'CONFIRMATION_MISMATCH', 'Le nom saisi ne correspond pas à celui de l’association.');
+    }
+    const row = await tx.one<{ users: string[] }>('SELECT app.admin_delete_tenant($1, $2) AS users', [id, body.delete_users]);
+    console.log(`Administration : association « ${t.name} » supprimée par ${c.get('user').id} ; ${row.users.length} utilisateur(s) supprimé(s).`);
+    return row.users;
+  });
+  // Après validation en base : comptes de connexion chez Clerk.
+  const clerk = await deleteClerkUsers(deletedUsers, c.env.CLERK_SECRET_KEY);
+  if (clerk.failed.length) console.error('Comptes Clerk non supprimés :', clerk.failed);
+  return c.json({ deleted_users: deletedUsers.length, clerk });
 });
 
 tenantRoutes.get('/tenant', (c) =>
