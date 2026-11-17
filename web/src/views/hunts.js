@@ -3,6 +3,7 @@ import { api } from '../api.js';
 import { state } from '../state.js';
 import { h, fill, toast, errorMessage } from '../ui.js';
 import { STATUS_LABELS, formatHuntDate, formatTime } from '../lib/hunts.js';
+import { every } from '../lib/live.js';
 
 const MANAGERS = ['president', 'responsable'];
 
@@ -87,4 +88,6 @@ export async function huntsView(main) {
   } catch (err) {
     main.append(h('p.error', errorMessage(err)));
   }
+  // Statuts et réponses à jour sans recharger la page.
+  return every(30_000, () => loadList().catch(() => {}));
 }

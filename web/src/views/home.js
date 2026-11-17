@@ -1,10 +1,13 @@
 import { api } from '../api.js';
 import { providerName } from '../auth.js';
 import { state } from '../state.js';
-import { h, errorMessage, toast, ROLE_LABELS } from '../ui.js';
+import { h, fill, errorMessage, toast, ROLE_LABELS } from '../ui.js';
 import { pushCard } from './notifications.js';
+import { every, localToday } from '../lib/live.js';
+import { formatHuntDate, formatTime } from '../lib/hunts.js';
 
 export async function homeView(main, { refreshMe, rerender }) {
+  let stopRefresh = null;
   // Profil incomplet : le nom est indispensable (attributions, liste des membres).
   if (!state.user.display_name) {
     const input = h('input', { required: true, maxlength: 120, value: providerName() });
@@ -67,7 +70,29 @@ export async function homeView(main, { refreshMe, rerender }) {
       role === 'president' && { href: '#/parametres', title: 'Paramètres', text: 'Distance de sécurité, tolérance GPS, conservation des positions.' },
     ].filter(Boolean);
 
+    // Battue du moment : en cours, sinon la prochaine publiée (vue chasseur en un clic).
+    const current = h('div');
+    const loadCurrent = async () => {
+      try {
+        const { hunts } = await api.get('/hunts');
+        const today = localToday();
+        const pick = hunts.find((x) => x.status === 'en_cours')
+          ?? hunts.filter((x) => x.status === 'publiee' && x.date >= today).sort((a, b) => a.date.localeCompare(b.date))[0];
+        fill(current, pick
+          ? h('a.current-hunt', { href: `#/battues/${pick.id}`, class: pick.status === 'en_cours' ? 'running' : '' },
+              h('strong', pick.status === 'en_cours' ? (pick.started_at ? '🎯 Battue en cours' : '🎯 Rond du matin en cours') : '📅 Prochaine battue'),
+              h('span', `${formatHuntDate(pick.date)} · ${pick.territory_name} · RDV ${formatTime(pick.meeting_time)}${pick.meeting_place ? `, ${pick.meeting_place}` : ''}`),
+              h('span.small', pick.status === 'publiee' && pick.convoked_me && !pick.my_response ? 'Répondez présent ou absent →' : 'Voir mon poste et les consignes →'))
+          : null);
+      } catch {
+        /* réseau : on réessaiera */
+      }
+    };
+    loadCurrent();
+    stopRefresh = every(30_000, loadCurrent);
+
     main.append(
+      current,
       h('p.muted', `${state.tenant.name} — ${ROLE_LABELS[role]}`),
       h('nav.tiles', tiles.map((t) => h('a.tile', { href: t.href }, h('strong', t.title), h('span', t.text)))),
       h('p.muted.small', 'Le guidage jusqu’au poste (voiture puis à pied, GPS) arrive dans la prochaine version.'),
@@ -104,4 +129,5 @@ export async function homeView(main, { refreshMe, rerender }) {
       }, 'Supprimer mon compte'),
     ),
   );
+  return () => stopRefresh?.();
 }

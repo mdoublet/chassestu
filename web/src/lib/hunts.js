@@ -48,3 +48,61 @@ export function postedSummary(participants) {
   const posted = participants.filter((p) => p.present && p.role === 'poste');
   return { posted: posted.length, unassigned: posted.filter((p) => !p.post_id) };
 }
+
+export const CATEGORY_LABELS = { male: 'mâle', femelle: 'femelle', jeune: 'jeune', indetermine: 'indéterminé' };
+export const COMMON_SPECIES = ['Sanglier', 'Chevreuil', 'Cerf élaphe', 'Daim', 'Mouflon', 'Chamois', 'Renard'];
+
+/**
+ * Bandeau de la vue chasseur : quoi faire maintenant, selon le statut de la
+ * battue, la publication des postes, le début de battue et le rôle.
+ * @returns {{ tone: 'info'|'warn'|'go'|'done'|'danger', title: string, text: string }}
+ */
+export function hunterInstruction(sheet) {
+  const { hunt, me, post } = sheet;
+  const rdv = `${formatTime(hunt.meeting_time)}${hunt.meeting_place ? `, ${hunt.meeting_place}` : ''}`;
+  const role = me?.role;
+  switch (hunt.status) {
+    case 'annulee':
+      return { tone: 'danger', title: 'Battue annulée', text: `La battue du ${formatHuntDate(hunt.date)} n’aura pas lieu.` };
+    case 'terminee':
+      return { tone: 'done', title: 'Battue terminée', text: 'Déchargez votre arme et rejoignez le rendez-vous. Signalez vos prélèvements s’ils ne sont pas encore déclarés.' };
+    case 'publiee':
+      if (!me) return { tone: 'info', title: `Battue prévue le ${formatHuntDate(hunt.date)}`, text: `Rendez-vous à ${rdv}.` };
+      if (!me.response) return { tone: 'warn', title: 'Serez-vous présent ?', text: `Battue le ${formatHuntDate(hunt.date)}, rendez-vous à ${rdv}. Répondez ci-dessous.` };
+      if (me.response === 'absent') return { tone: 'info', title: 'Vous êtes noté absent', text: 'Vous pouvez changer d’avis ci-dessous tant que la battue n’a pas commencé.' };
+      return { tone: 'info', title: `Rendez-vous le ${formatHuntDate(hunt.date)}`, text: `À ${rdv}. Votre poste sera attribué au rond du matin.` };
+    case 'en_cours':
+      if (!me) {
+        return hunt.started_at
+          ? { tone: 'go', title: 'Battue en cours', text: `${hunt.posted_count} posté(s) sur ${hunt.present_count} présent(s).` }
+          : { tone: 'warn', title: 'Rond du matin', text: `${hunt.present_count} présent(s) ; ${hunt.assignments_published ? 'postes publiés, en attente du début de battue.' : 'postes pas encore publiés.'}` };
+      }
+      if (!hunt.assignments_published) {
+        return { tone: 'warn', title: 'Rond du matin', text: `Rejoignez le rendez-vous (${rdv}) : les postes sont attribués sur place.` };
+      }
+      if (hunt.started_at) {
+        if (role === 'traqueur') return { tone: 'go', title: 'Battue en cours : traque', text: 'Gilet orange, restez en ligne avec les autres traqueurs, signalez-vous à la voix.' };
+        if (role === 'chef_de_ligne') return { tone: 'go', title: 'Battue en cours', text: 'Veillez à la ligne de postes et à la sécurité. Fin de battue annoncée par le responsable.' };
+        return post
+          ? { tone: 'go', title: `Battue en cours — poste ${post.number}`, text: 'Restez à votre poste. Tir uniquement dans les angles autorisés, jamais vers vos voisins ni vers les habitations.' }
+          : { tone: 'warn', title: 'Battue en cours', text: 'Vous n’avez pas de poste : voyez le responsable.' };
+      }
+      if (role === 'traqueur') return { tone: 'warn', title: 'Vous êtes traqueur', text: 'Préparez-vous : la traque démarrera au signal du responsable.' };
+      if (role === 'chef_de_ligne') return { tone: 'warn', title: 'Vous êtes chef de ligne', text: 'Vérifiez la mise en place des postés avant le début de battue.' };
+      return post
+        ? { tone: 'warn', title: `Rejoignez votre poste n° ${post.number}`, text: 'Chargez votre arme seulement une fois au poste et attendez le signal de début de battue.' }
+        : { tone: 'warn', title: 'Pas de poste attribué', text: 'Voyez le responsable de la battue.' };
+    default:
+      return { tone: 'info', title: STATUS_LABELS[hunt.status] ?? hunt.status, text: '' };
+  }
+}
+
+/** Liens d'itinéraire en voiture vers un point [lon, lat] (applis du téléphone). */
+export function navigationLinks([lon, lat]) {
+  const ll = `${lat.toFixed(6)},${lon.toFixed(6)}`;
+  return {
+    google: `https://www.google.com/maps/dir/?api=1&destination=${ll}&travelmode=driving`,
+    waze: `https://waze.com/ul?ll=${ll}&navigate=yes`,
+    apple: `https://maps.apple.com/?daddr=${ll}`,
+  };
+}

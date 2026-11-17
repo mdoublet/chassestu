@@ -252,6 +252,21 @@ l'API au premier usage). Sur iPhone, le push exige l'application installée
 sur l'écran d'accueil (iOS 16.4+). Les invités sans compte reçoivent toujours
 leur lien à la main.
 
+**Vue chasseur et mises à jour automatiques** : président et responsables
+ont deux onglets sur une battue, « 👁 Vue chasseur » (ce que voit un chasseur)
+et « ⚙ Gestion ». La vue chasseur affiche un bandeau « quoi faire
+maintenant » (répondre, rejoindre le rendez-vous, rejoindre le poste n° X,
+battue en cours, terminée, annulée), l'itinéraire voiture (Google Maps, Waze,
+Plans) vers le rendez-vous et le parking, les consignes, les espèces chassées
+avec leur quota et les prélèvements déclarés. Chaque modification d'une battue
+incrémente `hunts.revision` (déclencheurs) ; les écrans interrogent
+`GET /hunts/:id/revision` toutes les 10 s le jour de la battue (60 s sinon) et
+ne rechargent que si elle a changé ; une notification reçue ou le retour sur
+l'onglet déclenchent une vérification immédiate. Une saisie en cours n'est
+jamais écrasée. Les prélèvements sont un **décompte par battue** (le chasseur
+déclare les siens pendant la battue, le responsable corrige pendant et après) :
+ce n'est pas le carnet de prélèvements individuel, hors du périmètre V1.
+
 **Migrations** : l'API applique elle-même les migrations en attente à la
 première requête après un déploiement (`api/src/migrate.ts`, migrations
 embarquées générées par `npm run db:bundle`).

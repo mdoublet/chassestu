@@ -3,6 +3,7 @@ import { DOMParser } from '@xmldom/xmldom';
 import { distanceMeters, lineLengthMeters, simplifyMeters } from '../src/lib/simplify.js';
 import { parseGeoFile } from '../src/lib/importer.js';
 import { checkPost, selfIntersects } from '../src/lib/checks.js';
+import { isLive } from '../src/lib/live.js';
 import { History } from '../src/lib/history.js';
 
 // 1 m ≈ 0,0000090 ° de latitude
@@ -210,5 +211,38 @@ describe('menu principal', () => {
     expect(activeHref('#/battues/3f2b0c3e-1111-2222-3333-444455556666', items)).toBe('#/battues');
     expect(activeHref('#/plans', items)).toBe('#/plans');
     expect(activeHref('#/invitation/abc', items)).toBeNull();
+  });
+});
+
+import { hunterInstruction, navigationLinks } from '../src/lib/hunts.js';
+describe('vue chasseur : quoi faire maintenant', () => {
+  const base = { date: '2026-12-05', meeting_time: '07:45', meeting_place: 'Cabane', assignments_published: false, started_at: null, posted_count: 5, present_count: 7 };
+  const sheet = (hunt, me = { role: 'poste', response: 'present' }, post = null) => ({ hunt: { ...base, ...hunt }, me, post });
+  it('selon le statut, la publication des postes, le début de battue et le rôle', () => {
+    expect(hunterInstruction(sheet({ status: 'publiee' }, { role: 'poste', response: null })).title).toBe('Serez-vous présent ?');
+    expect(hunterInstruction(sheet({ status: 'en_cours' })).title).toBe('Rond du matin');
+    expect(hunterInstruction(sheet({ status: 'en_cours', assignments_published: true }, undefined, { number: 5 }))).toMatchObject({ tone: 'warn', title: 'Rejoignez votre poste n° 5' });
+    expect(hunterInstruction(sheet({ status: 'en_cours', assignments_published: true, started_at: 'x' }, undefined, { number: 5 }))).toMatchObject({ tone: 'go', title: 'Battue en cours — poste 5' });
+    expect(hunterInstruction(sheet({ status: 'en_cours', assignments_published: true, started_at: 'x' }, { role: 'traqueur' })).title).toBe('Battue en cours : traque');
+    expect(hunterInstruction(sheet({ status: 'terminee' })).tone).toBe('done');
+    expect(hunterInstruction(sheet({ status: 'annulee' })).tone).toBe('danger');
+    expect(hunterInstruction(sheet({ status: 'en_cours', started_at: 'x' }, null)).text).toBe('5 posté(s) sur 7 présent(s).');
+  });
+  it('liens d’itinéraire (Google Maps, Waze, Plans) vers latitude, longitude', () => {
+    expect(navigationLinks([2.3456789, 43.2])).toEqual({
+      google: 'https://www.google.com/maps/dir/?api=1&destination=43.200000,2.345679&travelmode=driving',
+      waze: 'https://waze.com/ul?ll=43.200000,2.345679&navigate=yes',
+      apple: 'https://maps.apple.com/?daddr=43.200000,2.345679',
+    });
+  });
+});
+
+describe('isLive', () => {
+  it('rythme rapide pendant la battue et le jour même', () => {
+    expect(isLive('en_cours', '2026-11-10', '2026-11-17')).toBe(true);
+    expect(isLive('publiee', '2026-11-17', '2026-11-17')).toBe(true);
+    expect(isLive('publiee', '2026-11-21', '2026-11-17')).toBe(false);
+    expect(isLive('terminee', '2026-11-17', '2026-11-17')).toBe(false);
+    expect(isLive('publiee', undefined, '2026-11-17')).toBe(false);
   });
 });

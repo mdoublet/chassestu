@@ -36,6 +36,9 @@ async function seedCartography(user: string, tenant: string, lon: number) {
   await api(user, 'PUT', `/api/hunts/${huntId}/posts`, { tenant, body: { post_ids: [post.body.item.id] } });
   const assigned = await api(user, 'PUT', `/api/hunts/${huntId}/assignments`, { tenant, body: { participant_id: me.id, post_id: post.body.item.id } });
   expect(assigned.status).toBe(200);
+  await api(user, 'PUT', `/api/hunts/${huntId}/species`, { tenant, body: { species: [{ species: 'Sanglier', quota: 3 }] } });
+  const harvest = await api(user, 'POST', `/api/hunts/${huntId}/harvests`, { tenant, body: { species: 'Sanglier', category: 'male' } });
+  expect(harvest.status).toBe(201);
   const inv = await api(user, 'POST', '/api/invitations', { tenant, body: {} });
   expect(inv.status).toBe(201);
   const dwelling = await api(user, 'POST', `/api/territories/${id}/dwellings`, { tenant, body: { geom: point(lon + 0.015, 43.015), comment: 'Cabane' } });
@@ -75,7 +78,7 @@ describe('isolation entre tenants (RLS)', () => {
   });
 
   it('couvre bien les tables métier attendues', () => {
-    for (const t of ['memberships', 'invitations', 'audit_log', 'territories', 'reserve_zones', 'parkings', 'posts', 'dwellings', 'exclusion_zones', 'coverage_plans', 'coverage_plan_posts', 'hunts', 'hunt_participants', 'hunt_posts', 'hunt_assignments']) {
+    for (const t of ['memberships', 'invitations', 'audit_log', 'territories', 'reserve_zones', 'parkings', 'posts', 'dwellings', 'exclusion_zones', 'coverage_plans', 'coverage_plan_posts', 'hunts', 'hunt_participants', 'hunt_posts', 'hunt_assignments', 'hunt_species', 'hunt_harvests']) {
       expect(tenantTables).toContain(t);
     }
   });

@@ -21,7 +21,7 @@ const MANAGERS: Role[] = ['president', 'responsable'];
 const HUNT_SELECT = `h.id, h.territory_id, t.name AS territory_name, to_char(h.date, 'YYYY-MM-DD') AS date,
   to_char(h.meeting_time, 'HH24:MI') AS meeting_time, h.meeting_place, ${geomOut('h.meeting_point', 'meeting_point')},
   h.briefing, h.leader_user_id, lu.display_name AS leader_name, h.status, h.assignments_published_at,
-  h.started_at, h.ended_at, h.created_at`;
+  h.started_at, h.ended_at, h.created_at, h.revision::int AS revision`;
 const HUNT_FROM = `hunts h JOIN territories t ON t.id = h.territory_id LEFT JOIN users lu ON lu.id = h.leader_user_id`;
 
 export function guestUrl(env: Env, token: string): string {
@@ -71,13 +71,20 @@ async function huntDetail(tx: Tx, id: string) {
     [id],
   );
   const dayPosts = (await tx.query<{ post_id: string }>('SELECT post_id FROM hunt_posts WHERE hunt_id = $1', [id])).map((r) => r.post_id);
+  const species = await tx.query('SELECT species, quota FROM hunt_species WHERE hunt_id = $1 ORDER BY species', [id]);
+  const harvests = await tx.query(
+    `SELECT hh.id, hh.species, hh.category, hh.notes, hh.created_at, coalesce(u.display_name, x.guest_name) AS shooter
+       FROM hunt_harvests hh LEFT JOIN hunt_participants x ON x.id = hh.participant_id LEFT JOIN users u ON u.id = x.user_id
+      WHERE hh.hunt_id = $1 ORDER BY hh.created_at DESC`,
+    [id],
+  );
   let proposal = null;
   if (hunt.status === 'en_cours') {
     const hunters = participants.filter((p: any) => p.present && p.role === 'poste').length;
     const plans = await loadPlans(tx, hunt.territory_id);
     proposal = proposePosts(hunters, plans, await availablePostIds(tx, hunt.territory_id));
   }
-  return { hunt, participants, day_post_ids: dayPosts, proposal };
+  return { hunt, participants, day_post_ids: dayPosts, proposal, species, harvests };
 }
 
 // ---------------------------------------------------------------------------
@@ -441,6 +448,93 @@ huntRoutes.delete('/hunts/:id/participants/:pid/guest-link', (c) => {
   return tenantTx(c, MANAGERS, async (tx) => {
     await tx.execute('UPDATE hunt_participants SET guest_token_hash = NULL WHERE id = $2 AND hunt_id = $1', [id, pid]);
     return c.body(null, 204);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Vue chasseur (tout le monde), version, espèces, prélèvements
+// ---------------------------------------------------------------------------
+
+/** Fiche de la battue : la sienne pour un convoqué, vue d'ensemble pour un responsable. */
+huntRoutes.get('/hunts/:id/view', (c) => {
+  const id = parseId(c.req.param('id'));
+  return tenantTx(c, null, async (tx) => {
+    const { v } = await tx.one<{ v: unknown }>('SELECT app.view_hunt($1) AS v', [id]);
+    if (!v) throw new AppError(404, 'NOT_FOUND', 'Battue introuvable ou vous n’y êtes pas convoqué.');
+    return c.json({ sheet: v });
+  });
+});
+
+/** Numéro de version (les écrans ouverts se rechargent s'il change). */
+huntRoutes.get('/hunts/:id/revision', (c) => {
+  const id = parseId(c.req.param('id'));
+  return tenantTx(c, null, async (tx) => {
+    const row = notFoundIfNull(await tx.maybeOne('SELECT revision::int AS revision, status, date::text AS date FROM hunts WHERE id = $1', [id]), 'Battue');
+    return c.json(row);
+  });
+});
+
+const SPECIES_RE = /^[\p{L}\p{N} '’.\-()]{1,60}$/u;
+const speciesSchema = z.string().trim().min(1).max(60).regex(SPECIES_RE, 'Nom d’espèce invalide.');
+
+huntRoutes.put('/hunts/:id/species', async (c) => {
+  const id = parseId(c.req.param('id'));
+  const { species } = z.object({
+    species: z.array(z.object({ species: speciesSchema, quota: z.number().int().min(0).max(999).nullable() }).strict()).max(30),
+  }).strict().parse(await c.req.json());
+  return tenantTx(c, MANAGERS, async (tx) => {
+    requireStatus(await loadHunt(tx, id), ['brouillon', 'publiee', 'en_cours'], 'Modification des espèces');
+    const names = species.map((x) => x.species);
+    if (new Set(names.map((n) => n.toLowerCase())).size !== names.length) throw new AppError(422, 'DUPLICATE', 'Espèce en double.');
+    await tx.execute('DELETE FROM hunt_species WHERE hunt_id = $1 AND NOT (species = ANY($2))', [id, names]);
+    for (const x of species) {
+      await tx.execute(
+        `INSERT INTO hunt_species (hunt_id, species, quota) VALUES ($1, $2, $3)
+         ON CONFLICT (hunt_id, species) DO UPDATE SET quota = EXCLUDED.quota`,
+        [id, x.species, x.quota],
+      );
+    }
+    return c.json(await huntDetail(tx, id));
+  });
+});
+
+const harvestSchema = z.object({
+  species: speciesSchema,
+  category: z.enum(['male', 'femelle', 'jeune', 'indetermine']).default('indetermine'),
+  notes: z.string().trim().max(500).default(''),
+  participant_id: z.uuid().nullable().optional(), // responsable : tireur au choix
+}).strict();
+
+/** Déclarer un prélèvement : le participant pour lui-même, le responsable pour n'importe qui. */
+huntRoutes.post('/hunts/:id/harvests', async (c) => {
+  const id = parseId(c.req.param('id'));
+  const body = harvestSchema.parse(await c.req.json());
+  return tenantTx(c, null, async (tx, { role }) => {
+    if (MANAGERS.includes(role) && body.participant_id !== undefined) {
+      requireStatus(await loadHunt(tx, id), ['en_cours', 'terminee'], 'Saisie d’un prélèvement');
+      await tx.execute(
+        `INSERT INTO hunt_harvests (hunt_id, species, category, notes, participant_id, recorded_by)
+         VALUES ($1, $2, $3, $4, $5, app.current_user_id())`,
+        [id, body.species, body.category, body.notes, body.participant_id],
+      );
+    } else {
+      await tx.query('SELECT app.declare_harvest($1, $2, $3, $4)', [id, body.species, body.category, body.notes]);
+    }
+    return c.json({ sheet: (await tx.one('SELECT app.view_hunt($1) AS v', [id])).v }, 201);
+  });
+});
+
+huntRoutes.delete('/hunts/:id/harvests/:hid', (c) => {
+  const id = parseId(c.req.param('id'));
+  const hid = parseId(c.req.param('hid'));
+  return tenantTx(c, null, async (tx, { role }) => {
+    if (MANAGERS.includes(role)) {
+      const n = await tx.execute('DELETE FROM hunt_harvests WHERE id = $1 AND hunt_id = $2', [hid, id]);
+      if (!n) throw new AppError(404, 'NOT_FOUND', 'Prélèvement introuvable.');
+    } else {
+      await tx.query('SELECT app.withdraw_harvest($1)', [hid]);
+    }
+    return c.json({ sheet: (await tx.one('SELECT app.view_hunt($1) AS v', [id])).v });
   });
 });
 

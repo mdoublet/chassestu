@@ -7,22 +7,57 @@ import { escapeHtml, toLatLng, ensureHatchPattern, postIcon } from '../map/shape
 import { api } from '../api.js';
 import { state } from '../state.js';
 import { h, fill, toast, errorMessage, confirmDialog, copyText, modal } from '../ui.js';
-import { STATUS_LABELS, ROLE_LABELS, formatHuntDate, formatTime, huntLink, whatsappMessage, postedSummary } from '../lib/hunts.js';
+import { STATUS_LABELS, ROLE_LABELS, CATEGORY_LABELS, COMMON_SPECIES, formatHuntDate, formatTime, huntLink, whatsappMessage, postedSummary } from '../lib/hunts.js';
+import { watchRevision } from '../lib/live.js';
 import { memberSheetView } from './sheet.js';
 
 const MANAGERS = ['president', 'responsable'];
 
+const TAB_KEY = 'chassestu.huntTab';
+
+/**
+ * Page d'une battue. Chasseur : vue chasseur. Président / responsable : deux
+ * onglets, « Vue chasseur » (ce que voient les participants) et « Gestion ».
+ */
 export async function huntView(main, huntId) {
   if (!MANAGERS.includes(state.role)) {
     main.classList.remove('full'); // la fiche s'affiche en page normale, pas en console pleine largeur
     return memberSheetView(main, huntId);
   }
+  let tab = 'gestion';
+  try {
+    tab = localStorage.getItem(TAB_KEY) === 'chasseur' ? 'chasseur' : 'gestion';
+  } catch { /* préférence non mémorisée */ }
+  const tabs = h('nav.hunt-tabs', { role: 'tablist' });
+  const body = h('div.hunt-body');
+  main.classList.add('with-tabs');
+  main.append(tabs, body);
+  let cleanup = null;
 
+  async function show(next) {
+    cleanup?.();
+    cleanup = null;
+    tab = next;
+    try { localStorage.setItem(TAB_KEY, tab); } catch { /* rien */ }
+    fill(tabs,
+      h('a', { role: 'tab', href: '#/battues', class: 'back' }, '←'),
+      ...[['chasseur', '👁 Vue chasseur'], ['gestion', '⚙ Gestion']].map(([id, label]) =>
+        h('button', { role: 'tab', 'aria-selected': String(tab === id), class: tab === id ? 'active' : '', onclick: () => tab !== id && show(id) }, label)));
+    body.replaceChildren();
+    body.className = `hunt-body ${tab}`;
+    cleanup = tab === 'chasseur' ? await memberSheetView(body, huntId) : await consoleView(body, huntId);
+  }
+  await show(tab);
+  return () => cleanup?.();
+}
+
+async function consoleView(main, huntId) {
   ensureHatchPattern();
   const hv = { detail: null, territory: null, members: [], allowDouble: false, placingMeeting: false };
   const box = h('div.hunt-console');
   const mapEl = h('div.hunt-map');
   main.append(h('div.hunt-layout', box, mapEl));
+  let watcher = null;
   const map = L.map(mapEl, { zoomControl: true }).setView([46.6, 2.4], 6);
   addBasemaps(map);
   const layers = { base: L.featureGroup().addTo(map), posts: L.featureGroup().addTo(map) };
@@ -34,6 +69,7 @@ export async function huntView(main, huntId) {
     try {
       const res = await fn();
       if (res?.hunt) hv.detail = res;
+      await watcher?.sync(); // notre propre modification : pas de rechargement inutile
       if (success) toast(success);
       render();
       return res;
@@ -125,6 +161,54 @@ export async function huntView(main, huntId) {
       field('meeting_place', 'Lieu', { maxlength: 200 }),
       field('briefing', 'Consignes', { rows: 3, maxlength: 5000 }, 'textarea'),
       editable ? h('button.link', { onclick: () => { hv.placingMeeting = true; toast('Cliquez sur la carte à l’endroit du rendez-vous.'); } }, hunt.meeting_point ? 'Déplacer le point de rendez-vous' : 'Placer le rendez-vous sur la carte') : null,
+      speciesEditor(editable),
+    );
+  }
+
+  /** Espèces chassables et quotas (vides = sans limite fixée). */
+  function speciesEditor(editable) {
+    const rows = hv.detail.species.map((x) => ({ ...x }));
+    const list = h('div');
+    const save = () => act(() => api.put(`/hunts/${huntId}/species`, { species: rows.filter((r) => r.species.trim()) }), 'Espèces enregistrées.');
+    const draw = () => fill(list, rows.length
+      ? h('table.list.compact', h('tbody', rows.map((r, i) => h('tr',
+          h('td', r.species),
+          h('td', h('input', { type: 'number', min: 0, max: 999, placeholder: 'sans limite', value: r.quota ?? '', disabled: !editable, 'aria-label': `Quota ${r.species}`,
+            onchange: (e) => { r.quota = e.target.value === '' ? null : Number(e.target.value); save(); } })),
+          editable ? h('td', h('button.link.danger', { onclick: () => { rows.splice(i, 1); save(); } }, '✕')) : null))))
+      : h('p.small.muted', 'Aucune espèce précisée.'));
+    draw();
+    const name = h('input', { list: 'species-list', placeholder: 'Espèce (ex. Sanglier)', maxlength: 60 });
+    const quota = h('input', { type: 'number', min: 0, max: 999, placeholder: 'quota' });
+    return h('div.species-editor',
+      h('h3', 'Espèces chassées et quotas'),
+      list,
+      editable ? h('form.row', { onsubmit: (e) => {
+        e.preventDefault();
+        if (!name.value.trim()) return;
+        rows.push({ species: name.value.trim(), quota: quota.value === '' ? null : Number(quota.value) });
+        save();
+      } }, name, quota, h('button', { type: 'submit' }, 'Ajouter'),
+      h('datalist', { id: 'species-list' }, COMMON_SPECIES.map((x) => h('option', { value: x })))) : null,
+    );
+  }
+
+  /** Prélèvements du jour : saisie pour un participant (invité, chasseur sans téléphone). */
+  function harvestSection() {
+    const { participants, harvests, species } = hv.detail;
+    const shooter = h('select', { 'aria-label': 'Tireur' }, h('option', { value: '' }, '— tireur —'),
+      participants.filter((p) => p.present).map((p) => h('option', { value: p.id }, p.name)));
+    const sp = h('select', { 'aria-label': 'Espèce' }, [...new Set([...species.map((x) => x.species), ...COMMON_SPECIES])].map((x) => h('option', { value: x }, x)));
+    const cat = h('select', { 'aria-label': 'Catégorie' }, Object.entries(CATEGORY_LABELS).map(([v, l]) => h('option', { value: v, selected: v === 'indetermine' }, l)));
+    return h('section.card',
+      h('h2', `Prélèvements (${harvests.length})`),
+      harvests.length ? h('ul.plain', harvests.map((x) => h('li',
+        `${x.species} ${CATEGORY_LABELS[x.category]}${x.shooter ? ` — ${x.shooter}` : ''} · ${new Date(x.created_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })} `,
+        h('button.link.danger', { onclick: () => act(() => api.del(`/hunts/${huntId}/harvests/${x.id}`).then(() => api.get(`/hunts/${huntId}`))) }, 'Supprimer')))) : null,
+      h('form.row', { onsubmit: (e) => {
+        e.preventDefault();
+        act(() => api.post(`/hunts/${huntId}/harvests`, { species: sp.value, category: cat.value, participant_id: shooter.value || null }).then(() => api.get(`/hunts/${huntId}`)), 'Prélèvement enregistré.');
+      } }, shooter, sp, cat, h('button', { type: 'submit' }, 'Ajouter')),
     );
   }
 
@@ -301,14 +385,14 @@ export async function huntView(main, huntId) {
     const mine = participants.find((p) => p.user_id === state.user.id);
     fill(
       box,
-      h('p', h('a', { href: '#/battues' }, '← Battues')),
       h('h1', `${formatHuntDate(hunt.date)} · ${hunt.territory_name}`),
       h('p', `Rendez-vous à ${formatTime(hunt.meeting_time)}${hunt.meeting_place ? `, ${hunt.meeting_place}` : ''} · `, h('span.status', { class: `status-${hunt.status}` }, STATUS_LABELS[hunt.status])),
       actionsSection(),
       hunt.status === 'en_cours' ? morningSection() : null,
       infoSection(),
       convocationSection(),
-      mine && hunt.status !== 'brouillon' ? h('p.small', 'Vous êtes convoqué : ', h('a', { href: `#/battues/${huntId}/ma-fiche` }, 'voir votre fiche')) : null,
+      ['en_cours', 'terminee'].includes(hunt.status) ? harvestSection() : null,
+      mine && hunt.status !== 'brouillon' ? h('p.small.muted', 'Vous êtes convoqué : votre poste et vos consignes sont dans l’onglet « Vue chasseur ».') : null,
     );
     renderMap();
   }
@@ -319,5 +403,15 @@ export async function huntView(main, huntId) {
     fill(box, h('p.error', errorMessage(err)));
   }
   setTimeout(() => map.invalidateSize(), 0);
-  return () => map.remove();
+  // Mise à jour automatique (réponses des chasseurs, prélèvements, autre responsable…).
+  watcher = watchRevision(() => api.get(`/hunts/${huntId}/revision`), async () => {
+    if (box.contains(document.activeElement) && /^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement.tagName)) return false;
+    hv.detail = await api.get(`/hunts/${huntId}`);
+    render();
+    return true;
+  });
+  return () => {
+    watcher.stop();
+    map.remove();
+  };
 }
