@@ -2,6 +2,8 @@
 // `npm run db:migrate` n'est pas utilisable :
 //   db/neon-console.sql            toutes les migrations (base vide)
 //   db/neon-updates/<migration>    une seule migration (base existante)
+//   api/src/migrations.generated.ts  migrations embarquées dans l'API, qui les
+//                                    applique elle-même (voir api/src/migrate.ts)
 // Chaque script s'exécute en une transaction, enregistre la migration dans
 // schema_migrations (mêmes sommes de contrôle que migrate.mjs) et refuse de
 // s'exécuter deux fois ou si la migration précédente manque.
@@ -60,4 +62,17 @@ for (const [i, file] of files.entries()) {
   const out = header(`Mise à jour d’une base existante : migration ${file} seule.`) + guard(file, files[i - 1] ?? null) + (await block(file));
   await writeFile(path.join(root, 'neon-updates', file), `${out}\nCOMMIT;\n`);
 }
-console.log(`db/neon-console.sql et db/neon-updates/ : ${files.length} migration(s)`);
+// Migrations embarquées dans l'API (appliquées automatiquement au démarrage).
+const entries = [];
+for (const file of files) {
+  const sql = await readFile(path.join(dir, file), 'utf8');
+  const checksum = createHash('sha256').update(sql).digest('hex');
+  entries.push(`  { name: ${JSON.stringify(file)}, checksum: '${checksum}', sql: ${JSON.stringify(sql)} },`);
+}
+await writeFile(
+  path.join(root, '..', 'api', 'src', 'migrations.generated.ts'),
+  `// GÉNÉRÉ par db/bundle.mjs (npm run db:bundle) — ne pas modifier à la main.\n` +
+    `export interface Migration { name: string; checksum: string; sql: string }\n\n` +
+    `export const MIGRATIONS: Migration[] = [\n${entries.join('\n')}\n];\n`,
+);
+console.log(`db/neon-console.sql, db/neon-updates/ et api/src/migrations.generated.ts : ${files.length} migration(s)`);

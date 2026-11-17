@@ -22,6 +22,7 @@ export const bdtopo = {
   calls: 0,
 };
 export const app = createApp(() => ({ pool }), {
+  skipMigrations: true, // la base de test est migrée par global-setup
   fetchBuildingPages: async () => {
     bdtopo.calls += 1;
     if (bdtopo.fail) {

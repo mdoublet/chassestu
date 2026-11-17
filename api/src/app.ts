@@ -12,6 +12,7 @@ import { cartoRoutes } from './routes/carto';
 import { dwellingRoutes } from './routes/dwellings';
 import { planRoutes } from './routes/plans';
 import { fetchBuildingPages, type Bbox } from './bdtopo';
+import { ensureMigrated } from './migrate';
 
 export interface PoolProvider {
   /** Fournit un pool pour la requête ; `dispose` est appelé à la fin. */
@@ -20,6 +21,8 @@ export interface PoolProvider {
 
 export interface AppOptions {
   fetchBuildingPages?: (bbox: Bbox) => Promise<string[]>;
+  /** Ne pas appliquer les migrations embarquées (tests qui gèrent leur base). */
+  skipMigrations?: boolean;
 }
 
 export function createApp(getPool: PoolProvider, options: AppOptions = {}) {
@@ -42,6 +45,8 @@ export function createApp(getPool: PoolProvider, options: AppOptions = {}) {
     c.set('user', await authenticate(c.req.header('Authorization'), c.env));
     const { pool, dispose } = getPool(c.env);
     c.set('pool', pool);
+    // Schéma à jour avant de servir (migrations embarquées, une fois par instance).
+    if (!options.skipMigrations) await ensureMigrated(pool);
     c.set('fetchBuildingPages', options.fetchBuildingPages ?? ((bbox) => fetchBuildingPages(bbox)));
     try {
       await next();
