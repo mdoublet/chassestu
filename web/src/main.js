@@ -3,6 +3,7 @@ import { initAuth, isSignedIn, mountSignIn, signOut, onAuthChange } from './auth
 import { api } from './api.js';
 import { state } from './state.js';
 import { h, errorMessage, toast, ROLE_LABELS } from './ui.js';
+import { APP_NAME, navItems, activeHref } from './lib/nav.js';
 import { homeView } from './views/home.js';
 import { membersView } from './views/members.js';
 import { settingsView } from './views/settings.js';
@@ -50,22 +51,45 @@ function header() {
         ? h('span.tenant-name', state.tenant.name)
         : null;
 
-  return h(
+  const items = state.user ? navItems({ role: state.role, isSuperAdmin: Boolean(state.user.is_super_admin), hasTenant: Boolean(state.tenant) }) : [];
+  const active = activeHref(location.hash, items);
+  const logout = state.user
+    ? h('button.link.logout', {
+        onclick: async () => {
+          await signOut();
+          location.hash = '#/';
+          location.reload();
+        },
+      }, 'Déconnexion')
+    : null;
+  // Menu : en ligne sur grand écran ; bouton « Menu » dépliant sur téléphone.
+  const nav = items.length
+    ? h('nav.main-nav', { 'aria-label': 'Menu principal' },
+        items.map((it) => h('a', { href: it.href, class: it.href === active ? 'active' : '', 'aria-current': it.href === active ? 'page' : null },
+          h('span.nav-icon', { 'aria-hidden': 'true' }, it.icon), it.label)),
+        logout,
+      )
+    : null;
+  const bar = h(
     'header.topbar',
-    h('a.brand', { href: '#/' }, 'Battues'),
+    h('a.brand', { href: '#/' }, APP_NAME),
     tenantSelect,
     state.role ? h('span.role-badge', ROLE_LABELS[state.role]) : null,
     h('span.spacer'),
-    state.user
-      ? h('button.link', {
-          onclick: async () => {
-            await signOut();
-            location.hash = '#/';
-            location.reload();
+    items.length ? h('a.home-button', { href: '#/', title: 'Accueil', 'aria-label': 'Accueil' }, '🏠') : null,
+    nav
+      ? h('button.menu-button', {
+          'aria-expanded': 'false',
+          'aria-label': 'Ouvrir le menu',
+          onclick: (e) => {
+            const open = bar.classList.toggle('menu-open');
+            e.currentTarget.setAttribute('aria-expanded', String(open));
           },
-        }, 'Déconnexion')
-      : null,
+        }, '☰ Menu')
+      : logout,
+    nav,
   );
+  return bar;
 }
 
 async function render() {

@@ -1,4 +1,4 @@
-# Battues — gestion des postes de chasse
+# Chasses-tu ? — gestion des battues et des postes de chasse
 
 Web app mobile-first (PWA) multi-tenant : le président d'une association de
 chasse cartographie ses territoires (territoires, réserves, postes, parkings,

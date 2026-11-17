@@ -1,10 +1,17 @@
 {
-  "name": "Battues — gestion des postes",
-  "short_name": "Battues",
+  "name": "Chasses-tu ? — battues et postes",
+  "short_name": "Chasses-tu ?",
   "lang": "fr",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#f6f4ee",
   "theme_color": "#1f5130",
-  "icons": [{ "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
 }

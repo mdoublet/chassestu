@@ -190,3 +190,25 @@ describe('battues : libellés et messages', () => {
     expect(s.unassigned.map((p) => p.name)).toEqual(['B']);
   });
 });
+
+import { APP_NAME, navItems, activeHref } from '../src/lib/nav.js';
+describe('menu principal', () => {
+  it('nom de l’application', () => {
+    expect(APP_NAME).toBe('Chasses-tu ?');
+  });
+  it('entrées selon le rôle', () => {
+    const labels = (who) => navItems(who).map((i) => i.label);
+    expect(labels({ role: 'president', isSuperAdmin: true, hasTenant: true })).toEqual(['Accueil', 'Battues', 'Cartographie', 'Plans', 'Membres', 'Paramètres', 'Administration']);
+    expect(labels({ role: 'responsable', isSuperAdmin: false, hasTenant: true })).toEqual(['Accueil', 'Battues', 'Carte', 'Plans', 'Membres']);
+    expect(labels({ role: 'chasseur', isSuperAdmin: false, hasTenant: true })).toEqual(['Accueil', 'Battues', 'Carte']);
+    expect(labels({ role: null, isSuperAdmin: false, hasTenant: false })).toEqual(['Accueil']);
+  });
+  it('entrée active, y compris pour les sous-pages', () => {
+    const items = navItems({ role: 'president', isSuperAdmin: false, hasTenant: true });
+    expect(activeHref('#/', items)).toBe('#/');
+    expect(activeHref('', items)).toBe('#/');
+    expect(activeHref('#/battues/3f2b0c3e-1111-2222-3333-444455556666', items)).toBe('#/battues');
+    expect(activeHref('#/plans', items)).toBe('#/plans');
+    expect(activeHref('#/invitation/abc', items)).toBeNull();
+  });
+});
