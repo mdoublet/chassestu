@@ -36,13 +36,23 @@ export async function authenticate(header: string | undefined, env: Env): Promis
       jwtKey: env.CLERK_JWT_KEY,
       authorizedParties: env.CLERK_AUTHORIZED_PARTIES?.split(',').map((s) => s.trim()).filter(Boolean),
     });
-    if (result.errors) {
-      const e = (result.errors as unknown as Array<{ reason?: string; message?: string }>)[0];
+    // Attention : malgré son type ({ data, errors }), le verifyToken exporté par
+    // @clerk/backend renvoie directement le contenu du jeton et LÈVE une exception
+    // en cas de refus. On accepte les deux formes pour ne dépendre d'aucune.
+    const r = result as unknown as Record<string, any>;
+    if (r && Array.isArray(r.errors) && r.errors.length) {
+      const e = r.errors[0] as { reason?: string; message?: string };
       reason = e?.reason ?? 'token-invalid';
       detail = `${e?.message ?? ''} — ${describeToken(token)}`;
       console.warn('Jeton refusé :', reason, '—', e?.message, '—', describeToken(token));
+    } else if (r && typeof r.sub === 'string') {
+      claims = r;
+    } else if (r?.data && typeof r.data.sub === 'string') {
+      claims = r.data;
     } else {
-      claims = result.data as Record<string, unknown>;
+      reason = 'token-unexpected-shape';
+      detail = `Réponse de vérification inattendue — ${describeToken(token)}`;
+      console.warn('Jeton : réponse inattendue de verifyToken —', describeToken(token));
     }
   } catch (err) {
     // Selon la version de @clerk/backend, certains refus sont levés en exception
