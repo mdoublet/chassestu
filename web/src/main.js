@@ -95,7 +95,29 @@ async function render() {
   try {
     if (!state.user) await refreshMe();
   } catch (err) {
-    app.append(header(), h('main.page', h('p.error', errorMessage(err))));
+    // Toujours offrir une sortie : sans cela, une session refusée par l'API
+    // bloque l'utilisateur sur cette page (Clerk garde la session ouverte).
+    const reason = err?.details?.reason;
+    app.append(
+      header(),
+      h(
+        'main.page.narrow',
+        h('p.error', errorMessage(err)),
+        reason ? h('p.small.muted', `Détail technique : ${reason}`) : null,
+        h(
+          'div.buttons',
+          h('button', { onclick: () => location.reload() }, 'Réessayer'),
+          h('button.primary', {
+            onclick: async () => {
+              await signOut();
+              state.user = null;
+              location.hash = '#/';
+              location.reload();
+            },
+          }, 'Se déconnecter'),
+        ),
+      ),
+    );
     return;
   }
 
