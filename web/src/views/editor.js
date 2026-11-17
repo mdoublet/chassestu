@@ -34,6 +34,9 @@ const STYLE = {
   pathSelected: { color: '#0b6bcb', weight: 5, dashArray: '2 8', lineCap: 'round' },
   recording: { color: '#d9480f', weight: 4, interactive: false },
   exclusion: { color: '#d9480f', weight: 1, fillOpacity: 1, className: 'exclusion-shape' },
+  otherTerritory: { color: '#5f6b63', weight: 2, dashArray: '6 4', fillColor: '#5f6b63', fillOpacity: 0.05 },
+  otherExclusion: { color: '#d9480f', weight: 0.5, fillOpacity: 0.45, className: 'exclusion-shape' },
+  otherReserve: { color: '#c92a2a', weight: 1, fillOpacity: 0.45, className: 'reserve-shape' },
   warningBand: { color: '#e8a33d', weight: 1, dashArray: '4 4', fillColor: '#e8a33d', fillOpacity: 0.12 },
 };
 
@@ -83,6 +86,22 @@ function postIcon(number, cls = '') {
 }
 const parkingIcon = (cls = '') => L.divIcon({ className: `parking-icon ${cls}`, html: '<span>P</span>', iconSize: [26, 26], iconAnchor: [13, 13] });
 
+const SHOW_ALL_KEY = 'chassestu.showAllTerritories';
+function readShowAll() {
+  try {
+    return localStorage.getItem(SHOW_ALL_KEY) !== '0'; // activé par défaut
+  } catch {
+    return true;
+  }
+}
+function saveShowAll(value) {
+  try {
+    localStorage.setItem(SHOW_ALL_KEY, value ? '1' : '0');
+  } catch {
+    /* stockage indisponible : préférence non mémorisée */
+  }
+}
+
 function importSummary(report) {
   if (!report) return 'Bâtiments déjà à jour.';
   const parts = [`${report.total} bâtiment(s) IGN`];
@@ -109,6 +128,8 @@ export async function editorView(main) {
     mode: null,
     recording: null,
     fitted: false,
+    showAll: readShowAll(), // afficher aussi les autres territoires (préférence de l'appareil)
+    overview: null, // { territories, reserves, posts, exclusions } de tout le tenant
   };
 
   ensureHatchPattern();
@@ -123,6 +144,7 @@ export async function editorView(main) {
 
   const dwellingRenderer = L.canvas({ padding: 0.5 });
   const groups = {
+    others: L.featureGroup().addTo(map), // autres territoires, sous le territoire actif
     territory: L.featureGroup().addTo(map),
     exclusion: L.featureGroup().addTo(map),
     dwellings: L.featureGroup().addTo(map),
@@ -151,6 +173,74 @@ export async function editorView(main) {
   async function loadTerritories() {
     ed.territories = (await api.get('/territories')).territories;
     if (!ed.territories.some((t) => t.id === ed.territoryId)) ed.territoryId = ed.territories[0]?.id ?? null;
+    await loadOverview();
+  }
+
+  /** Données des autres territoires (une seule requête), si l'affichage est activé. */
+  async function loadOverview() {
+    if (!ed.showAll || ed.territories.length < 2) {
+      ed.overview = null;
+      return;
+    }
+    try {
+      ed.overview = await api.get('/territories/overview');
+    } catch (err) {
+      ed.overview = null;
+      toast(`Autres territoires indisponibles : ${errorMessage(err)}`, 'warn');
+    }
+  }
+
+  /** Change de territoire actif ; `keepView` garde le cadrage (clic sur la carte). */
+  async function switchTerritory(id, { postId = null, keepView = false } = {}) {
+    if (ed.mode || ed.recording || id === ed.territoryId) return;
+    ed.territoryId = id;
+    ed.selected = postId ? { kind: 'posts', id: postId } : null;
+    ed.fitted = keepView;
+    history.clear();
+    await loadOverview();
+    await reload();
+  }
+
+  function fitAll() {
+    const layers = ed.territories.map((t) => L.geoJSON(t.geom));
+    if (!layers.length) return;
+    map.fitBounds(L.featureGroup(layers).getBounds(), { padding: [30, 30] });
+  }
+
+  /** Autres territoires : grisés, non modifiables ; un clic les rend actifs. */
+  function renderOthers() {
+    if (!ed.showAll || !ed.overview) return;
+    const others = ed.overview.territories.filter((t) => t.id !== ed.territoryId);
+    const isOther = (o) => o.territory_id !== ed.territoryId;
+    for (const z of ed.overview.exclusions.filter(isOther)) {
+      groups.others.addLayer(L.geoJSON(z.geom, { style: STYLE.otherExclusion, interactive: false }));
+    }
+    for (const r of ed.overview.reserves.filter(isOther)) {
+      groups.others.addLayer(L.geoJSON(r.geom, { style: STYLE.otherReserve, interactive: false }));
+    }
+    for (const t of others) {
+      const layer = L.polygon(t.geom.coordinates.map((ring) => ring.map(toLatLng)), STYLE.otherTerritory);
+      layer.bindTooltip(escapeHtml(t.name), { permanent: true, direction: 'center', className: 'territory-label' });
+      layer.on('click', (e) => {
+        if (e.originalEvent) e.originalEvent.handledByLayer = true;
+        if (!ed.mode && !ed.recording) switchTerritory(t.id, { keepView: true });
+      });
+      groups.others.addLayer(layer);
+    }
+    for (const p of ed.overview.posts.filter(isOther)) {
+      const m = L.marker(toLatLng(p.geom.coordinates), {
+        icon: postIcon(p.number, `other ${p.invalid_reason ? 'invalid-static' : ''}`),
+        title: `Poste ${p.number}`,
+        bubblingMouseEvents: true,
+      });
+      const t = ed.overview.territories.find((x) => x.id === p.territory_id);
+      m.bindTooltip(escapeHtml(`${t?.name ?? ''} · poste ${p.number}${p.name ? ` · ${p.name}` : ''}`), { direction: 'top', offset: [0, -12] });
+      m.on('click', (e) => {
+        if (e.originalEvent) e.originalEvent.handledByLayer = true;
+        switchTerritory(p.territory_id, { postId: p.id, keepView: true });
+      });
+      groups.others.addLayer(m);
+    }
   }
 
   async function reload() {
@@ -261,6 +351,7 @@ export async function editorView(main) {
   function render() {
     for (const g of Object.values(groups)) g.clearLayers();
     renderPanel();
+    renderOthers();
     if (!ed.data) return;
     const { territory, reserves, parkings, posts, dwellings = [], exclusion } = ed.data;
 
@@ -835,13 +926,7 @@ export async function editorView(main) {
       'select',
       {
         'aria-label': 'Territoire',
-        onchange: (e) => {
-          ed.territoryId = e.target.value;
-          ed.selected = null;
-          ed.fitted = false;
-          history.clear();
-          reload();
-        },
+        onchange: (e) => switchTerritory(e.target.value),
       },
       ed.territories.map((t) => {
         const count = t.id === ed.data?.territory.id ? ed.data.posts.length : t.posts_count;
@@ -867,6 +952,22 @@ export async function editorView(main) {
       h(
         'section',
         h('div.row', ed.territories.length ? territorySelect : h('p.muted', 'Aucun territoire.'), canEdit && !ed.mode && !ed.recording ? h('button', { onclick: () => startDraw('territory') }, '+ Territoire') : null),
+        ed.territories.length > 1
+          ? h(
+              'div.row.show-all',
+              h('label.check', h('input', {
+                type: 'checkbox',
+                checked: ed.showAll,
+                onchange: async (e) => {
+                  ed.showAll = e.target.checked;
+                  saveShowAll(ed.showAll);
+                  await loadOverview();
+                  render();
+                },
+              }), 'Afficher tous les territoires'),
+              h('button.link', { onclick: fitAll }, 'Vue d’ensemble'),
+            )
+          : null,
         ed.data
           ? h('p.small', h('button.link', { onclick: () => select('territories', ed.data.territory.id, { zoom: true }) }, ed.data.territory.name), ` · ${ed.data.territory.area_ha.toLocaleString('fr-FR')} ha`)
           : null,

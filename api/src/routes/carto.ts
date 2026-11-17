@@ -141,6 +141,24 @@ cartoRoutes.get('/territories', (c) =>
   }),
 );
 
+/**
+ * Vue d'ensemble de tous les territoires du tenant, en une requête par type
+ * d'objet (et non une par territoire) : contours, réserves, postes, zones
+ * non chassables. Lecture seule, pour l'affichage simultané.
+ * Déclarée avant /territories/:id, qui capturerait « overview ».
+ */
+cartoRoutes.get('/territories/overview', (c) =>
+  tenantTx(c, null, async (tx) => {
+    const [territories, reserves, posts, exclusions] = await Promise.all([
+      tx.query(`SELECT id, name, ${geomOut('geom')} FROM territories ORDER BY name`),
+      tx.query(`SELECT territory_id, name, ${geomOut('geom')} FROM reserve_zones`),
+      tx.query(`SELECT id, territory_id, number, name, active, invalid_reason, ${geomOut('geom')} FROM posts ORDER BY number`),
+      tx.query(`SELECT territory_id, ${geomOut('geom')} FROM exclusion_zones WHERE geom IS NOT NULL`),
+    ]);
+    return c.json({ territories, reserves, posts, exclusions });
+  }),
+);
+
 async function loadTerritory(tx: Tx, id: string) {
   const territory = notFoundIfNull(
     await tx.maybeOne<Record<string, any>>(`SELECT ${TERRITORY_SELECT} FROM territories WHERE id = $1`, [id]),

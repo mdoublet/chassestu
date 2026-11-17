@@ -147,3 +147,27 @@ describe('réserves, parkings, postes, chemins', () => {
     expect(last.diff.name).toEqual({ old: 'Bois des Fourches', new: 'Renommé' });
   });
 });
+
+describe('vue d’ensemble de tous les territoires', () => {
+  it('renvoie contours, postes, réserves et zones de tous les territoires du tenant, et seulement du tenant', async () => {
+    const a = await newTerritory(3.5, 44.5);
+    const b = await newTerritory(3.53, 44.5);
+    await call('POST', `/api/territories/${a.id}/posts`, { geom: point(3.5, 44.5) });
+    await call('POST', `/api/territories/${b.id}/reserves`, { geom: square(3.53, 44.5, 0.002) });
+
+    const res = await call('GET', '/api/territories/overview');
+    expect(res.status).toBe(200);
+    const ids = res.body.territories.map((t: any) => t.id);
+    expect(ids).toEqual(expect.arrayContaining([a.id, b.id]));
+    expect(res.body.posts.some((p: any) => p.territory_id === a.id && p.number === 1)).toBe(true);
+    expect(res.body.reserves.some((r: any) => r.territory_id === b.id)).toBe(true);
+    expect(res.body.territories[0].geom.type).toBe('Polygon');
+
+    // Un autre tenant ne voit rien de ces territoires.
+    const other = await createTenant('pres_autre_overview');
+    const theirs = await api('pres_autre_overview', 'GET', '/api/territories/overview', { tenant: other });
+    expect(theirs.status).toBe(200);
+    expect(theirs.body.territories).toEqual([]);
+    expect(theirs.body.posts).toEqual([]);
+  });
+});
