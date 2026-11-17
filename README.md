@@ -94,21 +94,33 @@ Dans le tableau de bord Clerk : activer la connexion par **code e-mail**,
 désactiver le mot de passe. Optionnel : ajouter `name` et `email` au modèle de
 jeton de session pour pré-remplir le profil.
 
-### 3. API (Cloudflare Workers)
+### 3. API (Cloudflare Workers, construite depuis GitHub)
 
-```bash
-cd api
-npx wrangler secret put DATABASE_URL
-npx wrangler secret put CLERK_SECRET_KEY
-npx wrangler deploy
-```
+Tableau de bord Cloudflare → Workers & Pages → Create → Import a repository :
 
-Adapter `APP_ORIGIN` et `CLERK_AUTHORIZED_PARTIES` dans `api/wrangler.toml`.
+- dépôt `mdoublet/chassestu`, répertoire racine `/` ;
+- commande de build : vide ; commande de déploiement :
+  `npx wrangler deploy --config api/wrangler.toml` ;
+- Settings → Variables and Secrets :
+  - secrets `DATABASE_URL`, `CLERK_SECRET_KEY` ;
+  - variables `APP_ORIGIN` et `CLERK_AUTHORIZED_PARTIES` = adresse du site
+    (ex. `https://chassestu.pages.dev`).
 
-### 4. Front (Cloudflare Pages)
+`keep_vars = true` (dans `api/wrangler.toml`) conserve ces variables à chaque
+déploiement. En ligne de commande : `npx wrangler deploy --config api/wrangler.toml`.
 
-Variables de build : `VITE_CLERK_PUBLISHABLE_KEY`, `VITE_API_URL` (URL du
-Worker). Commande `npm run build -w web`, dossier `web/dist`.
+### 4. Front (Cloudflare Pages, construit depuis GitHub)
+
+Workers & Pages → Create → Pages → Connect to Git : répertoire racine `/`,
+commande `npm run build -w web`, dossier de sortie `web/dist`. Variables :
+`VITE_CLERK_PUBLISHABLE_KEY`, `VITE_API_URL` (adresse du Worker).
+
+### Base sans outil local
+
+Si `npm run db:migrate` n'est pas utilisable, `db/neon-console.sql` contient
+toutes les migrations en une transaction : à coller une fois dans l'éditeur
+SQL de Neon, sur une base vide. Le régénérer avec `npm run db:bundle` après
+chaque nouvelle migration (`db:migrate` reconnaît ensuite ce qui est appliqué).
 
 ## Développement local
 

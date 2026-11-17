@@ -15,7 +15,8 @@
     "typecheck": "npm run typecheck -w api",
     "build": "npm run build -w web",
     "db:status": "node --env-file-if-exists=.env db/migrate.mjs --status",
-    "dev:api:node": "npm run dev:node -w api"
+    "dev:api:node": "npm run dev:node -w api",
+    "db:bundle": "node db/bundle.mjs"
   },
   "devDependencies": {
     "pg": "^8.23.1"
