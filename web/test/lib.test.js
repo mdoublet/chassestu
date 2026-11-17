@@ -128,3 +128,20 @@ describe('règle des habitations (côté client)', () => {
     expect(parseGeoFile('x.geojson', JSON.stringify(fc)).map((i) => i.kind)).toEqual(['ignore']);
   });
 });
+
+describe('postes hors du territoire (côté client)', () => {
+  const territory = { type: 'Polygon', coordinates: [[[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]]] };
+  const postArea = { type: 'Polygon', coordinates: [[[-0.1, -0.1], [1.1, -0.1], [1.1, 1.1], [-0.1, 1.1], [-0.1, -0.1]]] };
+  const exclusion = { type: 'MultiPolygon', coordinates: [[[[1.02, 0.4], [1.1, 0.4], [1.1, 0.6], [1.02, 0.6], [1.02, 0.4]]]] };
+  it('accepte à la lisière avec un rappel, refuse trop loin ou dans une zone non chassable', () => {
+    const zones = { postArea, maxOutsideM: 200, exclusion };
+    const edge = checkPost([1.05, 0.2], territory, [], zones);
+    expect(edge).toMatchObject({ ok: true, outside: true });
+    expect(edge.warning).toMatch(/droit de chasse/);
+    expect(checkPost([1.5, 0.5], territory, [], zones)).toMatchObject({ ok: false, code: 'POST_TOO_FAR_OUTSIDE', message: 'À plus de 200 m du territoire' });
+    expect(checkPost([1.05, 0.5], territory, [], zones)).toMatchObject({ ok: false, code: 'POST_IN_EXCLUSION' });
+  });
+  it('marge à 0 : hors du territoire refusé', () => {
+    expect(checkPost([1.05, 0.2], territory, [], { postArea, maxOutsideM: 0 }).code).toBe('POST_OUTSIDE_TERRITORY');
+  });
+});

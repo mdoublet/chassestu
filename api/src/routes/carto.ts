@@ -175,14 +175,16 @@ async function loadTerritory(tx: Tx, id: string) {
   );
   const dwellings = await tx.query(`SELECT ${DWELLING_SELECT} FROM dwellings WHERE territory_id = $1 ORDER BY created_at`, [id]);
   // needs_refresh : bâtiments jamais importés, ou zone d'import trop petite
-  // (territoire agrandi, distance augmentée).
+  // (territoire agrandi, distance ou marge hors territoire augmentée).
+  // post_area : zone où un poste peut être placé (territoire + marge).
   const exclusion = await tx.maybeOne(
     `SELECT ${geomOut('z.geom', 'geom')}, ${geomOut('z.warning_geom', 'warning_geom')},
             round(z.area_ha::numeric, 2)::float AS area_ha, z.buffer_distance_m,
             app.warning_margin_m() AS warning_margin_m, z.computed_at, z.dwellings_refreshed_at,
+            ${geomOut('z.post_area', 'post_area')}, tn.post_max_outside_m,
             (z.dwellings_refreshed_at IS NULL OR z.dwellings_extent IS NULL OR NOT ST_Covers(z.dwellings_extent,
-               ST_Buffer(t.geom::geography, z.buffer_distance_m + app.warning_margin_m())::geometry)) AS needs_refresh
-       FROM exclusion_zones z JOIN territories t ON t.id = z.territory_id
+               ST_Buffer(t.geom::geography, tn.post_max_outside_m + z.buffer_distance_m + app.warning_margin_m())::geometry)) AS needs_refresh
+       FROM exclusion_zones z JOIN territories t ON t.id = z.territory_id JOIN tenants tn ON tn.id = t.tenant_id
       WHERE z.territory_id = $1`,
     [id],
   );
@@ -196,8 +198,9 @@ async function autoImport(c: Parameters<typeof importDwellings>[0], territoryId:
       const needs = await tenantTx(c, null, (tx) =>
         tx.one<{ needs: boolean }>(
           `SELECT (z.dwellings_extent IS NULL OR NOT ST_Covers(z.dwellings_extent,
-                    ST_Buffer(t.geom::geography, z.buffer_distance_m + app.warning_margin_m())::geometry)) AS needs
-             FROM exclusion_zones z JOIN territories t ON t.id = z.territory_id WHERE z.territory_id = $1`,
+                    ST_Buffer(t.geom::geography, tn.post_max_outside_m + z.buffer_distance_m + app.warning_margin_m())::geometry)) AS needs
+             FROM exclusion_zones z JOIN territories t ON t.id = z.territory_id JOIN tenants tn ON tn.id = t.tenant_id
+            WHERE z.territory_id = $1`,
           [territoryId],
         ),
       );

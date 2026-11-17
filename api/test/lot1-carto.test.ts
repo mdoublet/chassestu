@@ -93,13 +93,15 @@ describe('réserves, parkings, postes, chemins', () => {
     expect((await call('DELETE', `/api/reserves/${reserve.body.item.id}`)).status).toBe(200);
   });
 
-  it('refuse un poste hors du territoire ou dans une réserve', async () => {
+  it('refuse un poste trop loin du territoire ou dans une réserve', async () => {
     const t = await newTerritory(2.7, 43.7);
     await call('POST', `/api/territories/${t.id}/reserves`, { geom: square(2.705, 43.705, 0.002) });
 
+    // ~3 km du territoire : au-delà de la marge autorisée (200 m par défaut).
     const outside = await call('POST', `/api/territories/${t.id}/posts`, { geom: point(2.75, 43.7) });
     expect(outside.status).toBe(422);
-    expect(outside.body.code).toBe('POST_OUTSIDE_TERRITORY');
+    expect(outside.body.code).toBe('POST_TOO_FAR_OUTSIDE');
+    expect(outside.body.message).toMatch(/maximum 200 m/);
 
     const inReserve = await call('POST', `/api/territories/${t.id}/posts`, { geom: point(2.705, 43.705) });
     expect(inReserve.status).toBe(422);

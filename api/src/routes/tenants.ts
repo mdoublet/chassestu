@@ -9,7 +9,7 @@ import { invitationUrl } from './invitations';
 export const tenantRoutes = new Hono<AppEnv>();
 
 const TENANT_COLUMNS = `id, name, kind, departement, buffer_distance_m, gps_tolerance_m,
-  position_retention_h, show_all_posts, created_at`;
+  position_retention_h, show_all_posts, post_max_outside_m, created_at`;
 
 const tenantCreateSchema = z.object({
   name: z.string().trim().min(1).max(200),
@@ -50,6 +50,7 @@ const tenantPatchSchema = z
     gps_tolerance_m: z.number().int().min(5).max(200),
     position_retention_h: z.number().int().min(1).max(720),
     show_all_posts: z.boolean(),
+    post_max_outside_m: z.number().int().min(0).max(500),
   })
   .partial()
   .strict();

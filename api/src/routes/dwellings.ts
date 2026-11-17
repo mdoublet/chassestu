@@ -27,12 +27,12 @@ export async function importDwellings(c: Context<AppEnv>, territoryId: string): 
   const box = await tenantTx(c, ['president'], async (tx) => {
     const row = notFoundIfNull(
       await tx.maybeOne<{ minlon: number; minlat: number; maxlon: number; maxlat: number; radius: number }>(
-        // Rayon d'import : distance + bande d'avertissement, 300 m au moins (évite de
-        // réimporter si la distance passe de 150 à 200 m).
+        // Rayon d'import (app.import_radius_m) : marge des postes hors territoire
+        // + distance + bande d'avertissement, 300 m au moins.
         `SELECT ST_XMin(e) AS minlon, ST_YMin(e) AS minlat, ST_XMax(e) AS maxlon, ST_YMax(e) AS maxlat, r AS radius
            FROM (SELECT ST_Envelope(ST_Buffer(t.geom::geography, r)::geometry) AS e, r
-                   FROM territories t JOIN tenants tn ON tn.id = t.tenant_id,
-                        LATERAL (SELECT (greatest(300, tn.buffer_distance_m + 50) + 20)::double precision AS r) x
+                   FROM territories t,
+                        LATERAL (SELECT app.import_radius_m(t.tenant_id) AS r) x
                   WHERE t.id = $1) s`,
         [territoryId],
       ),

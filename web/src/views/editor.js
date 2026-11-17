@@ -11,6 +11,7 @@ import { state } from '../state.js';
 import { h, fill, toast, errorMessage, confirmDialog, promptDialog, modal } from '../ui.js';
 import { History } from '../lib/history.js';
 import { checkPost, selfIntersects } from '../lib/checks.js';
+import booleanPointInPolygon from '@turf/boolean-point-in-polygon';
 import { simplifyMeters, lineLengthMeters, distanceMeters } from '../lib/simplify.js';
 import { parseGeoFile } from '../lib/importer.js';
 
@@ -34,6 +35,7 @@ const STYLE = {
   pathSelected: { color: '#0b6bcb', weight: 5, dashArray: '2 8', lineCap: 'round' },
   recording: { color: '#d9480f', weight: 4, interactive: false },
   exclusion: { color: '#d9480f', weight: 1, fillOpacity: 1, className: 'exclusion-shape' },
+  postArea: { color: '#1f5130', weight: 1.5, dashArray: '1 6', lineCap: 'round', fill: false },
   otherTerritory: { color: '#5f6b63', weight: 2, dashArray: '6 4', fillColor: '#5f6b63', fillOpacity: 0.05 },
   otherExclusion: { color: '#d9480f', weight: 0.5, fillOpacity: 0.45, className: 'exclusion-shape' },
   otherReserve: { color: '#c92a2a', weight: 1, fillOpacity: 0.45, className: 'reserve-shape' },
@@ -53,7 +55,7 @@ const DRAW_HINTS = {
   territory: 'Cliquez pour placer les sommets du territoire ; cliquez sur le premier sommet pour fermer.',
   reserves: 'Dessinez la zone de réserve ; cliquez sur le premier sommet pour fermer.',
   parkings: 'Cliquez sur la carte pour placer le parking.',
-  posts: 'Cliquez sur la carte pour placer le poste (dans le territoire, hors réserve et hors zone non chassable).',
+  posts: 'Cliquez sur la carte pour placer le poste : dans le territoire ou à sa lisière (pointillés verts), hors réserve et hors zone non chassable.',
   dwellings: 'Cliquez à l’emplacement de l’habitation manquante (construction récente, caravane habitée…).',
   path: 'Tracez le chemin à pied du parking jusqu’au poste ; cliquez sur le dernier point pour terminer.',
 };
@@ -138,6 +140,7 @@ export async function editorView(main) {
   main.append(h('div.editor', mapEl, panel));
 
   const map = L.map(mapEl, { zoomControl: true }).setView([46.6, 2.4], 6);
+  if (import.meta.env.DEV) window.__map = map; // tests de bout en bout (jamais en production)
   addBasemaps(map);
   map.pm.setLang('fr');
   map.pm.setGlobalOptions({ snappable: true, snapDistance: 20, allowSelfIntersection: false });
@@ -160,6 +163,25 @@ export async function editorView(main) {
 
   const itemPath = (kind, id) => (kind === 'territories' ? `/territories/${id}` : `/${kind}/${id}`);
   const find = (kind, id) => ed.data?.[kind]?.find((x) => x.id === id) ?? null;
+
+  /** Zones calculées par le serveur, pour le contrôle des postes côté client. */
+  const zonesFor = (data) => ({
+    exclusion: data?.exclusion?.geom,
+    warning: data?.exclusion?.warning_geom,
+    bufferM: data?.exclusion?.buffer_distance_m,
+    warningM: data?.exclusion?.warning_margin_m,
+    postArea: data?.exclusion?.post_area,
+    maxOutsideM: data?.exclusion?.post_max_outside_m ?? 0,
+  });
+
+  /** Réserves du territoire actif et, si elles sont chargées, des autres territoires. */
+  const allReserveGeoms = () => [
+    ...(ed.data?.reserves ?? []).map((r) => r.geom),
+    ...(ed.overview?.reserves ?? []).filter((r) => r.territory_id !== ed.territoryId).map((r) => r.geom),
+  ];
+
+  /** Le poste est-il hors du territoire actif ? */
+  const isOutside = (p) => Boolean(ed.data) && !booleanPointInPolygon(p.geom.coordinates, ed.data.territory.geom);
 
   async function run(fn) {
     try {
@@ -372,6 +394,11 @@ export async function editorView(main) {
       if (isSelected('reserves', r.id)) makeEditable(layer, (geom) => saveShape('reserves', r, geom));
     }
 
+    // Limite de la zone des postes (territoire + marge autorisée hors territoire)
+    if (exclusion?.post_area && exclusion.post_max_outside_m > 0) {
+      groups.exclusion.addLayer(L.geoJSON(exclusion.post_area, { style: STYLE.postArea, interactive: false }));
+    }
+
     // Zone non chassable (hachures orange) et bande d'avertissement
     if (exclusion?.warning_geom) {
       groups.exclusion.addLayer(L.geoJSON(exclusion.warning_geom, { style: STYLE.warningBand, interactive: false }));
@@ -420,13 +447,8 @@ export async function editorView(main) {
     }
 
     // Postes : contrôle en direct pendant le glisser-déposer
-    const reserveGeoms = reserves.map((r) => r.geom);
-    const zones = {
-      exclusion: exclusion?.geom,
-      warning: exclusion?.warning_geom,
-      bufferM: exclusion?.buffer_distance_m,
-      warningM: exclusion?.warning_margin_m,
-    };
+    const reserveGeoms = allReserveGeoms();
+    const zones = zonesFor(ed.data);
     for (const p of posts) {
       const cls = [
         isSelected('posts', p.id) ? 'selected' : '',
@@ -434,7 +456,7 @@ export async function editorView(main) {
         p.invalid_reason ? 'invalid-static' : p.nearest_dwelling_m != null ? 'warning' : '',
       ].join(' ');
       const m = L.marker(toLatLng(p.geom.coordinates), { icon: postIcon(p.number, cls), draggable: canEdit, title: `Poste ${p.number}`, bubblingMouseEvents: true });
-      m.bindTooltip(escapeHtml(postTooltip(p, zones.bufferM)), { direction: 'top', offset: [0, -14] });
+      m.bindTooltip(escapeHtml(postTooltip(p, zones.bufferM) + (isOutside(p) ? ' — hors du territoire' : '')), { direction: 'top', offset: [0, -14] });
       let origin;
       m.on('click', onPick('posts', p.id));
       m.on('dragstart', () => {
@@ -553,10 +575,7 @@ export async function editorView(main) {
       });
     }
     if (mode === 'posts') {
-      const ex = ed.data.exclusion;
-      const check = checkPost(geom.coordinates, ed.data.territory.geom, ed.data.reserves.map((r) => r.geom), {
-        exclusion: ex?.geom, warning: ex?.warning_geom, bufferM: ex?.buffer_distance_m, warningM: ex?.warning_margin_m,
-      });
+      const check = checkPost(geom.coordinates, ed.data.territory.geom, allReserveGeoms(), zonesFor(ed.data));
       if (check.warning) toast(check.warning, 'warn');
       if (!check.ok) {
         toast(`Poste refusé : ${check.message.toLowerCase()}.`, 'error');
@@ -827,6 +846,7 @@ export async function editorView(main) {
         : item.nearest_dwelling_m != null
           ? h('p.alert.warn', `Habitation à ${item.nearest_dwelling_m} m : rappeler l’interdiction de tirer en direction de l’habitation.`)
           : null,
+      isOutside(item) ? h('p.alert.warn', 'Poste hors du territoire : il faut le droit de chasse à cet endroit (ou l’accord du propriétaire).') : null,
       h('div.row', field('Numéro', bound(kind, item, 'number', { type: 'number', min: 1, max: 999, required: true })), field('Nom', bound(kind, item, 'name', { maxlength: 200 }))),
       field('Parking', parkingSelect),
       field('Consignes', bound(kind, item, 'instructions', { rows: 3, maxlength: 2000 }, 'textarea')),
@@ -997,7 +1017,7 @@ export async function editorView(main) {
           ? h('div.buttons', h('button', { onclick: exportGeoJSON }, 'Exporter GeoJSON'))
           : null,
       propertiesPanel(),
-      ed.data ? listSection('Postes', 'posts', ed.data.posts, (p) => `${p.invalid_reason ? '⛔ ' : p.nearest_dwelling_m != null ? '⚠ ' : ''}${p.number}${p.name ? ` · ${p.name}` : ''}${p.access_path ? '' : ' (sans chemin)'}${p.active ? '' : ' (inactif)'}`) : null,
+      ed.data ? listSection('Postes', 'posts', ed.data.posts, (p) => `${p.invalid_reason ? '⛔ ' : p.nearest_dwelling_m != null ? '⚠ ' : ''}${p.number}${p.name ? ` · ${p.name}` : ''}${isOutside(p) ? ' (hors territoire)' : ''}${p.access_path ? '' : ' (sans chemin)'}${p.active ? '' : ' (inactif)'}`) : null,
       ed.data ? listSection('Bâtiments à vérifier', 'dwellings', (ed.data.dwellings ?? []).filter((d) => !d.ignored && (d.likely_non_residential || d.missing_since)), (d) => d.missing_since ? `Disparu de la BD TOPO · ${d.usage || 'bâtiment'}` : d.usage || 'Bâtiment') : null,
       ed.data ? listSection('Habitations ajoutées', 'dwellings', (ed.data.dwellings ?? []).filter((d) => d.source === 'manuel'), (d) => d.comment || 'Habitation') : null,
       ed.data ? listSection('Parkings', 'parkings', ed.data.parkings, (p) => p.name) : null,

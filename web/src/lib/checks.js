@@ -8,13 +8,23 @@ import kinks from '@turf/kinks';
  * @param {[number, number]} point [lon, lat]
  * @param {object} territoryGeom Polygon GeoJSON
  * @param {object[]} reserveGeoms Polygons GeoJSON
- * @param {{ exclusion?: object|null, warning?: object|null, bufferM?: number, warningM?: number }} [zones]
- *   zone d'exclusion et bande d'avertissement (MultiPolygon) calculées par le serveur
+ * @param {{ exclusion?: object|null, warning?: object|null, bufferM?: number, warningM?: number,
+ *           postArea?: object|null, maxOutsideM?: number }} [zones]
+ *   zone d'exclusion, bande d'avertissement et zone des postes (territoire + marge),
+ *   calculées par le serveur
  * @returns {{ ok: boolean, code?: string, message?: string, warning?: string }}
  */
 export function checkPost(point, territoryGeom, reserveGeoms = [], zones = {}) {
-  if (!territoryGeom || !booleanPointInPolygon(point, territoryGeom)) {
-    return { ok: false, code: 'POST_OUTSIDE_TERRITORY', message: 'Hors du territoire' };
+  const inside = Boolean(territoryGeom) && booleanPointInPolygon(point, territoryGeom);
+  if (!inside) {
+    // Hors du territoire : autorisé dans la « zone des postes » (territoire + marge).
+    const max = zones.maxOutsideM ?? 0;
+    if (!territoryGeom || max <= 0 || !zones.postArea) {
+      return { ok: false, code: 'POST_OUTSIDE_TERRITORY', message: 'Hors du territoire' };
+    }
+    if (!booleanPointInPolygon(point, zones.postArea)) {
+      return { ok: false, code: 'POST_TOO_FAR_OUTSIDE', message: `À plus de ${max} m du territoire` };
+    }
   }
   if (reserveGeoms.some((r) => booleanPointInPolygon(point, r))) {
     return { ok: false, code: 'POST_IN_RESERVE', message: 'Dans une zone de réserve' };
@@ -23,11 +33,13 @@ export function checkPost(point, territoryGeom, reserveGeoms = [], zones = {}) {
   if (zones.exclusion && booleanPointInPolygon(point, zones.exclusion)) {
     return { ok: false, code: 'POST_IN_EXCLUSION', message: `À moins de ${buffer} m d’une habitation` };
   }
+  const outsideNote = inside ? null : 'Hors du territoire : vérifiez que vous avez le droit de chasse à cet endroit';
   if (zones.warning && booleanPointInPolygon(point, zones.warning)) {
     const upTo = buffer + (zones.warningM ?? 50);
-    return { ok: true, warning: `Entre ${buffer} et ${upTo} m d’une habitation : ne pas tirer en direction de l’habitation` };
+    const w = `Entre ${buffer} et ${upTo} m d’une habitation : ne pas tirer en direction de l’habitation`;
+    return { ok: true, warning: outsideNote ? `${w}. ${outsideNote}` : w, outside: !inside };
   }
-  return { ok: true };
+  return outsideNote ? { ok: true, warning: outsideNote, outside: true } : { ok: true };
 }
 
 /** true si le polygone se recoupe lui-même. */
