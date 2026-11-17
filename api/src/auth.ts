@@ -43,8 +43,11 @@ export async function authenticate(header: string | undefined, env: Env): Promis
       claims = result.data as Record<string, unknown>;
     }
   } catch (err) {
-    // Jeton mal formé : verifyToken lève une exception au lieu de renvoyer `errors`.
-    console.warn('Jeton illisible :', (err as Error).message, '—', describeToken(token));
+    // Selon la version de @clerk/backend, certains refus sont levés en exception
+    // (jeton mal formé, clé introuvable…) : on remonte la raison fournie par Clerk.
+    const e = err as { reason?: string; message?: string };
+    reason = e.reason ?? 'token-unreadable';
+    console.warn('Jeton refusé (exception) :', reason, '—', e.message, '—', describeToken(token));
   }
   if (!claims || typeof claims.sub !== 'string') {
     // La raison (codes Clerk, ex. token-expired) ne révèle rien de secret et
@@ -77,6 +80,7 @@ export async function sha256Hex(value: string): Promise<string> {
 function describeToken(token: string): string {
   const parts = token.split('.');
   if (parts.length !== 3) return `forme: ${parts.length} partie(s), longueur ${token.length}`;
+  if (token.length < 100) return `forme: 3 parties, longueur ${token.length} (trop court pour un jeton Clerk)`;
   try {
     const json = atob(parts[1].replace(/-/g, '+').replace(/_/g, '/'));
     const p = JSON.parse(json) as Record<string, unknown>;
