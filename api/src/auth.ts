@@ -28,20 +28,28 @@ export async function authenticate(header: string | undefined, env: Env): Promis
     throw new AppError(500, 'MISCONFIGURED', 'Clerk n’est pas configuré (CLERK_JWT_KEY ou CLERK_SECRET_KEY).');
   }
   let claims: Record<string, unknown> | null = null;
+  let reason = 'token-unreadable';
   try {
     const result = await verifyToken(token, {
       secretKey: env.CLERK_SECRET_KEY,
       jwtKey: env.CLERK_JWT_KEY,
       authorizedParties: env.CLERK_AUTHORIZED_PARTIES?.split(',').map((s) => s.trim()).filter(Boolean),
     });
-    claims = (result.errors ? null : result.data) as Record<string, unknown> | null;
-    if (result.errors) console.warn('Jeton refusé :', String(result.errors));
+    if (result.errors) {
+      const e = (result.errors as unknown as Array<{ reason?: string; message?: string }>)[0];
+      reason = e?.reason ?? 'token-invalid';
+      console.warn('Jeton refusé :', reason, '—', e?.message, '—', describeToken(token));
+    } else {
+      claims = result.data as Record<string, unknown>;
+    }
   } catch (err) {
     // Jeton mal formé : verifyToken lève une exception au lieu de renvoyer `errors`.
-    console.warn('Jeton illisible :', (err as Error).message);
+    console.warn('Jeton illisible :', (err as Error).message, '—', describeToken(token));
   }
   if (!claims || typeof claims.sub !== 'string') {
-    throw new AppError(401, 'UNAUTHENTICATED', 'Session expirée ou invalide.');
+    // La raison (codes Clerk, ex. token-expired) ne révèle rien de secret et
+    // facilite le diagnostic depuis l'onglet Réseau du navigateur.
+    throw new AppError(401, 'UNAUTHENTICATED', 'Session expirée ou invalide.', { reason });
   }
   return {
     id: String(claims.sub),
@@ -63,4 +71,18 @@ export function randomToken(bytes = 32): string {
 export async function sha256Hex(value: string): Promise<string> {
   const digest = await crypto.subtle.digest('SHA-256', enc.encode(value));
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/** Résumé non secret d'un jeton (forme, émetteur, origine autorisée, expiration) pour les journaux. */
+function describeToken(token: string): string {
+  const parts = token.split('.');
+  if (parts.length !== 3) return `forme: ${parts.length} partie(s), longueur ${token.length}`;
+  try {
+    const json = atob(parts[1].replace(/-/g, '+').replace(/_/g, '/'));
+    const p = JSON.parse(json) as Record<string, unknown>;
+    const exp = typeof p.exp === 'number' ? new Date(p.exp * 1000).toISOString() : '?';
+    return `iss=${String(p.iss)} azp=${String(p.azp)} exp=${exp}`;
+  } catch {
+    return 'charge utile illisible';
+  }
 }
