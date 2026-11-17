@@ -29,6 +29,7 @@ export async function authenticate(header: string | undefined, env: Env): Promis
   }
   let claims: Record<string, unknown> | null = null;
   let reason = 'token-unreadable';
+  let detail = '';
   try {
     const result = await verifyToken(token, {
       secretKey: env.CLERK_SECRET_KEY,
@@ -38,6 +39,7 @@ export async function authenticate(header: string | undefined, env: Env): Promis
     if (result.errors) {
       const e = (result.errors as unknown as Array<{ reason?: string; message?: string }>)[0];
       reason = e?.reason ?? 'token-invalid';
+      detail = `${e?.message ?? ''} — ${describeToken(token)}`;
       console.warn('Jeton refusé :', reason, '—', e?.message, '—', describeToken(token));
     } else {
       claims = result.data as Record<string, unknown>;
@@ -47,12 +49,14 @@ export async function authenticate(header: string | undefined, env: Env): Promis
     // (jeton mal formé, clé introuvable…) : on remonte la raison fournie par Clerk.
     const e = err as { reason?: string; message?: string };
     reason = e.reason ?? 'token-unreadable';
+    detail = `${(err as { name?: string }).name ?? 'Error'}: ${e.message ?? String(err)} — ${describeToken(token)}`;
     console.warn('Jeton refusé (exception) :', reason, '—', e.message, '—', describeToken(token));
   }
   if (!claims || typeof claims.sub !== 'string') {
     // La raison (codes Clerk, ex. token-expired) ne révèle rien de secret et
     // facilite le diagnostic depuis l'onglet Réseau du navigateur.
-    throw new AppError(401, 'UNAUTHENTICATED', 'Session expirée ou invalide.', { reason });
+    // `detail` : message d'erreur et résumé du jeton (iss, azp, exp), sans secret.
+    throw new AppError(401, 'UNAUTHENTICATED', 'Session expirée ou invalide.', { reason, detail: detail.slice(0, 300) });
   }
   return {
     id: String(claims.sub),

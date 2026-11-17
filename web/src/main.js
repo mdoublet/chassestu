@@ -104,6 +104,7 @@ async function render() {
         'main.page.narrow',
         h('p.error', errorMessage(err)),
         reason ? h('p.small.muted', `Détail technique : ${reason}`) : null,
+        err?.details?.detail ? h('p.small.muted', err.details.detail) : null,
         h(
           'div.buttons',
           h('button', { onclick: () => location.reload() }, 'Réessayer'),
