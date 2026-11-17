@@ -27,12 +27,19 @@ export async function authenticate(header: string | undefined, env: Env): Promis
   if (!env.CLERK_SECRET_KEY && !env.CLERK_JWT_KEY) {
     throw new AppError(500, 'MISCONFIGURED', 'Clerk n’est pas configuré (CLERK_JWT_KEY ou CLERK_SECRET_KEY).');
   }
-  const result = await verifyToken(token, {
-    secretKey: env.CLERK_SECRET_KEY,
-    jwtKey: env.CLERK_JWT_KEY,
-    authorizedParties: env.CLERK_AUTHORIZED_PARTIES?.split(',').map((s) => s.trim()).filter(Boolean),
-  });
-  const claims = (result.errors ? null : result.data) as Record<string, unknown> | null;
+  let claims: Record<string, unknown> | null = null;
+  try {
+    const result = await verifyToken(token, {
+      secretKey: env.CLERK_SECRET_KEY,
+      jwtKey: env.CLERK_JWT_KEY,
+      authorizedParties: env.CLERK_AUTHORIZED_PARTIES?.split(',').map((s) => s.trim()).filter(Boolean),
+    });
+    claims = (result.errors ? null : result.data) as Record<string, unknown> | null;
+    if (result.errors) console.warn('Jeton refusé :', String(result.errors));
+  } catch (err) {
+    // Jeton mal formé : verifyToken lève une exception au lieu de renvoyer `errors`.
+    console.warn('Jeton illisible :', (err as Error).message);
+  }
   if (!claims || typeof claims.sub !== 'string') {
     throw new AppError(401, 'UNAUTHENTICATED', 'Session expirée ou invalide.');
   }
