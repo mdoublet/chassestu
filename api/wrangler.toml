@@ -19,3 +19,7 @@ ENVIRONMENT = "production"
 AUTH_MODE = "clerk"
 
 # Développement local : `npm run dev:api` lit api/.dev.vars (ignoré par git).
+
+# Journaux du Worker (onglet Observability du tableau de bord).
+[observability]
+enabled = true
