@@ -39,6 +39,6 @@ export const api = {
   post: (path, body = {}, opts) => request('POST', path, body, opts),
   patch: (path, body, opts) => request('PATCH', path, body, opts),
   put: (path, body, opts) => request('PUT', path, body, opts),
-  del: (path, opts) => request('DELETE', path, undefined, opts),
+  del: (path, opts) => request('DELETE', path, opts?.body, opts),
   raw: (path) => request('GET', path, undefined, { raw: true }),
 };

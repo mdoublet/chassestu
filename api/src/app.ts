@@ -14,6 +14,8 @@ import { planRoutes } from './routes/plans';
 import { huntRoutes } from './routes/hunts';
 import { fetchBuildingPages, type Bbox } from './bdtopo';
 import { ensureMigrated } from './migrate';
+import { flushPushQueue } from './routes/notifications';
+import { notificationRoutes } from './routes/notifications';
 
 export interface PoolProvider {
   /** Fournit un pool pour la requête ; `dispose` est appelé à la fin. */
@@ -22,6 +24,8 @@ export interface PoolProvider {
 
 export interface AppOptions {
   fetchBuildingPages?: (bbox: Bbox) => Promise<string[]>;
+  /** fetch pour les envois push (tests). */
+  pushFetch?: (input: string, init?: RequestInit) => Promise<Response>;
   /** Ne pas appliquer les migrations embarquées (tests qui gèrent leur base). */
   skipMigrations?: boolean;
 }
@@ -50,18 +54,22 @@ export function createApp(getPool: PoolProvider, options: AppOptions = {}) {
     const { pool, dispose } = getPool(c.env);
     c.set('pool', pool);
     c.set('fetchBuildingPages', options.fetchBuildingPages ?? ((bbox) => fetchBuildingPages(bbox)));
+    c.set('pushQueue', []);
+    c.set('pushFetch', options.pushFetch ?? ((input, init) => fetch(input, init)));
     try {
       // Schéma à jour avant de servir (migrations embarquées, une fois par instance).
       if (!options.skipMigrations) await ensureMigrated(pool);
       await next();
     } finally {
-      if (dispose) {
-        const p = dispose();
-        try {
-          c.executionCtx.waitUntil(p);
-        } catch {
-          await p; // hors Workers (tests)
-        }
+      // Notifications push en file : envoyées après la réponse (arrière-plan), puis
+      // fermeture de la connexion.
+      const queue = c.get('pushQueue');
+      const work = (queue.length ? flushPushQueue(c, queue).catch((err) => console.error('Envoi push :', err)) : Promise.resolve())
+        .then(() => dispose?.());
+      try {
+        c.executionCtx.waitUntil(work);
+      } catch {
+        await work; // hors Workers (tests)
       }
     }
   });
@@ -73,6 +81,7 @@ export function createApp(getPool: PoolProvider, options: AppOptions = {}) {
   app.route('/api', dwellingRoutes);
   app.route('/api', planRoutes);
   app.route('/api', huntRoutes);
+  app.route('/api', notificationRoutes);
 
   app.notFound((c) => c.json({ code: 'NOT_FOUND', message: 'Route inconnue.' }, 404));
 

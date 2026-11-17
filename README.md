@@ -244,6 +244,14 @@ notifications = messages prêts à copier pour WhatsApp à chaque étape ; voisi
 = postes précédent et suivant dans la ligne du jour (tous si l'association le
 permet).
 
+**Alertes et notifications** : à chaque étape d'une battue (convocation,
+annulation, attribution du poste, début, fin), chaque participant concerné
+reçoit une alerte dans l'application (cloche 🔔) et, s'il les a activées, une
+notification push (Web Push chiffré, RFC 8291/8292, clés VAPID générées par
+l'API au premier usage). Sur iPhone, le push exige l'application installée
+sur l'écran d'accueil (iOS 16.4+). Les invités sans compte reçoivent toujours
+leur lien à la main.
+
 **Migrations** : l'API applique elle-même les migrations en attente à la
 première requête après un déploiement (`api/src/migrate.ts`, migrations
 embarquées générées par `npm run db:bundle`).

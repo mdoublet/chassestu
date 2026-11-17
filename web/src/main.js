@@ -4,6 +4,7 @@ import { api } from './api.js';
 import { state } from './state.js';
 import { h, errorMessage, toast, ROLE_LABELS } from './ui.js';
 import { APP_NAME, navItems, activeHref } from './lib/nav.js';
+import { registerServiceWorker, refreshPushSubscription } from './push-client.js';
 import { homeView } from './views/home.js';
 import { membersView } from './views/members.js';
 import { settingsView } from './views/settings.js';
@@ -21,6 +22,7 @@ const routes = [
   { re: /^#\/battues$/, view: (el) => import('./views/hunts.js').then((m) => m.huntsView(el)), tenant: true },
   { re: /^#\/battues\/([0-9a-f-]{36})\/ma-fiche$/, view: (el, id) => import('./views/sheet.js').then((m) => m.memberSheetView(el, id)), tenant: true },
   { re: /^#\/battues\/([0-9a-f-]{36})$/, view: (el, id) => import('./views/hunt.js').then((m) => m.huntView(el, id)), tenant: true, full: true },
+  { re: /^#\/notifications$/, view: (el, opts) => import('./views/notifications.js').then((m) => m.notificationsView(el, opts)) },
   { re: /^#\/plans$/, view: (el) => import('./views/plans.js').then((m) => m.plansView(el)), tenant: true, roles: ['president', 'responsable'], full: true },
   { re: /^#\/membres$/, view: membersView, tenant: true, roles: ['president', 'responsable'] },
   { re: /^#\/parametres$/, view: settingsView, tenant: true, roles: ['president'] },
@@ -30,7 +32,30 @@ const routes = [
 
 export async function refreshMe() {
   state.setMe(await api.get('/me', { tenant: false }));
+  refreshPushSubscription();
+  pollUnread();
 }
+
+// ---------------------------------------------------------------------------
+// Cloche : nombre d'alertes non lues (mise à jour régulière et à chaque push)
+// ---------------------------------------------------------------------------
+let unread = 0;
+async function pollUnread() {
+  if (!state.user) return;
+  try {
+    ({ unread } = await api.get('/notifications/unread', { tenant: false }));
+  } catch {
+    return;
+  }
+  for (const el of document.querySelectorAll('.bell-count')) {
+    el.textContent = unread > 9 ? '9+' : String(unread);
+    el.hidden = unread === 0;
+  }
+  for (const el of document.querySelectorAll('.bell')) el.setAttribute('aria-label', `Alertes : ${unread} non lue(s)`);
+}
+setInterval(() => document.visibilityState === 'visible' && pollUnread(), 60_000);
+document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && pollUnread());
+window.addEventListener('alerts-changed', pollUnread);
 
 function header() {
   const tenantSelect =
@@ -76,6 +101,8 @@ function header() {
     tenantSelect,
     state.role ? h('span.role-badge', ROLE_LABELS[state.role]) : null,
     h('span.spacer'),
+    state.user ? h('a.bell', { href: '#/notifications', title: 'Alertes', 'aria-label': `Alertes : ${unread} non lue(s)` },
+      '🔔', h('span.bell-count', { hidden: unread === 0 }, unread > 9 ? '9+' : String(unread))) : null,
     items.length ? h('a.home-button', { href: '#/', title: 'Accueil', 'aria-label': 'Accueil' }, '🏠') : null,
     nav
       ? h('button.menu-button', {
@@ -180,6 +207,26 @@ async function render() {
 }
 
 window.addEventListener('hashchange', render);
+
+// Ouverture depuis une notification : « /?tenant=…#/battues/… » sélectionne l'association.
+{
+  const tenant = new URLSearchParams(location.search).get('tenant');
+  if (tenant) {
+    state.setTenant(tenant);
+    history.replaceState(null, '', `/${location.hash}`);
+  }
+}
+registerServiceWorker();
+navigator.serviceWorker?.addEventListener('message', (e) => {
+  if (e.data?.type === 'notification') pollUnread();
+  if (e.data?.type === 'open') {
+    const url = new URL(e.data.url);
+    const tenant = url.searchParams.get('tenant');
+    if (tenant && tenant !== state.tenantId) state.setTenant(tenant);
+    if (location.hash === url.hash) render();
+    else location.hash = url.hash;
+  }
+});
 
 (async () => {
   try {

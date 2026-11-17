@@ -12,6 +12,7 @@ import { randomToken, sha256Hex } from '../auth';
 import { geomOut, geomParam, pointSchema } from '../geo';
 import { loadPlans } from './plans';
 import { drawAssignments, proposePosts } from '../proposal';
+import { notifyUsers } from './notifications';
 
 export const huntRoutes = new Hono<AppEnv>();
 
@@ -77,6 +78,55 @@ async function huntDetail(tx: Tx, id: string) {
     proposal = proposePosts(hunters, plans, await availablePostIds(tx, hunt.territory_id));
   }
   return { hunt, participants, day_post_ids: dayPosts, proposal };
+}
+
+// ---------------------------------------------------------------------------
+// Alertes aux participants (cloche + notification push)
+// ---------------------------------------------------------------------------
+
+/** « samedi 5 décembre » (date stockée sans heure : pas de fuseau). */
+function frenchDate(iso: string) {
+  const [y, m, d] = iso.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' });
+}
+const frenchTime = (hhmm: string) => {
+  const [h, m] = hhmm.split(':');
+  return `${Number(h)}h${m === '00' ? '' : m}`;
+};
+
+type HuntEvent = 'convocation' | 'annulation' | 'attributions' | 'debut' | 'fin';
+
+async function notifyHunt(c: Context<AppEnv>, tx: Tx, huntId: string, event: HuntEvent) {
+  const hunt = await loadHunt(tx, huntId);
+  const where = `${hunt.territory_name}`;
+  const rdv = `RDV ${frenchTime(hunt.meeting_time)}${hunt.meeting_place ? `, ${hunt.meeting_place}` : ''}`;
+  // Convocation et annulation : tous les convoqués ; ensuite : les présents.
+  const people = await tx.query<{ user_id: string; role: string; post_number: number | null; post_name: string | null }>(
+    `SELECT hp.user_id, hp.role, p.number AS post_number, p.name AS post_name
+       FROM hunt_participants hp
+       LEFT JOIN hunt_assignments a ON a.participant_id = hp.id
+       LEFT JOIN posts p ON p.id = a.post_id
+      WHERE hp.hunt_id = $1 AND hp.user_id IS NOT NULL
+        AND ($2 OR hp.present)`,
+    [huntId, event === 'convocation' || event === 'annulation'],
+  );
+  const items = people.map((u) => {
+    switch (event) {
+      case 'convocation':
+        return { user_id: u.user_id, title: `Battue le ${frenchDate(hunt.date)}`, body: `${where} · ${rdv}. Répondez présent ou absent.` };
+      case 'annulation':
+        return { user_id: u.user_id, title: 'Battue annulée', body: `La battue du ${frenchDate(hunt.date)} (${where}) est annulée.` };
+      case 'attributions':
+        return u.post_number
+          ? { user_id: u.user_id, title: `Votre poste : ${u.post_number}${u.post_name ? ` · ${u.post_name}` : ''}`, body: `${where} : chemin, voisins et consignes dans l’application.` }
+          : { user_id: u.user_id, title: 'Postes attribués', body: u.role === 'poste' ? `${where} : pas de poste pour vous pour l’instant, voyez le responsable.` : `${where} : vous êtes ${u.role === 'traqueur' ? 'traqueur' : 'chef de ligne'}.` };
+      case 'debut':
+        return { user_id: u.user_id, title: 'Début de battue', body: `${where} : la traque commence. Restez à votre poste, angles de tir respectés.` };
+      case 'fin':
+        return { user_id: u.user_id, title: 'Fin de battue', body: `${where} : déchargez vos armes et rejoignez le rendez-vous.` };
+    }
+  });
+  return notifyUsers(c, tx, huntId, event, items);
 }
 
 // ---------------------------------------------------------------------------
@@ -246,6 +296,7 @@ huntRoutes.post('/hunts/:id/actions/:action{publier|demarrer|debut|fin|annuler|b
           throw new AppError(422, 'HUNT_NO_PARTICIPANT', 'Convoquez au moins un chasseur avant de publier.');
         }
         await tx.execute(`UPDATE hunts SET status = 'publiee' WHERE id = $1`, [id]);
+        await notifyHunt(c, tx, id, 'convocation');
         break;
       case 'brouillon':
         await tx.execute(`UPDATE hunts SET status = 'brouillon' WHERE id = $1`, [id]);
@@ -261,12 +312,16 @@ huntRoutes.post('/hunts/:id/actions/:action{publier|demarrer|debut|fin|annuler|b
           throw new AppError(422, 'ASSIGNMENTS_NOT_PUBLISHED', 'Publiez les attributions avant de lancer la battue.');
         }
         await tx.execute('UPDATE hunts SET started_at = coalesce(started_at, now()) WHERE id = $1', [id]);
+        if (!hunt.started_at) await notifyHunt(c, tx, id, 'debut');
         break;
       case 'fin':
         await tx.execute(`UPDATE hunts SET status = 'terminee' WHERE id = $1`, [id]);
+        await notifyHunt(c, tx, id, 'fin');
         break;
       case 'annuler':
+        const wasPublished = hunt.status === 'publiee';
         await tx.execute(`UPDATE hunts SET status = 'annulee' WHERE id = $1`, [id]);
+        if (wasPublished) await notifyHunt(c, tx, id, 'annulation'); // un brouillon n'a prévenu personne
         break;
     }
     return c.json(await huntDetail(tx, id));
@@ -357,7 +412,8 @@ huntRoutes.post('/hunts/:id/publish-assignments', (c) => {
     );
     const links = [];
     for (const g of guests) links.push({ participant_id: g.id, name: g.guest_name, url: await newGuestLink(tx, g.id, c.env) });
-    return c.json({ ...(await huntDetail(tx, id)), guest_links: links });
+    const notified = await notifyHunt(c, tx, id, 'attributions');
+    return c.json({ ...(await huntDetail(tx, id)), guest_links: links, notified });
   });
 });
 

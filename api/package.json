@@ -21,6 +21,7 @@
     "wrangler": "^4.162.0"
   },
   "dependencies": {
+    "@block65/webcrypto-web-push": "^2.0.0",
     "@clerk/backend": "^3.29.0",
     "@neondatabase/serverless": "^1.2.1",
     "hono": "^4.13.18",

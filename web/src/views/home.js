@@ -2,6 +2,7 @@ import { api } from '../api.js';
 import { providerName } from '../auth.js';
 import { state } from '../state.js';
 import { h, errorMessage, toast, ROLE_LABELS } from '../ui.js';
+import { pushCard } from './notifications.js';
 
 export async function homeView(main, { refreshMe, rerender }) {
   // Profil incomplet : le nom est indispensable (attributions, liste des membres).
@@ -71,6 +72,13 @@ export async function homeView(main, { refreshMe, rerender }) {
       h('nav.tiles', tiles.map((t) => h('a.tile', { href: t.href }, h('strong', t.title), h('span', t.text)))),
       h('p.muted.small', 'Le guidage jusqu’au poste (voiture puis à pied, GPS) arrive dans la prochaine version.'),
     );
+  }
+
+  // Proposer d'activer les notifications tant qu'elles ne le sont pas sur cet appareil.
+  if (state.tenants.length) {
+    const card = pushCard((status) => { if (status === 'enabled') setTimeout(() => card.remove(), 2500); });
+    main.append(card);
+    import('../push-client.js').then(async ({ pushStatus }) => { if ((await pushStatus()) === 'enabled') card.remove(); });
   }
 
   if (state.user.is_super_admin) {

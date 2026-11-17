@@ -162,14 +162,10 @@ export async function huntView(main, huntId) {
     const { hunt } = hv.detail;
     const go = (action, msg, confirmText) => async () => {
       if (confirmText && !(await confirmDialog(STATUS_LABELS[hunt.status], confirmText, 'Confirmer'))) return;
-      const res = await act(() => api.post(`/hunts/${huntId}/actions/${action}`), msg);
-      const share = { publier: 'convocation', debut: 'debut', fin: 'fin', annuler: 'annulation' }[action];
-      if (res && share) {
-        await modal('Prévenir les chasseurs', [h('p', 'Copiez ce message et collez-le dans le groupe WhatsApp :'), h('textarea.copy', { readOnly: true, rows: 5 }, whatsappMessage(share, res.hunt, link()))], [
-          { label: 'Copier', primary: true, onClick: () => copyText(whatsappMessage(share, res.hunt, link())) },
-          { label: 'Fermer', value: null },
-        ]);
-      }
+      // Les chasseurs sont prévenus automatiquement (alerte + notification) :
+      // plus de message à copier. Le bouton WhatsApp reste en dépannage.
+      const notifies = ['publier', 'debut', 'fin'].includes(action) || (action === 'annuler' && hunt.status === 'publiee');
+      await act(() => api.post(`/hunts/${huntId}/actions/${action}`), notifies ? `${msg} Les chasseurs sont prévenus dans l’application.` : msg);
     };
     const buttons = {
       brouillon: [h('button.primary', { onclick: go('publier', 'Battue publiée.') }, 'Publier la battue'),
@@ -178,7 +174,7 @@ export async function huntView(main, huntId) {
           try { await api.del(`/hunts/${huntId}`); location.hash = '#/battues'; } catch (err) { toast(errorMessage(err), 'error'); }
         } }, 'Supprimer')],
       publiee: [h('button.primary', { onclick: go('demarrer', 'Rond du matin : cochez les présents.') }, 'Démarrer (rond du matin)'),
-        shareButton('convocation', 'Relancer sur WhatsApp'),
+        shareButton('convocation', 'Message WhatsApp (dépannage)'),
         h('button', { onclick: go('brouillon') }, 'Repasser en brouillon'),
         h('button.danger', { onclick: go('annuler', 'Battue annulée.', 'Annuler la battue ? Les convoqués devront être prévenus.') }, 'Annuler la battue')],
       en_cours: [
@@ -258,7 +254,7 @@ export async function huntView(main, huntId) {
         unassigned.length ? h('p.alert.warn', `Sans poste : ${unassigned.map((p) => p.name).join(', ')}.`) : null,
         h('div.row',
           h('button.primary', { disabled: !dayPosts.length, onclick: publishAssignments }, hunt.assignments_published_at ? 'Republier les attributions' : 'Publier les attributions'),
-          hunt.assignments_published_at ? shareButton('attributions') : null,
+          hunt.assignments_published_at ? shareButton('attributions', 'Message WhatsApp (dépannage)') : null,
         ),
         hunt.assignments_published_at ? h('p.small.muted', `Publiées à ${new Date(hunt.assignments_published_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })} : chaque chasseur voit son poste.`) : null,
         guestLinksSection(),
@@ -269,16 +265,16 @@ export async function huntView(main, huntId) {
   async function publishAssignments() {
     const { unassigned } = postedSummary(hv.detail.participants);
     if (unassigned.length && !(await confirmDialog('Chasseurs sans poste', `${unassigned.map((p) => p.name).join(', ')} n’ont pas de poste. Publier quand même ?`, 'Publier'))) return;
-    const res = await act(() => api.post(`/hunts/${huntId}/publish-assignments`), 'Attributions publiées.');
+    const res = await act(() => api.post(`/hunts/${huntId}/publish-assignments`));
     if (!res) return;
-    const message = whatsappMessage('attributions', res.hunt, link());
-    await modal('Attributions publiées', [
-      h('p', 'Message pour le groupe WhatsApp :'),
-      h('textarea.copy', { readOnly: true, rows: 3 }, message),
-      h('button', { type: 'button', onclick: () => copyText(message) }, 'Copier le message'),
-      res.guest_links.length ? h('h3', 'Liens personnels des invités (à envoyer à chacun, valables pour cette battue)') : null,
-      res.guest_links.map((g) => h('div.row', h('span', g.name), h('button', { type: 'button', onclick: () => copyText(`${g.name}, voici votre poste pour la battue : ${g.url}`) }, 'Copier le lien'))),
-    ]);
+    toast(`Attributions publiées : ${res.notified} chasseur(s) prévenu(s) dans l’application.`);
+    // Les invités sans compte ne reçoivent pas d'alerte : leur lien reste à envoyer.
+    if (res.guest_links.length) {
+      await modal('Liens des invités', [
+        h('p', 'Les invités sans compte ne reçoivent pas d’alerte : envoyez à chacun son lien personnel (valable pour cette battue).'),
+        res.guest_links.map((g) => h('div.row', h('span', g.name), h('button', { type: 'button', onclick: () => copyText(`${g.name}, voici votre poste pour la battue : ${g.url}`) }, 'Copier le lien'))),
+      ]);
+    }
   }
 
   function guestLinksSection() {

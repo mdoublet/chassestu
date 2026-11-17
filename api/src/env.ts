@@ -1,5 +1,6 @@
 import type { DbPool } from './db';
 import type { Bbox } from './bdtopo';
+import type { PushTarget } from './push';
 
 export interface Env {
   /** Chaîne de connexion Neon (secret). */
@@ -28,6 +29,10 @@ export type AppVariables = {
   pool: DbPool;
   /** Récupère les pages GeoJSON des bâtiments BD TOPO (remplaçable dans les tests). */
   fetchBuildingPages: (bbox: Bbox) => Promise<string[]>;
+  /** Notifications push à envoyer après validation de la transaction. */
+  pushQueue: PushTarget[];
+  /** fetch utilisé pour les envois push (remplaçable dans les tests). */
+  pushFetch: (input: string, init?: RequestInit) => Promise<Response>;
 };
 
 export type AppEnv = { Bindings: Env; Variables: AppVariables };

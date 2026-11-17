@@ -21,8 +21,17 @@ export const bdtopo = {
   fail: false,
   calls: 0,
 };
+/** Faux service push : enregistre les envois ; statut de réponse réglable. */
+export const pushService = {
+  calls: [] as { url: string; init: RequestInit }[],
+  status: 201,
+};
 export const app = createApp(() => ({ pool }), {
   skipMigrations: true, // la base de test est migrée par global-setup
+  pushFetch: async (url, init) => {
+    pushService.calls.push({ url, init: init ?? {} });
+    return new Response(null, { status: pushService.status });
+  },
   fetchBuildingPages: async () => {
     bdtopo.calls += 1;
     if (bdtopo.fail) {
