@@ -3,6 +3,10 @@ main = "src/index.ts"
 compatibility_date = "2026-10-01"
 compatibility_flags = ["nodejs_compat"]
 
+# Adresse publique de l'API : https://chassestu-api.<compte>.workers.dev
+workers_dev = true
+preview_urls = false
+
 # Les variables définies dans le tableau de bord Cloudflare (APP_ORIGIN,
 # CLERK_AUTHORIZED_PARTIES) sont conservées à chaque déploiement.
 keep_vars = true
