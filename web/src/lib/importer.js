@@ -82,6 +82,8 @@ function line(coords) {
 /** Propose un type d'objet ; l'export de l'application porte `kind`. */
 function suggestKind(geometry, props) {
   const k = String(props.kind ?? '').toLowerCase();
+  // Données calculées par l'application : ne pas les réimporter comme des objets dessinés.
+  if (k === 'zone_non_chassable') return 'ignore';
   if (geometry.type === 'Polygon') return k === 'reserve' ? 'reserve' : k === 'territoire' ? 'territory' : 'reserve';
   if (geometry.type === 'Point') return k === 'parking' || /parking|^p\b/i.test(props.name ?? '') ? 'parking' : 'post';
   if (geometry.type === 'LineString') return 'path';

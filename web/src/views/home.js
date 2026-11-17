@@ -37,7 +37,7 @@ export async function homeView(main, { refreshMe, rerender }) {
       h(
         'div.card',
         h('p', 'Vous n’êtes membre d’aucune association de chasse.'),
-        h('p', 'Demandez au président de votre association de vous envoyer un lien d’invitation, puis ouvrez-le sur ce téléphone.'),
+        h('p', 'Demandez au président de votre association de vous envoyer un lien d’invitation, puis ouvrez-le sur cet appareil.'),
       ),
     );
   } else {

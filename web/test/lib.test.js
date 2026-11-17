@@ -109,3 +109,22 @@ describe('historique d’annulation', () => {
     expect(h.resolve('x')).toBe('x');
   });
 });
+
+describe('règle des habitations (côté client)', () => {
+  const territory = { type: 'Polygon', coordinates: [[[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]]] };
+  const exclusion = { type: 'MultiPolygon', coordinates: [[[[0.4, 0.4], [0.6, 0.4], [0.6, 0.6], [0.4, 0.6], [0.4, 0.4]]]] };
+  const warning = { type: 'MultiPolygon', coordinates: [[[[0.3, 0.3], [0.7, 0.3], [0.7, 0.4], [0.3, 0.4], [0.3, 0.3]]]] };
+  const zones = { exclusion, warning, bufferM: 200, warningM: 50 };
+  it('refuse dans la zone d’exclusion, avertit dans la bande, accepte ailleurs', () => {
+    expect(checkPost([0.5, 0.5], territory, [], zones)).toMatchObject({ ok: false, code: 'POST_IN_EXCLUSION', message: 'À moins de 200 m d’une habitation' });
+    const w = checkPost([0.5, 0.35], territory, [], zones);
+    expect(w.ok).toBe(true);
+    expect(w.warning).toMatch(/Entre 200 et 250 m/);
+    expect(checkPost([0.1, 0.1], territory, [], zones)).toEqual({ ok: true });
+    expect(checkPost([0.5, 0.5], territory, [], {}).ok).toBe(true); // pas encore de zone
+  });
+  it('une zone non chassable exportée n’est pas réimportée', () => {
+    const fc = { type: 'FeatureCollection', features: [{ type: 'Feature', properties: { kind: 'zone_non_chassable' }, geometry: exclusion }] };
+    expect(parseGeoFile('x.geojson', JSON.stringify(fc)).map((i) => i.kind)).toEqual(['ignore']);
+  });
+});

@@ -25,6 +25,8 @@ async function seedCartography(user: string, tenant: string, lon: number) {
   expect(post.status).toBe(201);
   const inv = await api(user, 'POST', '/api/invitations', { tenant, body: {} });
   expect(inv.status).toBe(201);
+  const dwelling = await api(user, 'POST', `/api/territories/${id}/dwellings`, { tenant, body: { geom: point(lon + 0.015, 43.015), comment: 'Cabane' } });
+  expect(dwelling.status).toBe(201);
 }
 
 beforeAll(async () => {
@@ -60,7 +62,7 @@ describe('isolation entre tenants (RLS)', () => {
   });
 
   it('couvre bien les tables métier attendues', () => {
-    for (const t of ['memberships', 'invitations', 'audit_log', 'territories', 'reserve_zones', 'parkings', 'posts']) {
+    for (const t of ['memberships', 'invitations', 'audit_log', 'territories', 'reserve_zones', 'parkings', 'posts', 'dwellings', 'exclusion_zones']) {
       expect(tenantTables).toContain(t);
     }
   });

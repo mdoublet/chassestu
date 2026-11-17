@@ -1,4 +1,5 @@
 import type { DbPool } from './db';
+import type { Bbox } from './bdtopo';
 
 export interface Env {
   /** Chaîne de connexion Neon (secret). */
@@ -25,6 +26,8 @@ export interface AuthUser {
 export type AppVariables = {
   user: AuthUser;
   pool: DbPool;
+  /** Récupère les pages GeoJSON des bâtiments BD TOPO (remplaçable dans les tests). */
+  fetchBuildingPages: (bbox: Bbox) => Promise<string[]>;
 };
 
 export type AppEnv = { Bindings: Env; Variables: AppVariables };

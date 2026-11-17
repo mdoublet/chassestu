@@ -45,7 +45,7 @@ export async function settingsView(main, { refreshMe }) {
       'buffer_distance_m',
       'Distance de sécurité autour des habitations (m)',
       { type: 'number', min: 50, max: 1000, required: true },
-      '150 m par défaut (art. L.422-10 en ACCA) ; certains arrêtés imposent 200 m.',
+      '150 m par défaut (art. L.422-10 en ACCA) ; certains arrêtés imposent 200 m. Modifier cette distance recalcule les zones non chassables et marque invalides les postes devenus trop proches.',
     ),
     field('gps_tolerance_m', 'Tolérance GPS « sur le poste » (m)', { type: 'number', min: 5, max: 200, required: true }),
     field('position_retention_h', 'Conservation des positions GPS (heures)', { type: 'number', min: 1, max: 720, required: true }),

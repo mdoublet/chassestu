@@ -5,6 +5,7 @@ import type { Tx } from '../db';
 import { notFoundIfNull, parseId, tenantTx } from '../context';
 import { AppError } from '../errors';
 import { assertValidGeometry, geomOut, geomParam, lineSchema, pointSchema, polygonSchema } from '../geo';
+import { DWELLING_SELECT, importDwellings, type ImportReport } from './dwellings';
 
 export const cartoRoutes = new Hono<AppEnv>();
 
@@ -77,8 +78,12 @@ const KINDS: Record<string, FeatureKind> = {
     table: 'posts',
     label: 'Poste',
     geoms: { geom: 'Point', access_path: 'LineString' },
-    columns: ['id', 'territory_id', 'number', 'name', 'parking_id', 'instructions', 'active', 'updated_at'],
-    extraSelect: 'round(ST_Length(access_path::geography))::int AS access_path_length_m',
+    columns: ['id', 'territory_id', 'number', 'name', 'parking_id', 'instructions', 'active', 'invalid_reason', 'updated_at'],
+    // nearest_dwelling_m : renseigné si une habitation est à moins de distance + 50 m
+    // (bande d'avertissement : tir interdit en direction de l'habitation).
+    extraSelect: `round(ST_Length(access_path::geography))::int AS access_path_length_m,
+      floor(app.nearest_dwelling_m(territory_id, geom,
+        (SELECT buffer_distance_m + app.warning_margin_m() FROM tenants WHERE id = posts.tenant_id)))::int AS nearest_dwelling_m`,
     create: postFields.partial({ number: true, name: true, parking_id: true, access_path: true, instructions: true, active: true }).strict(),
     patch: postFields.partial().strict(),
   },
@@ -150,7 +155,42 @@ async function loadTerritory(tx: Tx, id: string) {
       ),
     ),
   );
-  return { territory, reserves, parkings, posts };
+  const dwellings = await tx.query(`SELECT ${DWELLING_SELECT} FROM dwellings WHERE territory_id = $1 ORDER BY created_at`, [id]);
+  // needs_refresh : bâtiments jamais importés, ou zone d'import trop petite
+  // (territoire agrandi, distance augmentée).
+  const exclusion = await tx.maybeOne(
+    `SELECT ${geomOut('z.geom', 'geom')}, ${geomOut('z.warning_geom', 'warning_geom')},
+            round(z.area_ha::numeric, 2)::float AS area_ha, z.buffer_distance_m,
+            app.warning_margin_m() AS warning_margin_m, z.computed_at, z.dwellings_refreshed_at,
+            (z.dwellings_refreshed_at IS NULL OR z.dwellings_extent IS NULL OR NOT ST_Covers(z.dwellings_extent,
+               ST_Buffer(t.geom::geography, z.buffer_distance_m + app.warning_margin_m())::geometry)) AS needs_refresh
+       FROM exclusion_zones z JOIN territories t ON t.id = z.territory_id
+      WHERE z.territory_id = $1`,
+    [id],
+  );
+  return { territory, reserves, parkings, posts, dwellings, exclusion };
+}
+
+/** Importe les bâtiments si besoin, sans faire échouer l'action en cours (service IGN capricieux). */
+async function autoImport(c: Parameters<typeof importDwellings>[0], territoryId: string, force: boolean) {
+  try {
+    if (!force) {
+      const needs = await tenantTx(c, null, (tx) =>
+        tx.one<{ needs: boolean }>(
+          `SELECT (z.dwellings_extent IS NULL OR NOT ST_Covers(z.dwellings_extent,
+                    ST_Buffer(t.geom::geography, z.buffer_distance_m + app.warning_margin_m())::geometry)) AS needs
+             FROM exclusion_zones z JOIN territories t ON t.id = z.territory_id WHERE z.territory_id = $1`,
+          [territoryId],
+        ),
+      );
+      if (!needs.needs) return { report: null as ImportReport | null, import_error: null as string | null };
+    }
+    return { report: await importDwellings(c, territoryId), import_error: null };
+  } catch (err) {
+    if (err instanceof AppError) return { report: null, import_error: err.message };
+    console.error('Import BD TOPO :', err);
+    return { report: null, import_error: 'Import des bâtiments impossible pour le moment : utilisez « Actualiser les bâtiments ».' };
+  }
 }
 
 cartoRoutes.get('/territories/:id', (c) => {
@@ -167,7 +207,11 @@ cartoRoutes.post('/territories', async (c) => {
       `INSERT INTO territories (${cols.join(', ')}) VALUES (${exprs.join(', ')}) RETURNING ${TERRITORY_SELECT}`,
       params,
     );
-    return c.json({ territory }, 201);
+    return territory;
+  }).then(async (territory) => {
+    // Import automatique des bâtiments BD TOPO autour du nouveau territoire.
+    const imported = await autoImport(c, territory.id, true);
+    return c.json({ territory, dwellings_import: imported.report, import_error: imported.import_error }, 201);
   });
 });
 
@@ -186,7 +230,11 @@ cartoRoutes.patch('/territories/:id', async (c) => {
       ),
       'Territoire',
     );
-    return c.json({ territory });
+    return territory;
+  }).then(async (territory) => {
+    // Contour agrandi au-delà de la zone importée : on complète les bâtiments.
+    const imported = body.geom ? await autoImport(c, id, false) : { report: null, import_error: null };
+    return c.json({ territory, dwellings_import: imported.report, import_error: imported.import_error });
   });
 });
 
@@ -203,10 +251,13 @@ cartoRoutes.delete('/territories/:id', (c) => {
 cartoRoutes.get('/territories/:id/export', (c) => {
   const id = parseId(c.req.param('id'));
   return tenantTx(c, null, async (tx) => {
-    const { territory, reserves, parkings, posts } = await loadTerritory(tx, id);
+    const { territory, reserves, parkings, posts, exclusion } = await loadTerritory(tx, id);
     const feature = (geometry: unknown, properties: Record<string, unknown>) => ({ type: 'Feature', geometry, properties });
     const features = [
       feature(territory.geom, { kind: 'territoire', name: territory.name, notes: territory.notes, area_ha: territory.area_ha }),
+      ...(exclusion?.geom
+        ? [feature(exclusion.geom, { kind: 'zone_non_chassable', distance_m: exclusion.buffer_distance_m, area_ha: exclusion.area_ha })]
+        : []),
       ...reserves.map((r) => feature(r.geom, { kind: 'reserve', name: r.name, reason: r.reason })),
       ...parkings.map((p) => feature(p.geom, { kind: 'parking', id: p.id, name: p.name })),
       ...posts.map((p) =>
@@ -228,7 +279,7 @@ cartoRoutes.get('/territories/:id/export', (c) => {
 // Réserves, parkings, postes (et chemins d'accès, portés par le poste)
 // ---------------------------------------------------------------------------
 
-cartoRoutes.post('/territories/:id/:kind', async (c) => {
+cartoRoutes.post('/territories/:id/:kind{reserves|parkings|posts}', async (c) => {
   const territoryId = parseId(c.req.param('id'));
   const kind = getKind(c.req.param('kind'));
   const body = kind.create.parse(await c.req.json());

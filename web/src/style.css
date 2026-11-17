@@ -162,3 +162,16 @@ ul.objects li { padding: 0.2rem 0; break-inside: avoid; }
 .post-icon.invalid span { background: #c92a2a; color: #fff; animation: pulse 0.6s infinite alternate; }
 .parking-icon span { background: #1c5fb8; color: #fff; border-radius: 6px; }
 @keyframes pulse { to { transform: scale(1.15); } }
+
+/* Lot 2 : zone non chassable, habitations, postes invalides */
+.exclusion-shape { fill: url(#hatch-orange); }
+.post-icon.warning span { box-shadow: 0 0 0 3px #e8a33d, 0 1px 4px rgb(0 0 0 / 0.4); }
+.post-icon.invalid-static span { background: #c92a2a; color: #fff; }
+.alert { margin: 0.25rem 0; padding: 0.4rem 0.6rem; border-radius: 6px; font-size: 0.875rem; }
+.alert.warn { background: color-mix(in srgb, var(--warn) 15%, transparent); }
+.alert.danger { background: color-mix(in srgb, var(--danger) 15%, transparent); color: var(--danger); }
+.alert.muted { background: color-mix(in srgb, var(--muted) 12%, transparent); }
+.zone-summary { border: 1px solid var(--border); border-radius: 8px; padding: 0.4rem 0.6rem; margin: 0.5rem 0; }
+.zone-summary p { margin: 0.25rem 0; }
+.swatch { display: inline-block; width: 14px; height: 14px; vertical-align: -2px; margin-right: 6px; border-radius: 3px; }
+.swatch.exclusion { background: repeating-linear-gradient(-45deg, #d9480f 0 2px, rgba(217, 72, 15, 0.12) 2px 7px); border: 1px solid #d9480f; }

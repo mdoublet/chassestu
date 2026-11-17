@@ -119,8 +119,12 @@ commande `npm run build -w web`, dossier de sortie `web/dist`. Variables :
 
 Si `npm run db:migrate` n'est pas utilisable, `db/neon-console.sql` contient
 toutes les migrations en une transaction : à coller une fois dans l'éditeur
-SQL de Neon, sur une base vide. Le régénérer avec `npm run db:bundle` après
-chaque nouvelle migration (`db:migrate` reconnaît ensuite ce qui est appliqué).
+SQL de Neon, sur une base vide. Pour une base existante, coller seulement le
+fichier de la nouvelle migration dans `db/neon-updates/` (il refuse de
+s'appliquer deux fois ou dans le désordre). Les régénérer avec
+`npm run db:bundle` après chaque nouvelle migration ; `db:migrate` reconnaît
+ensuite ce qui est appliqué. **Appliquer la migration avant de déployer le
+code qui en dépend.**
 
 ## Développement local
 
@@ -185,6 +189,29 @@ ALTER DATABASE postgis_template IS_TEMPLATE true;
 Également : annulation Ctrl+Z (50 pas), accrochage aux sommets, contrôle du
 poste pendant le glisser-déposer (client) et à l'enregistrement (PostGIS),
 journal d'audit de la cartographie et des appartenances.
+
+**Lot 2 — Règle des 150 m**
+
+- [x] Les bâtiments BD TOPO de l'emprise élargie sont importés, y compris ceux situés hors du territoire (import automatique à la création du territoire, bouton « Actualiser les bâtiments »).
+- [x] La zone d'exclusion s'affiche avec sa surface en hectares (et le % du territoire).
+- [x] Un poste placé à 140 m d'une habitation est refusé côté client et côté serveur ; à 170 m il est accepté avec avertissement.
+- [x] Ignorer un bâtiment exige une raison et apparaît dans le journal d'audit.
+- [x] Passer buffer_distance_m de 150 à 200 recalcule les zones et invalide les postes concernés.
+
+Choix du lot 2 :
+- `exclusion_zones` est une **table** recalculée par déclencheur, pas une vue
+  matérialisée : une vue matérialisée ne supporte pas la RLS.
+- Bande d'avertissement = distance minimale + 50 m (150 → 200 m par défaut ;
+  200 → 250 m si la distance passe à 200 m).
+- Un poste rendu illégal (nouvelle habitation, distance augmentée) est marqué
+  invalide, pas supprimé ; il reste modifiable et redevient valide une fois déplacé.
+- Un bâtiment disparu de la BD TOPO reste compté (prudence) et est signalé
+  « à vérifier » ; seul le président peut l'ignorer.
+- Bâtiments importés dans un rayon de 300 m autour du territoire (au moins
+  distance + 50 m), pour ne pas réimporter si la distance passe à 200 m.
+- Service WFS de l'IGN parfois surchargé : nouvelles tentatives, et le
+  territoire est créé même si l'import échoue (bouton « Actualiser » ensuite).
+- Test d'intégration avec le vrai service IGN : `IGN=1 npm test -w api`.
 
 **Pas encore fait** (prévu dans la spécification, hors lots 0-1 ou reporté) :
 limitation de débit de l'API, consultation des journaux par le super-admin,

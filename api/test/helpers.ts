@@ -15,7 +15,44 @@ export const env: Env = {
   APP_ORIGIN: 'http://app.test',
 };
 
-export const app = createApp(() => ({ pool }));
+/** Pages WFS renvoyées par le faux service BD TOPO (modifiable par les tests). */
+export const bdtopo = {
+  pages: [JSON.stringify({ type: 'FeatureCollection', numberMatched: 0, features: [] })],
+  fail: false,
+  calls: 0,
+};
+export const app = createApp(() => ({ pool }), {
+  fetchBuildingPages: async () => {
+    bdtopo.calls += 1;
+    if (bdtopo.fail) {
+      const { AppError } = await import('../src/errors');
+      throw new AppError(502, 'BDTOPO_UNAVAILABLE', 'Le service des bâtiments de l’IGN ne répond pas.');
+    }
+    return bdtopo.pages;
+  },
+});
+
+/** Bâtiment carré de `side` mètres centré sur (lon, lat), au format d'une page WFS. */
+export function building(cleabs: string, lon: number, lat: number, props: Record<string, unknown> = {}, side = 10) {
+  const dLat = side / 2 / 111_195;
+  const dLon = side / 2 / (111_195 * Math.cos((lat * Math.PI) / 180));
+  return {
+    type: 'Feature',
+    id: `batiment.${cleabs}`,
+    geometry: {
+      type: 'MultiPolygon',
+      coordinates: [[[[lon - dLon, lat - dLat, 100], [lon + dLon, lat - dLat, 100], [lon + dLon, lat + dLat, 100], [lon - dLon, lat + dLat, 100], [lon - dLon, lat - dLat, 100]]]],
+    },
+    properties: { cleabs, nature: 'Indifférenciée', usage_1: 'Résidentiel', usage_2: null, etat_de_l_objet: 'En service', nombre_de_logements: 1, ...props },
+  };
+}
+
+export function wfsPage(features: unknown[]) {
+  return JSON.stringify({ type: 'FeatureCollection', numberMatched: features.length, features });
+}
+
+/** Décale un point de `meters` vers l'est. */
+export const east = (lon: number, lat: number, meters: number) => lon + meters / (111_195 * Math.cos((lat * Math.PI) / 180));
 
 export interface ApiResult<T = any> {
   status: number;

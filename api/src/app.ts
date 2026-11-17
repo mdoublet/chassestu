@@ -9,13 +9,19 @@ import { meRoutes } from './routes/me';
 import { tenantRoutes } from './routes/tenants';
 import { invitationRoutes } from './routes/invitations';
 import { cartoRoutes } from './routes/carto';
+import { dwellingRoutes } from './routes/dwellings';
+import { fetchBuildingPages, type Bbox } from './bdtopo';
 
 export interface PoolProvider {
   /** Fournit un pool pour la requête ; `dispose` est appelé à la fin. */
   (env: Env): { pool: DbPool; dispose?: () => Promise<void> };
 }
 
-export function createApp(getPool: PoolProvider) {
+export interface AppOptions {
+  fetchBuildingPages?: (bbox: Bbox) => Promise<string[]>;
+}
+
+export function createApp(getPool: PoolProvider, options: AppOptions = {}) {
   const app = new Hono<AppEnv>();
 
   app.use('/api/*', async (c, next) => {
@@ -35,6 +41,7 @@ export function createApp(getPool: PoolProvider) {
     c.set('user', await authenticate(c.req.header('Authorization'), c.env));
     const { pool, dispose } = getPool(c.env);
     c.set('pool', pool);
+    c.set('fetchBuildingPages', options.fetchBuildingPages ?? ((bbox) => fetchBuildingPages(bbox)));
     try {
       await next();
     } finally {
@@ -53,6 +60,7 @@ export function createApp(getPool: PoolProvider) {
   app.route('/api', tenantRoutes);
   app.route('/api', invitationRoutes);
   app.route('/api', cartoRoutes);
+  app.route('/api', dwellingRoutes);
 
   app.notFound((c) => c.json({ code: 'NOT_FOUND', message: 'Route inconnue.' }, 404));
 
