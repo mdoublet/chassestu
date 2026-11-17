@@ -11,9 +11,14 @@ export const authMode = CLERK_KEY ? 'clerk' : 'dev';
 
 export async function initAuth() {
   if (!CLERK_KEY) return;
-  const [{ Clerk }, { frFR }] = await Promise.all([import('@clerk/clerk-js'), import('@clerk/localizations')]);
+  // Depuis clerk-js 6, les écrans (formulaire de connexion…) sont dans @clerk/ui.
+  const [{ Clerk }, { ui }, { frFR }] = await Promise.all([
+    import('@clerk/clerk-js'),
+    import('@clerk/ui'),
+    import('@clerk/localizations'),
+  ]);
   clerk = new Clerk(CLERK_KEY);
-  await clerk.load({ localization: frFR });
+  await clerk.load({ ui: { ClerkUI: ui.ClerkUI }, localization: frFR });
 }
 
 function devUser() {
