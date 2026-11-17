@@ -164,3 +164,29 @@ describe('grille des plans de couverture', () => {
     expect(selectable({ active: false, invalid_reason: null })).toBe(false);
   });
 });
+
+import { formatHuntDate, formatTime, whatsappMessage, postedSummary } from '../src/lib/hunts.js';
+describe('battues : libellés et messages', () => {
+  it('date et heure en français, sans décalage de fuseau', () => {
+    expect(formatHuntDate('2026-12-05')).toBe('samedi 5 décembre 2026');
+    expect(formatTime('07:45')).toBe('7h45');
+    expect(formatTime('08:00')).toBe('8h');
+    expect(formatTime('13:05')).toBe('13h05');
+  });
+  it('message de convocation pour WhatsApp avec le lien', () => {
+    const msg = whatsappMessage('convocation', { date: '2026-12-05', meeting_time: '07:45', meeting_place: 'Cabane', territory_name: 'Grand bois' }, 'https://x/#/battues/1');
+    expect(msg).toMatch(/Grand bois/);
+    expect(msg).toMatch(/samedi 5 décembre 2026/);
+    expect(msg).toMatch(/https:\/\/x\/#\/battues\/1/);
+  });
+  it('postés présents sans poste', () => {
+    const s = postedSummary([
+      { present: true, role: 'poste', post_id: 'a' },
+      { present: true, role: 'poste', post_id: null, name: 'B' },
+      { present: true, role: 'traqueur', post_id: null },
+      { present: false, role: 'poste', post_id: null },
+    ]);
+    expect(s.posted).toBe(2);
+    expect(s.unassigned.map((p) => p.name)).toEqual(['B']);
+  });
+});

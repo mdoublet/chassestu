@@ -230,6 +230,24 @@ silencieuse) ; renuméroter, désactiver ou supprimer un poste utilisé dans des
 plans demande confirmation. La proposition des postes selon l'effectif du jour
 relève du lot 4.
 
+**Lot 4 — Battue et attribution**
+
+- [x] Avec 6 postés présents, les postes 1, 3, 5, 8, 10 et 13 sont proposés.
+- [x] Avec 7 postés et aucun plan pour 7, le plan à 6 est proposé et le responsable ajoute un poste.
+- [x] Le tirage au sort respecte les postes verrouillés.
+- [x] Un invité sans compte accède à son poste par lien, et ce lien expire à la clôture (ou s'il est régénéré / révoqué).
+
+Choix du lot 4 : attribution par liste déroulante par poste (plus fiable au
+téléphone que le glisser-déposer) avec cadenas de verrouillage ; « doublon de
+poste » = deux chasseurs au plus par poste, sur choix explicite ;
+notifications = messages prêts à copier pour WhatsApp à chaque étape ; voisins
+= postes précédent et suivant dans la ligne du jour (tous si l'association le
+permet).
+
+**Migrations** : l'API applique elle-même les migrations en attente à la
+première requête après un déploiement (`api/src/migrate.ts`, migrations
+embarquées générées par `npm run db:bundle`).
+
 **Pas encore fait** (prévu dans la spécification, hors lots 0-1 ou reporté) :
 limitation de débit de l'API, consultation des journaux par le super-admin,
 service

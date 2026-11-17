@@ -25,6 +25,17 @@ async function seedCartography(user: string, tenant: string, lon: number) {
   expect(post.status).toBe(201);
   const plan = await api(user, 'PUT', `/api/territories/${id}/coverage-plans/1`, { tenant, body: { post_ids: [post.body.item.id] } });
   expect(plan.status).toBe(200);
+  // Battue en cours avec le président posté sur le poste (tables du lot 4).
+  const hunt = await api(user, 'POST', '/api/hunts', { tenant, body: { territory_id: id, date: '2026-12-01', participant_user_ids: [`dev_${user}`] } });
+  expect(hunt.status).toBe(201);
+  const huntId = hunt.body.hunt.id;
+  await api(user, 'POST', `/api/hunts/${huntId}/actions/publier`, { tenant });
+  const started = await api(user, 'POST', `/api/hunts/${huntId}/actions/demarrer`, { tenant });
+  const me = started.body.participants[0];
+  await api(user, 'PATCH', `/api/hunts/${huntId}/participants/${me.id}`, { tenant, body: { present: true } });
+  await api(user, 'PUT', `/api/hunts/${huntId}/posts`, { tenant, body: { post_ids: [post.body.item.id] } });
+  const assigned = await api(user, 'PUT', `/api/hunts/${huntId}/assignments`, { tenant, body: { participant_id: me.id, post_id: post.body.item.id } });
+  expect(assigned.status).toBe(200);
   const inv = await api(user, 'POST', '/api/invitations', { tenant, body: {} });
   expect(inv.status).toBe(201);
   const dwelling = await api(user, 'POST', `/api/territories/${id}/dwellings`, { tenant, body: { geom: point(lon + 0.015, 43.015), comment: 'Cabane' } });
@@ -64,7 +75,7 @@ describe('isolation entre tenants (RLS)', () => {
   });
 
   it('couvre bien les tables métier attendues', () => {
-    for (const t of ['memberships', 'invitations', 'audit_log', 'territories', 'reserve_zones', 'parkings', 'posts', 'dwellings', 'exclusion_zones', 'coverage_plans', 'coverage_plan_posts']) {
+    for (const t of ['memberships', 'invitations', 'audit_log', 'territories', 'reserve_zones', 'parkings', 'posts', 'dwellings', 'exclusion_zones', 'coverage_plans', 'coverage_plan_posts', 'hunts', 'hunt_participants', 'hunt_posts', 'hunt_assignments']) {
       expect(tenantTables).toContain(t);
     }
   });

@@ -215,3 +215,32 @@ button.small { min-height: 32px; padding: 0.2rem 0.6rem; font-size: 0.85rem; }
   .plans-map { height: 45vh; }
   .plans-grid { border-left: 0; border-top: 1px solid var(--border); }
 }
+
+/* Battues */
+.hunt-tile .status { font-size: 0.85rem; }
+.status { display: inline-block; padding: 0.05rem 0.5rem; border-radius: 99px; font-size: 0.8rem; background: color-mix(in srgb, var(--muted) 15%, transparent); color: var(--text); }
+.status-publiee { background: color-mix(in srgb, var(--accent) 18%, transparent); }
+.status-en_cours { background: color-mix(in srgb, #2f9e44 22%, transparent); }
+.status-annulee { background: color-mix(in srgb, var(--danger) 18%, transparent); }
+.badge { display: inline-block; margin-left: 0.4rem; padding: 0 0.4rem; border-radius: 4px; font-size: 0.75rem; background: color-mix(in srgb, var(--warn) 20%, transparent); }
+summary.button-like { display: inline-block; padding: 0.55rem 0.9rem; border: 1px solid var(--primary); border-radius: 8px; color: var(--primary); font-weight: 600; cursor: pointer; margin-bottom: 0.75rem; }
+fieldset.members { border: 1px solid var(--border); border-radius: 8px; display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 0.25rem 0.75rem; }
+fieldset.members legend { color: var(--muted); font-size: 0.9rem; }
+ul.plain.members { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 0.2rem 0.75rem; margin: 0.5rem 0 0; }
+ul.plain.members li { border: 0; padding: 0.1rem 0; }
+.hunt-layout { display: grid; grid-template-columns: minmax(340px, 520px) 1fr; width: 100%; min-height: calc(100vh - 52px); }
+.hunt-console { padding: 0.75rem 1rem; overflow-y: auto; max-height: calc(100vh - 52px); }
+.hunt-console h1 { font-size: 1.25rem; margin: 0.25rem 0; }
+.hunt-console h2 { font-size: 1.05rem; margin: 0 0 0.25rem; }
+.hunt-map { min-height: 320px; position: sticky; top: 0; height: calc(100vh - 52px); }
+table.list.compact th, table.list.compact td { padding: 0.25rem 0.35rem; }
+table.list.compact select { min-height: 36px; padding: 0.2rem 0.4rem; }
+.sheet-map { height: 55vh; min-height: 300px; border-radius: var(--radius); margin: 0.5rem 0 1rem; border: 1px solid var(--border); }
+.my-post h2 { margin-top: 0; }
+p.pre { white-space: pre-wrap; margin: 0; }
+.post-icon.mine span { background: #0b6bcb; color: #fff; transform: scale(1.25); }
+@media (max-width: 860px) {
+  .hunt-layout { grid-template-columns: 1fr; }
+  .hunt-console { max-height: none; }
+  .hunt-map { position: static; height: 50vh; order: -1; }
+}

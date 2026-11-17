@@ -44,6 +44,11 @@ export async function homeView(main, { refreshMe, rerender }) {
     const role = state.role;
     const tiles = [
       {
+        href: '#/battues',
+        title: 'Battues',
+        text: role === 'chasseur' ? 'Vos convocations, votre poste et vos voisins.' : 'Préparer une battue, convoquer, attribuer les postes.',
+      },
+      {
         href: '#/carte',
         title: role === 'president' ? 'Cartographie' : 'Carte des territoires',
         text: role === 'president' ? 'Territoires, réserves, postes, parkings et chemins d’accès.' : 'Consulter les territoires et les postes.',
@@ -64,7 +69,7 @@ export async function homeView(main, { refreshMe, rerender }) {
     main.append(
       h('p.muted', `${state.tenant.name} — ${ROLE_LABELS[role]}`),
       h('nav.tiles', tiles.map((t) => h('a.tile', { href: t.href }, h('strong', t.title), h('span', t.text)))),
-      h('p.muted.small', 'Les battues (convocations, attribution des postes, guidage GPS) arrivent dans les prochaines versions.'),
+      h('p.muted.small', 'Le guidage jusqu’au poste (voiture puis à pied, GPS) arrive dans la prochaine version.'),
     );
   }
 

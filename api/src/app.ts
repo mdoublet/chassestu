@@ -11,6 +11,7 @@ import { invitationRoutes } from './routes/invitations';
 import { cartoRoutes } from './routes/carto';
 import { dwellingRoutes } from './routes/dwellings';
 import { planRoutes } from './routes/plans';
+import { huntRoutes } from './routes/hunts';
 import { fetchBuildingPages, type Bbox } from './bdtopo';
 import { ensureMigrated } from './migrate';
 
@@ -42,13 +43,16 @@ export function createApp(getPool: PoolProvider, options: AppOptions = {}) {
 
   app.use('/api/*', async (c, next) => {
     if (c.req.method === 'OPTIONS') return next();
-    c.set('user', await authenticate(c.req.header('Authorization'), c.env));
+    // Lien invité d'une battue : pas de compte, le jeton du lien fait foi.
+    if (!c.req.path.startsWith('/api/guest/')) {
+      c.set('user', await authenticate(c.req.header('Authorization'), c.env));
+    }
     const { pool, dispose } = getPool(c.env);
     c.set('pool', pool);
-    // Schéma à jour avant de servir (migrations embarquées, une fois par instance).
-    if (!options.skipMigrations) await ensureMigrated(pool);
     c.set('fetchBuildingPages', options.fetchBuildingPages ?? ((bbox) => fetchBuildingPages(bbox)));
     try {
+      // Schéma à jour avant de servir (migrations embarquées, une fois par instance).
+      if (!options.skipMigrations) await ensureMigrated(pool);
       await next();
     } finally {
       if (dispose) {
@@ -68,6 +72,7 @@ export function createApp(getPool: PoolProvider, options: AppOptions = {}) {
   app.route('/api', cartoRoutes);
   app.route('/api', dwellingRoutes);
   app.route('/api', planRoutes);
+  app.route('/api', huntRoutes);
 
   app.notFound((c) => c.json({ code: 'NOT_FOUND', message: 'Route inconnue.' }, 404));
 
