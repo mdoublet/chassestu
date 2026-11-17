@@ -49,6 +49,11 @@ export async function homeView(main, { refreshMe, rerender }) {
         text: role === 'president' ? 'Territoires, réserves, postes, parkings et chemins d’accès.' : 'Consulter les territoires et les postes.',
       },
       (role === 'president' || role === 'responsable') && {
+        href: '#/plans',
+        title: 'Plans de couverture',
+        text: role === 'president' ? 'Quels postes couvrir selon le nombre de chasseurs.' : 'Postes à couvrir selon le nombre de chasseurs.',
+      },
+      (role === 'president' || role === 'responsable') && {
         href: '#/membres',
         title: 'Membres',
         text: role === 'president' ? 'Inviter des chasseurs, gérer les rôles.' : 'Liste des membres.',

@@ -83,7 +83,10 @@ const KINDS: Record<string, FeatureKind> = {
     // (bande d'avertissement : tir interdit en direction de l'habitation).
     extraSelect: `round(ST_Length(access_path::geography))::int AS access_path_length_m,
       floor(app.nearest_dwelling_m(territory_id, geom,
-        (SELECT buffer_distance_m + app.warning_margin_m() FROM tenants WHERE id = posts.tenant_id)))::int AS nearest_dwelling_m`,
+        (SELECT buffer_distance_m + app.warning_margin_m() FROM tenants WHERE id = posts.tenant_id)))::int AS nearest_dwelling_m,
+      coalesce((SELECT array_agg(cp.hunter_count ORDER BY cp.hunter_count)
+                  FROM coverage_plan_posts cpp JOIN coverage_plans cp ON cp.id = cpp.plan_id
+                 WHERE cpp.post_id = posts.id), '{}') AS plan_counts`,
     create: postFields.partial({ number: true, name: true, parking_id: true, access_path: true, instructions: true, active: true }).strict(),
     patch: postFields.partial().strict(),
   },

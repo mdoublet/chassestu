@@ -213,7 +213,24 @@ Choix du lot 2 :
   territoire est créé même si l'import échoue (bouton « Actualiser » ensuite).
 - Test d'intégration avec le vrai service IGN : `IGN=1 npm test -w api`.
 
+**Postes hors du territoire** : autorisés jusqu'à `post_max_outside_m`
+(200 m par défaut, réglable, 0 = interdit), toujours à la bonne distance des
+habitations ; refusés si les bâtiments n'ont pas été importés à cet endroit ;
+aucune réserve de l'association ne peut contenir un poste.
+
+**Lot 3 — Plans de couverture**
+
+- [x] Les plans de l'exemple (5 et 6 chasseurs) se saisissent dans la grille et s'affichent sur la carte.
+- [x] Une ligne dont le nombre de postes cochés diffère de l'effectif ne peut pas être enregistrée (client et base).
+- [x] Un poste invalidé signale en rouge les plans qui l'utilisent (aussi : poste désactivé ou supprimé).
+
+Choix du lot 3 : un poste invalide ou désactivé ne peut pas être coché ; la
+validité d'un plan est calculée à la lecture (jamais de modification
+silencieuse) ; renuméroter, désactiver ou supprimer un poste utilisé dans des
+plans demande confirmation. La proposition des postes selon l'effectif du jour
+relève du lot 4.
+
 **Pas encore fait** (prévu dans la spécification, hors lots 0-1 ou reporté) :
 limitation de débit de l'API, consultation des journaux par le super-admin,
-avertissement de renumérotation lié aux plans de couverture (lot 3), service
+service
 worker et mode hors-ligne (lot 6), export PDF et pages légales (lot 7).

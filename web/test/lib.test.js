@@ -145,3 +145,22 @@ describe('postes hors du territoire (côté client)', () => {
     expect(checkPost([1.05, 0.2], territory, [], { postArea, maxOutsideM: 0 }).code).toBe('POST_OUTSIDE_TERRITORY');
   });
 });
+
+import { previousCount, rowStatus, sameSet, selectable } from '../src/lib/plans.js';
+describe('grille des plans de couverture', () => {
+  it('compteur « n / effectif » et ligne valide seulement si exacte', () => {
+    expect(rowStatus(5, new Set(['a', 'b', 'c', 'd']))).toEqual({ n: 4, exact: false, label: '4 / 5' });
+    expect(rowStatus(2, new Set(['a', 'b'])).exact).toBe(true);
+  });
+  it('« Dupliquer N-1 » prend l’effectif inférieur le plus proche (pas forcément N-1)', () => {
+    expect(previousCount([5, 6, 9], 9)).toBe(6);
+    expect(previousCount([5, 6], 5)).toBeNull();
+  });
+  it('ensembles et postes sélectionnables', () => {
+    expect(sameSet(new Set([1, 2]), new Set([2, 1]))).toBe(true);
+    expect(sameSet(new Set([1]), new Set([1, 2]))).toBe(false);
+    expect(selectable({ active: true, invalid_reason: null })).toBe(true);
+    expect(selectable({ active: true, invalid_reason: 'EXCLUSION' })).toBe(false);
+    expect(selectable({ active: false, invalid_reason: null })).toBe(false);
+  });
+});

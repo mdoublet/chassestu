@@ -10,6 +10,7 @@ import { tenantRoutes } from './routes/tenants';
 import { invitationRoutes } from './routes/invitations';
 import { cartoRoutes } from './routes/carto';
 import { dwellingRoutes } from './routes/dwellings';
+import { planRoutes } from './routes/plans';
 import { fetchBuildingPages, type Bbox } from './bdtopo';
 
 export interface PoolProvider {
@@ -29,7 +30,7 @@ export function createApp(getPool: PoolProvider, options: AppOptions = {}) {
     return cors({
       origin: origin ? origin.split(',').map((s) => s.trim()) : '*',
       allowHeaders: ['Authorization', 'Content-Type', 'X-Tenant-Id'],
-      allowMethods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+      allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
       maxAge: 600,
     })(c, next);
   });
@@ -61,6 +62,7 @@ export function createApp(getPool: PoolProvider, options: AppOptions = {}) {
   app.route('/api', invitationRoutes);
   app.route('/api', cartoRoutes);
   app.route('/api', dwellingRoutes);
+  app.route('/api', planRoutes);
 
   app.notFound((c) => c.json({ code: 'NOT_FOUND', message: 'Route inconnue.' }, 404));
 

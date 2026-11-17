@@ -23,6 +23,8 @@ async function seedCartography(user: string, tenant: string, lon: number) {
     body: { geom: point(lon - 0.01, 43), parking_id: p.body.item.id, access_path: { type: 'LineString', coordinates: [[lon - 0.015, 43], [lon - 0.01, 43]] } },
   });
   expect(post.status).toBe(201);
+  const plan = await api(user, 'PUT', `/api/territories/${id}/coverage-plans/1`, { tenant, body: { post_ids: [post.body.item.id] } });
+  expect(plan.status).toBe(200);
   const inv = await api(user, 'POST', '/api/invitations', { tenant, body: {} });
   expect(inv.status).toBe(201);
   const dwelling = await api(user, 'POST', `/api/territories/${id}/dwellings`, { tenant, body: { geom: point(lon + 0.015, 43.015), comment: 'Cabane' } });
@@ -62,7 +64,7 @@ describe('isolation entre tenants (RLS)', () => {
   });
 
   it('couvre bien les tables métier attendues', () => {
-    for (const t of ['memberships', 'invitations', 'audit_log', 'territories', 'reserve_zones', 'parkings', 'posts', 'dwellings', 'exclusion_zones']) {
+    for (const t of ['memberships', 'invitations', 'audit_log', 'territories', 'reserve_zones', 'parkings', 'posts', 'dwellings', 'exclusion_zones', 'coverage_plans', 'coverage_plan_posts']) {
       expect(tenantTables).toContain(t);
     }
   });

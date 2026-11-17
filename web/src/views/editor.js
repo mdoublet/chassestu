@@ -6,6 +6,7 @@ import L from '../map/leaflet.js';
 import '@geoman-io/leaflet-geoman-free';
 import '@geoman-io/leaflet-geoman-free/dist/leaflet-geoman.css';
 import { addBasemaps } from '../map/basemap.js';
+import { escapeHtml, toLatLng, ensureHatchPattern, postIcon, parkingIcon } from '../map/shapes.js';
 import { api } from '../api.js';
 import { state } from '../state.js';
 import { h, fill, toast, errorMessage, confirmDialog, promptDialog, modal } from '../ui.js';
@@ -60,33 +61,7 @@ const DRAW_HINTS = {
   path: 'Tracez le chemin à pied du parking jusqu’au poste ; cliquez sur le dernier point pour terminer.',
 };
 
-const escapeHtml = (s) =>
-  String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
-
 const pick = (obj, keys) => Object.fromEntries(keys.map((k) => [k, obj[k] ?? null]));
-const toLatLng = ([lon, lat]) => [lat, lon];
-
-function ensureHatchPattern() {
-  if (document.getElementById('hatch-defs')) return;
-  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-  svg.id = 'hatch-defs';
-  svg.setAttribute('width', '0');
-  svg.setAttribute('height', '0');
-  svg.style.position = 'absolute';
-  svg.innerHTML = `<defs>
-    <pattern id="hatch-red" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
-      <rect width="8" height="8" fill="rgba(201,42,42,0.08)"/><line x1="0" y1="0" x2="0" y2="8" stroke="#c92a2a" stroke-width="2"/>
-    </pattern>
-    <pattern id="hatch-orange" width="10" height="10" patternUnits="userSpaceOnUse" patternTransform="rotate(-45)">
-      <rect width="10" height="10" fill="rgba(217,72,15,0.10)"/><line x1="0" y1="0" x2="0" y2="10" stroke="#d9480f" stroke-width="2"/>
-    </pattern></defs>`;
-  document.body.append(svg);
-}
-
-function postIcon(number, cls = '') {
-  return L.divIcon({ className: `post-icon ${cls}`, html: `<span>${Number(number) || '+'}</span>`, iconSize: [30, 30], iconAnchor: [15, 15] });
-}
-const parkingIcon = (cls = '') => L.divIcon({ className: `parking-icon ${cls}`, html: '<span>P</span>', iconSize: [26, 26], iconAnchor: [13, 13] });
 
 const SHOW_ALL_KEY = 'chassestu.showAllTerritories';
 function readShowAll() {
@@ -782,9 +757,20 @@ export async function editorView(main) {
     const el = h(tag, { ...attrs, disabled: !canEdit });
     if (attrs.type === 'checkbox') el.checked = Boolean(item[key]);
     else el.value = item[key] ?? '';
-    el.addEventListener('change', () => {
+    el.addEventListener('change', async () => {
       let value = attrs.type === 'checkbox' ? el.checked : attrs.type === 'number' ? Number(el.value) : el.value;
       if (tag === 'select' && value === '') value = null;
+      const plans = kind === 'posts' ? item.plan_counts ?? [] : [];
+      if (plans.length && (key === 'number' || (key === 'active' && value === false))) {
+        const what = key === 'number'
+          ? `Le poste ${item.number} devient le poste ${value} : son numéro change aussi dans les plans à ${plans.join(', ')} chasseurs (listes papier à refaire).`
+          : `Désactiver le poste ${item.number} rend invalides les plans à ${plans.join(', ')} chasseurs.`;
+        if (!(await confirmDialog('Poste utilisé dans des plans de couverture', what, 'Continuer'))) {
+          if (attrs.type === 'checkbox') el.checked = Boolean(item[key]);
+          else el.value = item[key] ?? '';
+          return;
+        }
+      }
       run(() => updateItem(kind, item, { [key]: value }));
     });
     return el;
@@ -824,7 +810,13 @@ export async function editorView(main) {
     const item = find(kind, id);
     if (!item) return null;
     const del = canEdit
-      ? h('button.danger', { onclick: () => run(async () => { await deleteItem(kind, item); ed.selected = null; }) }, 'Supprimer')
+      ? h('button.danger', {
+          onclick: async () => {
+            const plans = kind === 'posts' ? item.plan_counts ?? [] : [];
+            if (plans.length && !(await confirmDialog('Supprimer le poste', `Le poste ${item.number} est utilisé dans les plans à ${plans.join(', ')} chasseurs : ces plans deviendront incomplets.`, 'Supprimer', true))) return;
+            run(async () => { await deleteItem(kind, item); ed.selected = null; });
+          },
+        }, 'Supprimer')
       : null;
 
     if (kind === 'reserves') {
@@ -846,6 +838,9 @@ export async function editorView(main) {
         : item.nearest_dwelling_m != null
           ? h('p.alert.warn', `Habitation à ${item.nearest_dwelling_m} m : rappeler l’interdiction de tirer en direction de l’habitation.`)
           : null,
+      (item.plan_counts ?? []).length
+        ? h('p.small', `Utilisé dans les plans à ${item.plan_counts.join(', ')} chasseurs. `, h('a', { href: '#/plans' }, 'Voir les plans'))
+        : null,
       isOutside(item) ? h('p.alert.warn', 'Poste hors du territoire : il faut le droit de chasse à cet endroit (ou l’accord du propriétaire).') : null,
       h('div.row', field('Numéro', bound(kind, item, 'number', { type: 'number', min: 1, max: 999, required: true })), field('Nom', bound(kind, item, 'name', { maxlength: 200 }))),
       field('Parking', parkingSelect),

@@ -182,3 +182,36 @@ ul.objects li { padding: 0.2rem 0; break-inside: avoid; }
 .post-icon.other { opacity: 0.75; }
 .post-icon.other span { background: #c9c4b5; width: 80%; height: 80%; margin: 10%; font-size: 11px; }
 .show-all { justify-content: space-between; align-items: center; margin-top: 0.4rem; }
+
+/* Plans de couverture */
+.plans-page { display: flex; flex-direction: column; width: 100%; }
+.plans-head { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; padding: 0.5rem 1rem; }
+.plans-head h1 { margin: 0; font-size: 1.25rem; }
+.plans-layout { display: grid; grid-template-columns: minmax(300px, 1fr) minmax(320px, 1.2fr); flex: 1; min-height: calc(100vh - 110px); }
+.plans-map { min-height: 320px; }
+.plans-grid { padding: 0.5rem 1rem; overflow: hidden; background: var(--surface); border-left: 1px solid var(--border); }
+.table-scroll { overflow-x: auto; max-width: 100%; }
+table.plans { border-collapse: collapse; font-size: 0.875rem; }
+table.plans th, table.plans td { border-bottom: 1px solid var(--border); padding: 0.3rem 0.35rem; text-align: center; white-space: nowrap; }
+table.plans th.sticky { position: sticky; left: 0; background: var(--surface); text-align: left; z-index: 1; }
+table.plans th.unavailable { color: var(--danger); }
+table.plans tr.selected th.sticky, table.plans tr.selected td, table.plans tr.selected .sticky-right { background: color-mix(in srgb, var(--accent) 10%, var(--surface)); }
+table.plans tr.plan-invalid th.sticky button { color: var(--danger); font-weight: 700; }
+table.plans tr.dirty th.sticky button::after { content: ' •'; color: var(--warn); }
+table.plans .sticky-right { position: sticky; right: 0; background: var(--surface); z-index: 1; box-shadow: -6px 0 6px -6px rgb(0 0 0 / 0.25); }
+table.plans .row-actions { display: flex; gap: 0.5rem; align-items: center; justify-content: flex-end; }
+table.plans .count { min-width: 3.2em; }
+table.plans .count.ok { color: var(--primary); font-weight: 700; }
+table.plans .count.ko { color: var(--danger); font-weight: 700; }
+table.plans tr.notes td { text-align: left; border-bottom: 0; padding-top: 0; }
+table.plans input[type='checkbox'] { width: 1.1rem; height: 1.1rem; }
+button.small { min-height: 32px; padding: 0.2rem 0.6rem; font-size: 0.85rem; }
+.add-row { margin-top: 0.75rem; }
+.add-row input { width: 8rem; }
+.post-icon.in-plan span { background: #2f9e44; color: #fff; outline: 3px solid #b2f2bb; }
+.post-icon.dim { opacity: 0.45; }
+@media (max-width: 760px) {
+  .plans-layout { grid-template-columns: 1fr; }
+  .plans-map { height: 45vh; }
+  .plans-grid { border-left: 0; border-top: 1px solid var(--border); }
+}

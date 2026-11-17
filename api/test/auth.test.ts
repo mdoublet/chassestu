@@ -78,3 +78,15 @@ describe('authentification Clerk', () => {
     expect(((await res.json()) as { code: string }).code).toBe('MISCONFIGURED');
   });
 });
+
+describe('CORS', () => {
+  it('autorise toutes les méthodes utilisées par le site (dont PUT) pour l’origine du site', async () => {
+    const res = await app.request('/api/territories/x/coverage-plans/5', {
+      method: 'OPTIONS',
+      headers: { Origin: ORIGIN, 'Access-Control-Request-Method': 'PUT', 'Access-Control-Request-Headers': 'authorization,content-type,x-tenant-id' },
+    }, clerkEnv);
+    const allowed = res.headers.get('access-control-allow-methods') ?? '';
+    for (const m of ['GET', 'POST', 'PUT', 'PATCH', 'DELETE']) expect(allowed).toContain(m);
+    expect(res.headers.get('access-control-allow-origin')).toBe(ORIGIN);
+  });
+});

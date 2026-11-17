@@ -16,6 +16,7 @@ let cleanup = null;
 const routes = [
   { re: /^#\/invitation\/([A-Za-z0-9_-]+)$/, view: invitationView, public: true },
   { re: /^#\/carte$/, view: (el) => import('./views/editor.js').then((m) => m.editorView(el)), tenant: true, full: true },
+  { re: /^#\/plans$/, view: (el) => import('./views/plans.js').then((m) => m.plansView(el)), tenant: true, roles: ['president', 'responsable'], full: true },
   { re: /^#\/membres$/, view: membersView, tenant: true, roles: ['president', 'responsable'] },
   { re: /^#\/parametres$/, view: settingsView, tenant: true, roles: ['president'] },
   { re: /^#\/admin$/, view: adminView },
