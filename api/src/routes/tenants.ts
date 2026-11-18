@@ -160,6 +160,23 @@ tenantRoutes.patch('/members/:userId', async (c) => {
   });
 });
 
+/** Marche, voiture et places d'un membre (président, responsable). */
+tenantRoutes.patch('/members/:userId/mobility', async (c) => {
+  const body = z.object({
+    walking_ability: z.number().int().min(1).max(5).nullable(),
+    has_car: z.boolean().nullable(),
+    car_seats: z.number().int().min(0).max(8).nullable(),
+  }).partial().strict().parse(await c.req.json());
+  const userId = c.req.param('userId');
+  return tenantTx(c, ['president', 'responsable'], async (tx) => {
+    await tx.query('SELECT app.set_member_mobility($1, $2, $3, $4, $5, $6, $7)', [
+      userId, 'walking_ability' in body, body.walking_ability ?? null, 'has_car' in body, body.has_car ?? null,
+      'car_seats' in body, body.car_seats ?? null,
+    ]);
+    return c.json({ ok: true });
+  });
+});
+
 /** Retirer un membre (président) ou quitter l'association (soi-même). */
 tenantRoutes.delete('/members/:userId', (c) => {
   const userId = c.req.param('userId');

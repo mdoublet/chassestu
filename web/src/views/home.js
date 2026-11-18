@@ -114,7 +114,9 @@ export async function homeView(main, { refreshMe, rerender }) {
   }
 
   main.append(
-    profileCard(refreshMe),
+    !state.user.walking_ability || state.user.has_car === null || state.user.has_car === undefined
+      ? h('a.current-hunt', { href: '#/profil' }, h('strong', '👤 Complétez votre profil'), h('span', 'Votre marche et votre voiture : pour des postes accessibles et le covoiturage →'))
+      : null,
     h(
       'details.card.small',
       h('summary', 'Mon compte'),
@@ -136,41 +138,3 @@ export async function homeView(main, { refreshMe, rerender }) {
   return () => stopRefresh?.();
 }
 
-/**
- * Marche et voiture : l'organisateur s'en sert pour proposer des postes
- * accessibles et organiser le covoiturage.
- */
-function profileCard(refreshMe) {
-  const u = state.user;
-  const walk = h('select', { name: 'walking_ability' }, h('option', { value: '' }, 'Non renseigné'),
-    Object.entries(WALK_LABELS).map(([v, l]) => h('option', { value: v, selected: String(u.walking_ability ?? '') === v }, l)));
-  const car = h('input', { type: 'checkbox', checked: !!u.has_car });
-  const seats = h('input', { type: 'number', min: 0, max: 8, value: u.car_seats ?? '', style: 'width:6rem' });
-  const sync = () => { seats.disabled = !car.checked; };
-  car.addEventListener('change', sync);
-  sync();
-  const incomplete = !u.walking_ability || u.has_car === null || u.has_car === undefined;
-  return h('details.card', { open: incomplete },
-    h('summary', `Mon profil : marche et voiture${incomplete ? ' (à compléter)' : ''}`),
-    h('form', {
-      onsubmit: async (e) => {
-        e.preventDefault();
-        try {
-          await api.patch('/me', {
-            walking_ability: walk.value ? Number(walk.value) : null,
-            has_car: car.checked,
-            car_seats: car.checked && seats.value !== '' ? Number(seats.value) : car.checked ? null : 0,
-          }, { tenant: false });
-          await refreshMe();
-          toast('Profil enregistré.');
-        } catch (err) {
-          toast(errorMessage(err), 'error');
-        }
-      },
-    },
-    h('label', 'Combien pouvez-vous marcher pour rejoindre un poste ?', walk),
-    h('label.check', car, 'Je viens avec ma voiture'),
-    h('label', 'Places libres pour d’autres chasseurs', seats),
-    h('p.small.muted', 'Sert à vous proposer des postes accessibles et à organiser le covoiturage vers les parkings. Modifiable à tout moment ; l’organisateur peut l’ajuster pour une journée.'),
-    h('button.primary', { type: 'submit' }, 'Enregistrer')));
-}

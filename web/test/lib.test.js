@@ -199,10 +199,10 @@ describe('menu principal', () => {
   });
   it('entrées selon le rôle', () => {
     const labels = (who) => navItems(who).map((i) => i.label);
-    expect(labels({ role: 'president', isSuperAdmin: true, hasTenant: true })).toEqual(['Accueil', 'Journées', 'Cartographie', 'Lieux', 'Plans', 'Membres', 'Paramètres', 'Administration']);
-    expect(labels({ role: 'responsable', isSuperAdmin: false, hasTenant: true })).toEqual(['Accueil', 'Journées', 'Carte', 'Plans', 'Membres']);
-    expect(labels({ role: 'chasseur', isSuperAdmin: false, hasTenant: true })).toEqual(['Accueil', 'Journées', 'Carte']);
-    expect(labels({ role: null, isSuperAdmin: false, hasTenant: false })).toEqual(['Accueil']);
+    expect(labels({ role: 'president', isSuperAdmin: true, hasTenant: true })).toEqual(['Accueil', 'Journées', 'Cartographie', 'Lieux', 'Plans', 'Membres', 'Paramètres', 'Mon profil', 'Administration']);
+    expect(labels({ role: 'responsable', isSuperAdmin: false, hasTenant: true })).toEqual(['Accueil', 'Journées', 'Carte', 'Plans', 'Membres', 'Mon profil']);
+    expect(labels({ role: 'chasseur', isSuperAdmin: false, hasTenant: true })).toEqual(['Accueil', 'Journées', 'Carte', 'Mon profil']);
+    expect(labels({ role: null, isSuperAdmin: false, hasTenant: false })).toEqual(['Accueil', 'Mon profil']);
   });
   it('entrée active, y compris pour les sous-pages', () => {
     const items = navItems({ role: 'president', isSuperAdmin: false, hasTenant: true });

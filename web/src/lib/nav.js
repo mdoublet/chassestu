@@ -15,6 +15,7 @@ export function navItems({ role, isSuperAdmin, hasTenant }) {
     hasTenant && manager && { href: '#/plans', label: 'Plans', icon: '📋' },
     hasTenant && manager && { href: '#/membres', label: 'Membres', icon: '👥' },
     hasTenant && role === 'president' && { href: '#/parametres', label: 'Paramètres', icon: '⚙️' },
+    { href: '#/profil', label: 'Mon profil', icon: '👤' },
     isSuperAdmin && { href: '#/admin', label: 'Administration', icon: '🛠️' },
   ].filter(Boolean);
 }

@@ -500,6 +500,29 @@ export async function editorView(main) {
     ed.mode = null;
   }
 
+  /** Nouveau territoire : le nom d'abord, puis le contour à dessiner (carte vidée). */
+  async function newTerritory() {
+    const name = (await promptDialog('Nouveau territoire', 'Nom du territoire'))?.trim();
+    if (!name) return;
+    ed.pendingTerritory = { name, previousId: ed.territoryId };
+    ed.territoryId = null;
+    ed.selected = null;
+    ed.data = null;
+    render();
+    startDraw('territory');
+  }
+
+  /** Abandon du dessin : un nouveau territoire en attente est oublié. */
+  function cancelDraw() {
+    stopDraw();
+    if (ed.pendingTerritory) {
+      ed.territoryId = ed.pendingTerritory.previousId;
+      ed.pendingTerritory = null;
+      return reload();
+    }
+    render();
+  }
+
   map.on('pm:create', async (e) => {
     const geom = e.layer.toGeoJSON().geometry;
     map.removeLayer(e.layer);
@@ -511,8 +534,13 @@ export async function editorView(main) {
 
   async function handleDrawn(mode, geom) {
     if (mode === 'territory') {
-      const name = await promptDialog('Nouveau territoire', 'Nom du territoire');
-      if (!name) return render();
+      const name = ed.pendingTerritory?.name ?? await promptDialog('Nouveau territoire', 'Nom du territoire');
+      const previousId = ed.pendingTerritory?.previousId;
+      ed.pendingTerritory = null;
+      if (!name) {
+        if (previousId !== undefined) ed.territoryId = previousId;
+        return reload();
+      }
       try {
         toast('Territoire en cours de création, import des bâtiments IGN…');
         const { territory, dwellings_import, import_error } = await api.post('/territories', { name, geom });
@@ -953,10 +981,12 @@ export async function editorView(main) {
       {
         'aria-label': 'Territoire',
         onchange: (e) => switchTerritory(e.target.value),
+        disabled: !!ed.pendingTerritory,
       },
+      ed.pendingTerritory ? h('option', { selected: true }, `Nouveau : ${ed.pendingTerritory.name}`) : null,
       ed.territories.map((t) => {
         const count = t.id === ed.data?.territory.id ? ed.data.posts.length : t.posts_count;
-        return h('option', { value: t.id, selected: t.id === ed.territoryId }, `${t.name} (${count} poste${count > 1 ? 's' : ''})`);
+        return h('option', { value: t.id, selected: !ed.pendingTerritory && t.id === ed.territoryId }, `${t.name} (${count} poste${count > 1 ? 's' : ''})`);
       }),
     );
 
@@ -977,7 +1007,7 @@ export async function editorView(main) {
       h('p.disclaimer', 'Aide au placement uniquement : la responsabilité du placement des postes reste celle du président.'),
       h(
         'section',
-        h('div.row', ed.territories.length ? territorySelect : h('p.muted', 'Aucun territoire.'), canEdit && !ed.mode && !ed.recording ? h('button', { onclick: () => startDraw('territory') }, '+ Territoire') : null),
+        h('div.row', ed.territories.length ? territorySelect : h('p.muted', 'Aucun territoire.'), canEdit && !ed.mode && !ed.recording ? h('button', { onclick: newTerritory }, '+ Territoire') : null),
         ed.territories.length > 1
           ? h(
               'div.row.show-all',
@@ -1000,7 +1030,9 @@ export async function editorView(main) {
       ),
       ed.data ? exclusionSummary() : null,
       ed.mode
-        ? h('div.hint', h('p', DRAW_HINTS[ed.mode]), h('button', { onclick: () => { stopDraw(); render(); } }, 'Annuler (Échap)'))
+        ? h('div.hint',
+            ed.mode === 'territory' && ed.pendingTerritory ? h('strong', `Nouveau territoire « ${ed.pendingTerritory.name} »`) : null,
+            h('p', DRAW_HINTS[ed.mode]), h('button', { onclick: cancelDraw }, 'Annuler (Échap)'))
         : null,
       rec
         ? h(
@@ -1038,8 +1070,7 @@ export async function editorView(main) {
   const onKey = (e) => {
     const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName ?? '');
     if (e.key === 'Escape' && ed.mode) {
-      stopDraw();
-      render();
+      cancelDraw();
     } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !e.shiftKey && !typing && canEdit) {
       e.preventDefault();
       undo();

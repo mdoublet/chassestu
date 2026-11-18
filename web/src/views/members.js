@@ -8,12 +8,32 @@ export async function membersView(main) {
   const invitesBox = h('div');
   main.append(h('h1', 'Membres'), ...(isPresident ? [h('section', h('h2', 'Inviter'), invitesBox)] : []), h('section', h('h2', 'Membres de l’association'), membersBox));
 
+  /** Marche, voiture et places : modifiables par le président et les responsables. */
+  function mobilityCells(m) {
+    const save = async (body) => {
+      try {
+        await api.patch(`/members/${encodeURIComponent(m.id)}/mobility`, body);
+        toast('Enregistré.');
+        loadMembers();
+      } catch (err) {
+        toast(errorMessage(err), 'error');
+      }
+    };
+    return [
+      h('td', h('select', { 'aria-label': `Marche de ${m.display_name}`, onchange: (e) => save({ walking_ability: e.target.value ? Number(e.target.value) : null }) },
+        h('option', { value: '' }, '—'), [1, 2, 3, 4, 5].map((v) => h('option', { value: v, selected: m.walking_ability === v }, `🥾 ${v}`)))),
+      h('td', h('input', { type: 'checkbox', checked: !!m.has_car, 'aria-label': `Voiture de ${m.display_name}`, onchange: (e) => save({ has_car: e.target.checked }) })),
+      h('td', h('input', { type: 'number', min: 0, max: 8, value: m.car_seats ?? '', disabled: !m.has_car, style: 'width:4.5rem', 'aria-label': `Places de ${m.display_name}`,
+        onchange: (e) => save({ car_seats: e.target.value === '' ? null : Number(e.target.value) }) })),
+    ];
+  }
+
   async function loadMembers() {
     const { members } = await api.get('/members');
     fill(membersBox, 
       h(
         'table.list',
-        h('thead', h('tr', h('th', 'Nom'), h('th', 'Contact'), h('th', 'Rôle'), isPresident ? h('th', '') : null)),
+        h('thead', h('tr', h('th', 'Nom'), h('th', 'Contact'), h('th', 'Rôle'), h('th', { title: 'Capacité de marche (1 peu … 5 chemins escarpés)' }, 'Marche'), h('th', 'Voiture'), h('th', 'Places'), isPresident ? h('th', '') : null)),
         h(
           'tbody',
           members.map((m) =>
@@ -42,6 +62,7 @@ export async function membersView(main) {
                     )
                   : ROLE_LABELS[m.role],
               ),
+              ...mobilityCells(m),
               isPresident
                 ? h(
                     'td',

@@ -28,3 +28,15 @@ describe('lieux', () => {
     expect((await as(P, 'DELETE', `/api/places/${c.body.place.id}`)).status).toBe(204);
   });
 });
+
+describe('marche et voiture des membres', () => {
+  it('le président renseigne un membre de son association ; un chasseur ne peut pas', async () => {
+    expect((await as(P, 'PATCH', '/api/members/dev_l_ch/mobility', { walking_ability: 2, has_car: true, car_seats: 3 })).status).toBe(200);
+    const m = (await as(P, 'GET', '/api/members')).body.members.find((x: any) => x.id === 'dev_l_ch');
+    expect(m).toMatchObject({ walking_ability: 2, has_car: true, car_seats: 3 });
+    expect((await as(P, 'PATCH', '/api/members/dev_l_ch/mobility', { car_seats: null })).status).toBe(200);
+    expect((await as(P, 'GET', '/api/members')).body.members.find((x: any) => x.id === 'dev_l_ch')).toMatchObject({ walking_ability: 2, car_seats: null });
+    expect((await as('l_ch', 'PATCH', `/api/members/dev_${P}/mobility`, { has_car: false })).status).toBe(403);
+    expect((await as(P, 'PATCH', '/api/members/dev_inconnu/mobility', { has_car: false })).status).toBe(404);
+  });
+});
