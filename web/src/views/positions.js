@@ -391,6 +391,9 @@ export function positionPanel(map, { dayId, guestToken, canSeeAll = false, onCha
     const isPost = t.kind === 'post';
     const title = isPost ? `Poste n° ${t.number}${t.name ? ` · ${t.name}` : ''}` : t.title;
     const confirm = confirmBlock();
+    if (!guiding && ctx.compact && ctx.me?.in_place) {
+      return { top: [h('h3', `Poste n° ${t.number}`), confirm], bottom: null };
+    }
     if (!guiding) {
       return {
         top: [
@@ -398,9 +401,6 @@ export function positionPanel(map, { dayId, guestToken, canSeeAll = false, onCha
           h('div.buttons',
             h(ctx.compact ? 'button' : 'button.primary', { onclick: startGuiding }, isPost ? 'Démarrer le guidage à pied' : 'Me guider à pied'),
             confirm),
-          !ctx.compact ? h('p.small.muted', isPost && t.path
-            ? 'La carte vous suit, avec la distance restante le long du chemin et une flèche vers le poste.'
-            : 'Le guidage indique la direction et la distance à vol d’oiseau.') : null,
         ],
         bottom: null,
       };
@@ -432,7 +432,6 @@ export function positionPanel(map, { dayId, guestToken, canSeeAll = false, onCha
         !follow ? h('button', { onclick: () => { follow = true; centeredOnMe = true; if (fix) map.setView([fix.lat, fix.lon], Math.max(map.getZoom(), 16)); render(); } }, '⌖ Recentrer') : null,
         !compassAllowed && heading === null ? h('button', { onclick: askCompass }, '🧭 Activer la boussole') : null,
         h('button.link', { onclick: stopGuiding }, 'Arrêter le guidage')),
-      h('p.small.muted', 'Gardez l’application ouverte : l’écran reste allumé pendant le guidage.'),
     ];
     queueMicrotask(updateArrow);
     return { top, bottom };
@@ -452,10 +451,10 @@ export function positionPanel(map, { dayId, guestToken, canSeeAll = false, onCha
       ? [
           h('label.check.share',
             h('input', { type: 'checkbox', checked: sharing, onchange: (e) => setSharing(e.target.checked) }),
-            'Partager ma position avec le responsable pendant les battues de la journée'),
-          h('p.small.muted', sharing
-            ? 'Partage actif : gardez l’application ouverte, écran allumé. Il s’arrête si vous fermez l’application ou verrouillez le téléphone.'
-            : 'Votre position reste sur votre téléphone tant que vous ne la partagez pas. Seuls le président et les responsables voient les positions partagées ; elles sont effacées automatiquement.'),
+            'Partager ma position avec le responsable'),
+          ctx.compact ? null : h('p.small.muted', sharing
+            ? 'Gardez l’appli ouverte : le partage s’arrête écran verrouillé.'
+            : 'Visible seulement du président et des responsables, pendant les battues.'),
         ]
       : null;
 
@@ -485,7 +484,7 @@ export function positionPanel(map, { dayId, guestToken, canSeeAll = false, onCha
                 h('span.small.muted', `${s.label}${p.lon !== null && p.shared ? ` · position ${formatAge(p.age_s)}` : ''}${p.distance_m !== null && p.status === 'en_route' ? ` · à ${formatDistance(p.distance_m)}` : ''}`));
             })),
             h('button', { onclick: fitEveryone }, 'Voir tout le monde sur la carte'),
-            shared.length < others.length ? h('p.small.muted', 'Seuls les participants qui ont accepté le partage apparaissent sur la carte.') : null,
+            shared.length < others.length ? h('p.small.muted', 'Sur la carte : ceux qui partagent leur position.') : null,
           ];
         })()
       : null;

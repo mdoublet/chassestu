@@ -215,8 +215,7 @@ async function dayConsole(main, dayId) {
       editable ? h('button.link', { onclick: () => { dv.placing = 'meeting'; toast('Cliquez sur la carte à l’endroit du rendez-vous.'); } }, day.meeting_point ? 'Déplacer le point de rendez-vous' : 'Placer le rendez-vous sur la carte') : null,
       field('lunch_offered', 'Déjeuner proposé (inscription facultative)', { type: 'checkbox' }),
       day.lunch_offered ? field('lunch_info', 'Déjeuner : lieu, prix…', { maxlength: 300 }) : null,
-      field('briefing', 'Consignes de la journée', { rows: 3, maxlength: 5000 }, 'textarea'),
-      h('p.small.muted', 'L’heure, le lieu et le déjeuner sont repris automatiquement pour la journée suivante.'));
+      field('briefing', 'Consignes de la journée', { rows: 3, maxlength: 5000 }, 'textarea'));
   }
 
   function convocationSection() {
@@ -277,7 +276,6 @@ async function dayConsole(main, dayId) {
           h('td', h('input', { type: 'number', min: 0, max: 8, value: p.car_seats ?? '', disabled: !p.has_car, 'aria-label': `Places : ${p.name}`, style: 'width:4.5rem',
             onchange: (e) => patch(p, { car_seats: e.target.value === '' ? null : Number(e.target.value) }) })),
           day.lunch_offered ? h('td', h('input', { type: 'checkbox', checked: p.lunch, 'aria-label': `Déjeuner : ${p.name}`, onchange: (e) => patch(p, { lunch: e.target.checked }) })) : null)))),
-      h('p.small.muted', 'Marche et voiture viennent du profil de chaque chasseur ; ce que vous changez ici ne vaut que pour la journée.'),
       h('form.row', { onsubmit: async (e) => {
         e.preventDefault();
         if (!guestName.value.trim()) return;
@@ -476,7 +474,6 @@ async function dayConsole(main, dayId) {
             } }, '🎲 Tirer au sort'),
             proposal?.kind === 'too_many' ? h('label.check', h('input', { type: 'checkbox', checked: dv.allowDouble, onchange: (e) => { dv.allowDouble = e.target.checked; } }), 'Autoriser les doublons') : null)
         : null,
-      h('p.small.muted', 'Le tirage au sort ne donne jamais un poste plus difficile que la marche déclarée (🥾 1 à 5) et place d’abord ceux qui marchent peu, au plus près.'),
       unassigned.length ? h('p.alert.warn', `Sans poste : ${unassigned.map((p) => {
         const free = dayPosts.filter((post) => !participants.some((x) => x.post_id === post.id));
         return free.length && !free.some((post) => canReach(post.difficulty, p.walking_ability))
@@ -511,8 +508,7 @@ async function dayConsole(main, dayId) {
         rows.push({ species: name.value.trim(), quota: quota.value === '' ? null : Number(quota.value) });
         save();
       } }, name, quota, h('button', { type: 'submit' }, 'Ajouter'),
-      h('datalist', { id: 'species-list' }, COMMON_SPECIES.map((x) => h('option', { value: x })))) : null,
-      h('p.small.muted', 'Reprises de la battue précédente ; le nombre vaut pour cette battue seulement.'));
+      h('datalist', { id: 'species-list' }, COMMON_SPECIES.map((x) => h('option', { value: x })))) : null);
   }
 
   function carpoolSection() {
@@ -524,8 +520,7 @@ async function dayConsole(main, dayId) {
       h('ul.plain', c.cars.map((car) => h('li',
         h('strong', car.driver.name), ` → ${car.destinationName}`,
         car.passengers.length ? ` avec ${car.passengers.map((p) => `${p.name}${p.detour ? ` (déposé au ${p.destinationName})` : ''}`).join(', ')}` : ' (seul)'))),
-      c.unseated.length ? h('p.alert.danger', `Sans place : ${c.unseated.map((p) => `${p.name} (${p.destinationName})`).join(', ')}.`) : null,
-      h('p.small.muted', 'Chaque chasseur voit sa voiture dans sa vue. Voitures et places : colonne « Présents du jour » ou profil de chacun ; maximum par voiture : paramètres de l’association.'));
+      c.unseated.length ? h('p.alert.danger', `Sans place : ${c.unseated.map((p) => `${p.name} (${p.destinationName})`).join(', ')}.`) : null);
   }
 
   /** Postes occupés et confirmés (« Je suis en place »), pour lancer la traque. */
@@ -549,8 +544,7 @@ async function dayConsole(main, dayId) {
       h('ul.plain.readiness', r.rows.map(({ post, holders, ok }) => h('li', { class: ok ? 'ok' : '' },
         h('span.light', ok ? '●' : '○'),
         h('strong', `Poste ${post.number}${post.name ? ` · ${post.name}` : ''}`),
-        h('span', holders.length ? holders.map((p) => `${p.name} ${p.in_place_at ? `✅ ${timeOf(p.in_place_at)}` : '⏳'}`).join(' · ') : 'libre')))),
-      h('p.small.muted', 'Vert : le chasseur a confirmé « Je suis en place ». Positions GPS en direct : onglet « Vue chasseur ». Puis « Lancer la battue ».'));
+        h('span', holders.length ? holders.map((p) => `${p.name} ${p.in_place_at ? `✅ ${timeOf(p.in_place_at)}` : '⏳'}`).join(' · ') : 'libre')))));
   }
 
   /** Prélèvements : saisie pour un participant (invité, chasseur sans téléphone). */
@@ -599,7 +593,6 @@ async function dayConsole(main, dayId) {
       h('p', `Rendez-vous à ${formatTime(day.meeting_time)}${day.meeting_place ? `, ${day.meeting_place}` : ''} · `, h('span.status', { class: `status-${day.status}` }, DAY_STATUS_LABELS[day.status])),
       actionsSection(),
       sections,
-      mine && day.status !== 'brouillon' ? h('p.small.muted', 'Vous êtes convoqué : votre poste et vos consignes sont dans l’onglet « Vue chasseur ».') : null,
     );
     renderMap();
   }

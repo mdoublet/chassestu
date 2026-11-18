@@ -88,9 +88,12 @@ function carpoolCard(carpool, myParticipantId) {
  */
 export function createDaySheet(container, opts = {}) {
   ensureHatchPattern();
+  // Haut : ce qu'il faut faire maintenant ; puis la carte ; puis les blocs
+  // repliables (ligne de postes, consignes, battues de la journée).
   const info = h('div.sheet-info');
   const mapEl = h('div.sheet-map');
-  fill(container, info, mapEl);
+  const more = h('div.sheet-more');
+  fill(container, info, mapEl, more);
   const map = L.map(mapEl, { zoomControl: true }).setView([46.6, 2.4], 6);
   addBasemaps(map);
   const layers = L.featureGroup().addTo(map);
@@ -123,41 +126,45 @@ export function createDaySheet(container, opts = {}) {
       day.lunch_offered ? h('p.small', `🍽 Déjeuner proposé${day.lunch_info ? ` : ${day.lunch_info}` : ''}.`) : null);
   }
 
-  function speciesBox(cur) {
+  function speciesList(cur) {
     if (!cur?.species?.length) return null;
-    return h('section.card',
-      h('h3', 'Espèces tirables'),
-      h('ul.plain.species', cur.species.map((s) => {
+    return h('ul.plain.species', cur.species.map((s) => {
         const full = s.quota !== null && s.taken >= s.quota;
         return h('li', { class: full ? 'full' : '' },
           h('strong', s.s),
           h('span', s.quota === null ? `${s.taken} prélevé(s)` : `${s.taken} / ${s.quota}`),
           s.quota !== null ? h('progress', { max: Math.max(s.quota, 1), value: Math.min(s.taken, s.quota) }) : null,
           full ? h('span.badge.danger', 'quota atteint : ne plus tirer') : null);
-      })));
+      }));
+  }
+
+  function speciesBox(cur) {
+    const list = speciesList(cur);
+    return list ? h('section.card', h('h3', 'Espèces tirables'), list) : null;
   }
 
   function harvestBox(cur, canDeclare) {
     if (!cur || (!cur.harvests?.length && !canDeclare)) return null;
-    const species = h('select', { 'aria-label': 'Espèce' },
-      [...new Set([...(cur.species ?? []).map((s) => s.s), ...COMMON_SPECIES])].map((s) => h('option', { value: s }, s)));
+    // Seulement les espèces autorisées par l'organisateur (liste usuelle s'il n'en a fixé aucune).
+    const allowed = (cur.species ?? []).map((s) => s.s);
+    const species = h('select', { 'aria-label': 'Espèce' }, (allowed.length ? allowed : COMMON_SPECIES).map((s) => h('option', { value: s }, s)));
     const category = h('select', { 'aria-label': 'Catégorie' }, Object.entries(CATEGORY_LABELS).map(([v, l]) => h('option', { value: v, selected: v === 'indetermine' }, l)));
-    const notes = h('input', { placeholder: 'Remarque (facultatif)', maxlength: 500 });
     return h('section.card',
-      h('h3', `Prélèvements de la battue (${cur.harvests.length})`),
+      h('h3', `Animaux tués (${cur.harvests.length})`),
+      canDeclare ? speciesList(cur) : null,
       cur.harvests.length
         ? h('ul.plain.harvests', cur.harvests.map((x) => h('li',
             h('span', h('strong', x.species), ` ${CATEGORY_LABELS[x.category]}`, x.shooter ? ` — ${x.shooter}${x.post_number ? ` (poste ${x.post_number})` : ''}` : '', x.notes ? ` · ${x.notes}` : ''),
             h('span.small.muted', time(x.at)),
             x.mine && canDeclare && opts.onWithdraw ? h('button.link.danger', { onclick: () => opts.onWithdraw(cur.hunt.id, x) }, 'Retirer') : null)))
-        : h('p.small.muted', 'Aucun prélèvement pour l’instant.'),
+        : null,
       canDeclare
         ? h('form.row.declare', {
             onsubmit: (e) => {
               e.preventDefault();
-              opts.onDeclare(cur.hunt.id, { species: species.value, category: category.value, notes: notes.value.trim() });
+              opts.onDeclare(cur.hunt.id, { species: species.value, category: category.value });
             },
-          }, species, category, notes, h('button.primary', { type: 'submit' }, 'Déclarer un animal tué'))
+          }, species, category, h('button.primary', { type: 'submit' }, 'Déclarer un animal tué'))
         : null);
   }
 
@@ -168,32 +175,30 @@ export function createDaySheet(container, opts = {}) {
       h('h2', `Votre poste : ${post.number}${post.name ? ` · ${post.name}` : ''}`),
       post.shared_with?.length ? h('p', `Poste partagé avec ${post.shared_with.join(', ')}.`) : null,
       post.instructions ? h('p.alert.warn', post.instructions) : null,
-      post.parking ? navButtons(`1. En voiture jusqu’au parking « ${post.parking.name} » :`, post.parking.geom.coordinates) : null,
-      h('p.small', post.access_path ? `2. À pied : ${post.access_path_length_m} m depuis le parking (pointillés sur la carte, guidage ci-dessous).` : '2. À pied : pas de chemin tracé, suivez le guidage ci-dessous.'));
+      post.parking ? navButtons(`Parking « ${post.parking.name} »`, post.parking.geom.coordinates) : null,
+      post.access_path ? h('p.small', `Puis ${post.access_path_length_m} m à pied (pointillés).`) : null);
   }
 
   function neighborsCard(cur, compact) {
     if (!cur?.neighbors?.length) return null;
     const me = cur.me;
     const items = cur.neighbors.map((n) => `${n.side === 'gauche' ? '◀ ' : n.side === 'droite' ? '▶ ' : ''}Poste ${n.number}${n.name && !compact ? ` · ${n.name}` : ''} : ${n.occupant ?? 'libre'}`);
-    return h('section.card',
-      h('h3', me && !cur.show_all_posts ? 'Vos voisins' : 'Ligne de postes'),
+    return h('details.card',
+      h('summary', me && !cur.show_all_posts ? 'Vos voisins' : 'Ligne de postes'),
       compact ? h('p', items.join(' · ')) : h('ul.plain', items.map((t) => h('li', t))),
-      me ? h('p.small.muted', 'Ne tirez jamais en direction de vos voisins.') : null);
+      me ? h('p.small.muted', 'Ne tirez jamais vers vos voisins.') : null);
   }
 
-  function briefing(view, collapsed) {
+  function briefing(view) {
     const text = [view.day.briefing, view.current?.hunt?.briefing].filter(Boolean).join('\n\n');
     if (!text) return null;
-    return collapsed
-      ? h('details.card', h('summary', 'Consignes'), h('p.pre', text))
-      : h('section.card', h('h3', 'Consignes'), h('p.pre', text));
+    return h('details.card', h('summary', 'Consignes'), h('p.pre', text));
   }
 
   function battuesSummary(view) {
     if (!view.battues?.length) return null;
-    return h('section.card',
-      h('h3', 'Battues de la journée'),
+    return h('details.card',
+      h('summary', `Battues de la journée (${view.battues.length})`),
       h('ul.plain', view.battues.map((b) => h('li',
         `N° ${b.number} · ${b.territory_name} · ${b.status === 'terminee' ? `terminée${b.ended_at ? ` à ${time(b.ended_at)}` : ''}` : b.started_at ? 'traque en cours' : 'en préparation'}`,
         view.me && !b.selected ? h('span.small.muted', ' (sans vous)') : null))));
@@ -203,50 +208,57 @@ export function createDaySheet(container, opts = {}) {
     const { day, me } = view;
     const cur = view.current;
     const phase = step.phase;
-    const blocks = [];
+    const placed = !!cur?.me?.in_place;
+    let top = [];
     switch (phase) {
       case 'reponse': case 'rdv': case 'absent': case 'convoque':
-        blocks.push(rdvCard(day), briefing(view, false));
+        top = [rdvCard(day)];
         break;
       case 'non_present': case 'attente_battue':
-        blocks.push(rdvCard(day), panel.el, battuesSummary(view), briefing(view, false));
+        top = [rdvCard(day), panel.el];
         break;
       case 'non_volontaire':
-        blocks.push(panel.el, battuesSummary(view));
+        top = [panel.el];
         break;
       case 'preparation':
-        blocks.push(postCard(cur), panel.el, speciesBox(cur), briefing(view, false), battuesSummary(view));
+        top = [postCard(cur), speciesBox(cur), panel.el];
         break;
       case 'rejoindre':
-        blocks.push(postCard(cur), carpoolCard(carpool, cur?.me?.participant_id), panel.el, speciesBox(cur), neighborsCard(cur, false), briefing(view, false));
+        // Une fois en place, parking, chemin et covoiturage ne servent plus.
+        top = placed
+          ? [panel.el, speciesBox(cur)]
+          : [postCard(cur), carpoolCard(carpool, cur?.me?.participant_id), panel.el, speciesBox(cur)];
         break;
       case 'traque':
-        // Pendant la traque, le téléphone ne sert qu'à confirmer sa place,
-        // déclarer un animal et être prévenu de la fin.
-        blocks.push(harvestBox(cur, !!me && !!cur?.me && !me.guest && !!opts.onDeclare), speciesBox(cur), panel.el, neighborsCard(cur, true), briefing(view, true));
+        // Pendant la traque : déclarer un animal tué, sa place, la fin annoncée.
+        top = [harvestBox(cur, !!me && !!cur?.me && !me.guest && !!opts.onDeclare), panel.el];
         break;
       case 'fin':
-        blocks.push(panel.el, harvestBox(cur, false), battuesSummary(view));
+        top = [harvestBox(cur, false), panel.el];
         break;
       case 'regroupement':
-        blocks.push(day.regroup?.point ? navButtons(`Regroupement${day.regroup.place ? ` : ${day.regroup.place}` : ''}`, day.regroup.point.coordinates) : null,
-          panel.el, harvestBox(cur, false), battuesSummary(view));
+        top = [day.regroup?.point ? navButtons(`Regroupement${day.regroup.place ? ` : ${day.regroup.place}` : ''}`, day.regroup.point.coordinates) : null, panel.el];
         break;
       default:
-        blocks.push(battuesSummary(view));
+        top = [];
     }
     const lastBattue = view.battues?.[view.battues.length - 1];
     fill(
       info,
-      me?.guest ? h('p.notice', `Bonjour ${me.name} : accès invité, valable pour cette journée seulement.`) : null,
+      me?.guest ? h('p.notice', `Bonjour ${me.name} (accès invité pour la journée).`) : null,
       h('section.status-banner', { class: `tone-${step.tone}` }, h('strong', step.title), step.text ? h('span', step.text) : null, respondBox(view)),
-      h('h1', `Journée du ${formatHuntDate(day.date)}`),
-      h('p.small', h('span.status', { class: `status-${day.status}` }, DAY_STATUS_LABELS[day.status]),
+      h('p.small.day-line', h('span.status', { class: `status-${day.status}` }, DAY_STATUS_LABELS[day.status]),
+        ` ${formatHuntDate(day.date)}`,
         lastBattue && day.status === 'en_cours' ? ` · battue n° ${lastBattue.number} (${lastBattue.territory_name})` : '',
-        cur?.me ? ` · vous : ${ROLE_LABELS[cur.me.role].toLowerCase()}` : '',
-        day.leader ? ` · organisateur : ${day.leader}` : ''),
-      blocks,
-      h('p.small.muted.live', `Mise à jour automatique · ${new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`),
+        cur?.me ? ` · ${ROLE_LABELS[cur.me.role].toLowerCase()}` : ''),
+      top,
+    );
+    fill(
+      more,
+      ['rejoindre', 'traque', 'preparation'].includes(phase) ? neighborsCard(cur, phase === 'traque') : null,
+      briefing(view),
+      day.status === 'en_cours' || day.status === 'terminee' ? battuesSummary(view) : null,
+      h('p.small.muted.live', `Mis à jour à ${new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`),
     );
   }
 
@@ -307,7 +319,7 @@ export function createDaySheet(container, opts = {}) {
       tolerance: view.gps_tolerance_m ?? 30,
       reserves: cur?.reserves ?? [],
       exclusion: cur?.exclusion ?? null,
-      compact: step.phase === 'traque',
+      compact: step.phase === 'traque' || !!cur?.me?.in_place,
       target,
     };
   }

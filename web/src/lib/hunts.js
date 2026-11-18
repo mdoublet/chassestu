@@ -133,6 +133,9 @@ export function dayPhase(view) {
   }
   if (role === 'traqueur') return { phase: 'rejoindre', tone: 'warn', title: 'Vous êtes traqueur', text: 'Préparez-vous : la traque démarrera au signal du responsable.' };
   if (role === 'chef_de_ligne') return { phase: 'rejoindre', tone: 'warn', title: 'Vous êtes chef de ligne', text: 'Vérifiez la mise en place des postés avant le début de battue.' };
+  if (post && current.me.in_place) {
+    return { phase: 'rejoindre', tone: 'go', title: `En place au poste n° ${post.number}`, text: 'Attendez le signal de début de battue.' };
+  }
   return post
     ? { phase: 'rejoindre', tone: 'warn', title: `Rejoignez votre poste n° ${post.number}`, text: 'En voiture jusqu’au parking, puis à pied. Chargez votre arme seulement au poste et confirmez « Je suis en place ».' }
     : { phase: 'rejoindre', tone: 'warn', title: 'Pas de poste attribué', text: 'Voyez le responsable de la battue.' };
@@ -146,6 +149,8 @@ export function navigationLinks([lon, lat]) {
   return {
     google: `https://www.google.com/maps/dir/?api=1&destination=${ll}&travelmode=driving`,
     waze: `https://waze.com/ul?ll=${ll}&navigate=yes`,
-    apple: `https://maps.apple.com/?daddr=${ll}`,
+    // Format « unified Maps URLs » d'Apple (iOS 18.4+) : l'ancien ?daddr=lat,long
+    // n'est plus interprété comme des coordonnées (destination fausse).
+    apple: `https://maps.apple.com/directions?destination=${ll}&mode=driving`,
   };
 }

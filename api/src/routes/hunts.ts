@@ -318,8 +318,9 @@ export async function carpoolFor(tx: Tx, huntId: string): Promise<CarpoolPlan & 
   const people = await tx.query<any>('SELECT * FROM app.battue_people($1)', [huntId]);
   const { per_car } = await tx.one<{ per_car: number }>(
     'SELECT t.hunters_per_car AS per_car FROM hunts h JOIN tenants t ON t.id = h.tenant_id WHERE h.id = $1', [huntId]);
+  // Un posté sans poste reste au rendez-vous : pas de trajet.
   const plan = planCarpool(
-    people.map((p) => ({
+    people.filter((p) => p.post_number || p.role !== 'poste').map((p) => ({
       id: p.participant_id,
       name: p.name,
       hasCar: p.has_car,

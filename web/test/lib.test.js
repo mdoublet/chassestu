@@ -332,3 +332,24 @@ describe('vue chasseur : phase de la journée', () => {
     expect(rg).toMatchObject({ phase: 'regroupement', text: 'Rendez-vous Croix du Loup à 11h30.' });
   });
 });
+
+describe('itinéraires en voiture', () => {
+  it('latitude puis longitude, et format unifié d’Apple (pas l’ancien daddr)', () => {
+    const l = navigationLinks([2.150123, 43.420234]);
+    expect(l.google).toBe('https://www.google.com/maps/dir/?api=1&destination=43.420234,2.150123&travelmode=driving');
+    expect(l.waze).toBe('https://waze.com/ul?ll=43.420234,2.150123&navigate=yes');
+    expect(l.apple).toBe('https://maps.apple.com/directions?destination=43.420234,2.150123&mode=driving');
+  });
+});
+
+describe('vue chasseur : une fois en place', () => {
+  it('le bandeau dit d’attendre le début de battue', () => {
+    const step = dayPhase({
+      day: { date: '2026-12-05', meeting_time: '07:45', meeting_place: '', status: 'en_cours' },
+      me: { present: true },
+      battues: [{ number: 1, territory_name: 'Bois', status: 'en_cours' }],
+      current: { hunt: { assignments_published: true, started_at: null }, me: { role: 'poste', in_place: true }, post: { number: 2 } },
+    });
+    expect(step).toMatchObject({ phase: 'rejoindre', title: 'En place au poste n° 2' });
+  });
+});
