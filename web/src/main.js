@@ -14,14 +14,14 @@ import { invitationView, PENDING_INVITE_KEY } from './views/invitation.js';
 const app = document.getElementById('app');
 let cleanup = null;
 
-// Routes (hachage) : #/, #/carte, #/membres, #/parametres, #/admin, #/invitation/<jeton>
+// Routes (hachage) : #/, #/journees, #/journees/<id>, #/carte, #/membres, #/parametres, #/admin, #/invitation/<jeton>
 const routes = [
   { re: /^#\/invitation\/([A-Za-z0-9_-]+)$/, view: invitationView, public: true },
   { re: /^#\/carte$/, view: (el) => import('./views/editor.js').then((m) => m.editorView(el)), tenant: true, full: true },
-  { re: /^#\/battue-invite\/([A-Za-z0-9_-]+)$/, view: (el, token) => import('./views/sheet.js').then((m) => m.guestSheetView(el, token)), public: true },
-  { re: /^#\/battues$/, view: (el) => import('./views/hunts.js').then((m) => m.huntsView(el)), tenant: true },
-  { re: /^#\/battues\/([0-9a-f-]{36})\/ma-fiche$/, view: (el, id) => import('./views/sheet.js').then((m) => m.memberSheetView(el, id)), tenant: true },
-  { re: /^#\/battues\/([0-9a-f-]{36})$/, view: (el, id) => import('./views/hunt.js').then((m) => m.huntView(el, id)), tenant: true, full: true },
+  { re: /^#\/(?:journee|battue)-invite\/([A-Za-z0-9_-]+)$/, view: (el, token) => import('./views/day-sheet.js').then((m) => m.guestDayView(el, token)), public: true },
+  { re: /^#\/(?:journees|battues)$/, view: (el) => import('./views/days.js').then((m) => m.daysView(el)), tenant: true },
+  // Anciennes adresses de battue : la journée convertie garde le même identifiant.
+  { re: /^#\/(?:journees|battues)\/([0-9a-f-]{36})(?:\/ma-fiche)?$/, view: (el, id) => import('./views/day.js').then((m) => m.dayView(el, id)), tenant: true, full: true },
   { re: /^#\/notifications$/, view: (el, opts) => import('./views/notifications.js').then((m) => m.notificationsView(el, opts)) },
   { re: /^#\/plans$/, view: (el) => import('./views/plans.js').then((m) => m.plansView(el)), tenant: true, roles: ['president', 'responsable'], full: true },
   { re: /^#\/membres$/, view: membersView, tenant: true, roles: ['president', 'responsable'] },

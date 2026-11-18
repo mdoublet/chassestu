@@ -1,12 +1,13 @@
-// Guidage à pied et positions en direct (vue chasseur, battue en cours).
-// - Guidage jusqu'au poste : carte qui suit le chasseur, distance restante le
-//   long du chemin et à vol d'oiseau, flèche (boussole si disponible), statut
-//   « Sur le poste » (10 s dans le rayon), alerte vibrante en réserve ou en
-//   zone d'exclusion, écran maintenu allumé, bouton « Je suis en place ».
+// Guidage à pied et positions en direct (vue chasseur de la journée).
+// - Guidage vers une cible : son poste (avant la battue) ou le point de
+//   regroupement (après) : carte qui suit le chasseur, distance (le long du
+//   chemin s'il existe), flèche orientée par la boussole, statut « Sur le
+//   poste » (10 s dans le rayon), alerte vibrante en réserve ou en zone
+//   d'exclusion, écran maintenu allumé, bouton « Je suis en place ».
 // - Chacun peut afficher SA position (elle reste sur le téléphone).
-// - Avec son accord pour cette battue, elle est envoyée au responsable
-//   (15 s en mouvement, 60 s à l'arrêt ; la plus récente seulement).
-// - Président et responsables voient la position et le statut des présents.
+// - Avec son accord (donné pour la journée), elle est envoyée au responsable
+//   pendant les battues (15 s en mouvement, 60 s à l'arrêt ; la dernière seulement).
+// - Président et responsables voient la position et le statut des participants.
 // Les invités (lien sans compte) ont le guidage et « Je suis en place », sans partage.
 import L from '../map/leaflet.js';
 import { toLatLng, escapeHtml } from '../map/shapes.js';
@@ -23,9 +24,11 @@ const ZONE_ALERT = {
 
 /**
  * @param {L.Map} map
- * @param {{ huntId?: string, guestToken?: string, canSeeAll?: boolean, onChanged?: () => void }} opts
+ * @param {{ dayId?: string, guestToken?: string, canSeeAll?: boolean, onChanged?: () => void }} opts
+ * `update(ctx)` : { huntId, running, dayRunning, me, tolerance, reserves, exclusion, compact,
+ *   target: null | { kind: 'post', number, name, coords, path, canConfirm } | { kind: 'point', title, coords } }
  */
-export function positionPanel(map, { huntId, guestToken, canSeeAll = false, onChanged }) {
+export function positionPanel(map, { dayId, guestToken, canSeeAll = false, onChanged }) {
   const el = h('section.card.positions');
   const content = h('div');   // titre, alerte, flèche et distances
   // Pendant le guidage, la carte est déplacée ici, sous la flèche : tout tient sur un écran.
@@ -38,8 +41,7 @@ export function positionPanel(map, { huntId, guestToken, canSeeAll = false, onCh
   const othersLayer = L.layerGroup().addTo(map);
   const meLayer = L.layerGroup().addTo(map);
   const isGuest = !!guestToken;
-  let sheet = null;
-  let tolerance = 30;
+  let ctx = { target: null, running: false, dayRunning: false, me: null, tolerance: 30, reserves: [], exclusion: null, huntId: null, compact: false };
   let sharing = false;
   let others = [];
   let watchId = null;
@@ -50,7 +52,7 @@ export function positionPanel(map, { huntId, guestToken, canSeeAll = false, onCh
   let wakeLock = null;
   let pollTimer = null;
   let sendTimer = null;
-  let active = false;
+  let polledHunt = null;
   let centeredOnMe = false;
   let fittedOthers = false;
   let guiding = false;
@@ -58,22 +60,22 @@ export function positionPanel(map, { huntId, guestToken, canSeeAll = false, onCh
   let heading = null;       // cap du téléphone (boussole), ou null
   let compassListening = false;
   let onPost = null;        // { status, since }
+  let holdTimer = null;
   let zone = null;
   let busy = false;
 
-  const running = () => sheet?.hunt.status === 'en_cours';
-  const canShare = () => !isGuest && !!sheet?.me && !sheet.me.guest;
-  const myPost = () => sheet?.post?.geom?.coordinates ?? null;
+  const canShare = () => !isGuest && !!ctx.me && !ctx.me.guest && ctx.dayRunning;
+  const targetCoords = () => ctx.target?.coords ?? null;
+  const targetKey = (t) => (t ? `${t.kind}:${t.number ?? ''}:${t.coords.join(',')}` : '');
 
   // --- Mesures GPS (téléphone) -------------------------------------------
   // Immobile, le téléphone peut ne plus donner de mesure : on réévalue la règle
   // des 10 s à l'échéance avec la dernière mesure.
-  let holdTimer = null;
   function evaluateOnPost() {
-    const post = myPost();
+    const t = targetCoords();
     clearTimeout(holdTimer);
-    if (!post || !fix) return;
-    onPost = onPostStatus(onPost, { distance: pathProgress(null, [fix.lon, fix.lat], post).direct, accuracy: fix.accuracy, toleranceM: tolerance, now: Date.now() });
+    if (!t || !fix) return;
+    onPost = onPostStatus(onPost, { distance: pathProgress(null, [fix.lon, fix.lat], t).direct, accuracy: fix.accuracy, toleranceM: ctx.tolerance, now: Date.now() });
     if (onPost.status !== 'sur_poste' && onPost.since !== null) {
       holdTimer = setTimeout(() => {
         evaluateOnPost();
@@ -129,14 +131,14 @@ export function positionPanel(map, { huntId, guestToken, canSeeAll = false, onCh
     const ll = [fix.lat, fix.lon];
     L.circle(ll, { radius: fix.accuracy, color: '#1c7ed6', weight: 1, fillOpacity: 0.12, interactive: false }).addTo(meLayer);
     L.circleMarker(ll, { radius: 8, color: '#fff', weight: 3, fillColor: '#1c7ed6', fillOpacity: 1 }).bindTooltip('Vous').addTo(meLayer);
-    const post = myPost();
+    const t = targetCoords();
     if (guiding && follow) {
       if (!centeredOnMe) map.setView(ll, 17, { animate: false });
       else map.panTo(ll, { animate: true });
       centeredOnMe = true;
     } else if (!centeredOnMe) {
       centeredOnMe = true;
-      map.fitBounds(L.latLngBounds([ll, ...(post ? [toLatLng(post)] : [])]).pad(0.3), { maxZoom: 17 });
+      map.fitBounds(L.latLngBounds([ll, ...(t ? [toLatLng(t)] : [])]).pad(0.3), { maxZoom: 17 });
     }
   }
   // L'utilisateur déplace la carte : on arrête de la recentrer sur lui.
@@ -150,7 +152,7 @@ export function positionPanel(map, { huntId, guestToken, canSeeAll = false, onCh
 
   // --- Réserves et zone d'exclusion : alerte vibrante en entrant ---------
   function checkZone() {
-    const next = fix ? zoneAt([fix.lon, fix.lat], { reserves: sheet?.reserves ?? [], exclusion: sheet?.exclusion ?? null }) : null;
+    const next = fix ? zoneAt([fix.lon, fix.lat], { reserves: ctx.reserves ?? [], exclusion: ctx.exclusion ?? null }) : null;
     if (next && next !== zone) {
       try {
         navigator.vibrate?.([400, 150, 400, 150, 400]);
@@ -196,9 +198,9 @@ export function positionPanel(map, { huntId, guestToken, canSeeAll = false, onCh
   }
 
   function updateArrow() {
-    const post = myPost();
-    if (!fix || !post) return;
-    const b = bearing([fix.lon, fix.lat], post);
+    const t = targetCoords();
+    if (!fix || !t) return;
+    const b = bearing([fix.lon, fix.lat], t);
     arrow.style.transform = `rotate(${(heading === null ? b : b - heading) - 90}deg)`; // ➤ pointe vers l'est
   }
 
@@ -238,13 +240,13 @@ export function positionPanel(map, { huntId, guestToken, canSeeAll = false, onCh
   }
 
   async function setInPlace(value) {
-    if (busy) return;
+    if (busy || !ctx.huntId) return;
     busy = true;
     try {
       if (isGuest) await api.put(`/guest/${guestToken}/in-place`, { in_place: value }, { tenant: false });
-      else await api.put(`/hunts/${huntId}/in-place`, { in_place: value });
+      else await api.put(`/hunts/${ctx.huntId}/in-place`, { in_place: value });
       toast(value ? 'Le responsable sait que vous êtes en place.' : 'Confirmation annulée.');
-      if (sheet?.me) sheet.me.in_place = value;
+      if (ctx.me) ctx.me.in_place = value;
       onChanged?.();
     } catch (err) {
       toast(errorMessage(err), 'error');
@@ -262,17 +264,17 @@ export function positionPanel(map, { huntId, guestToken, canSeeAll = false, onCh
     navigator.geolocation.getCurrentPosition(onFix, () => {}, { enableHighAccuracy: true, maximumAge: 30_000, timeout: 20_000 });
   }
 
-  // --- Envoi au serveur (si accord) --------------------------------------
+  // --- Envoi au serveur (si accord, pendant une battue) -------------------
   async function maybeSend(force = false) {
-    if (!sharing || !running() || !fix || sending) return;
+    if (!sharing || !ctx.running || !ctx.huntId || !fix || sending) return;
     if (!force && !shouldSend(lastSent, fix)) return;
     sending = true;
     try {
-      await api.post(`/hunts/${huntId}/position`, { lon: fix.lon, lat: fix.lat, accuracy: fix.accuracy, recorded_at: new Date(fix.at).toISOString() });
+      await api.post(`/hunts/${ctx.huntId}/position`, { lon: fix.lon, lat: fix.lat, accuracy: fix.accuracy, recorded_at: new Date(fix.at).toISOString() });
       lastSent = { lon: fix.lon, lat: fix.lat, sentAt: Date.now() };
     } catch (err) {
-      // Accord retiré ou battue terminée : on arrête ; réseau absent : on réessaiera.
-      if (err.status === 403 || err.status === 422) {
+      // Accord retiré : on arrête ; battue finie ou réseau absent : rien à faire.
+      if (err.status === 403) {
         sharing = false;
         render();
       }
@@ -283,14 +285,14 @@ export function positionPanel(map, { huntId, guestToken, canSeeAll = false, onCh
 
   async function setSharing(share) {
     try {
-      await api.put(`/hunts/${huntId}/position-sharing`, { share });
+      await api.put(`/days/${dayId}/position-sharing`, { share });
       sharing = share;
       lastSent = null;
       if (share) {
         startWatch();
         acquireWakeLock();
         maybeSend(true);
-        toast('Position partagée avec le responsable pendant cette battue.');
+        toast('Position partagée avec le responsable pendant les battues de la journée.');
       } else {
         releaseWakeLockIfIdle();
         toast('Partage arrêté ; votre position a été effacée.');
@@ -327,19 +329,11 @@ export function positionPanel(map, { huntId, guestToken, canSeeAll = false, onCh
   };
   document.addEventListener('visibilitychange', onVisible);
 
-  // --- Positions connues du serveur (accord, tolérance, autres participants)
+  // --- Positions des participants (responsables) ----------------------------
   async function poll() {
-    if (!active || isGuest) return;
+    if (isGuest || !canSeeAll || !ctx.running || !ctx.huntId) return;
     try {
-      const res = await api.get(`/hunts/${huntId}/positions`);
-      tolerance = res.tolerance_m;
-      if (res.sharing !== sharing) {
-        sharing = res.sharing;
-        if (sharing) {
-          startWatch();
-          acquireWakeLock();
-        }
-      }
+      const res = await api.get(`/hunts/${ctx.huntId}/positions`);
       others = res.participants.filter((p) => !p.mine);
       drawOthers();
       render();
@@ -366,12 +360,11 @@ export function positionPanel(map, { huntId, guestToken, canSeeAll = false, onCh
   function drawOthers() {
     othersLayer.clearLayers();
     if (!canSeeAll) return;
-    // Première réception : la carte du responsable montre tout le monde.
     if (!fittedOthers && !guiding && others.some((p) => p.lon !== null)) {
       fittedOthers = true;
       const pts = others.filter((p) => p.lon !== null).map((p) => [p.lat, p.lon]);
-      const post = myPost();
-      if (post) pts.push(toLatLng(post));
+      const t = targetCoords();
+      if (t) pts.push(toLatLng(t));
       map.fitBounds(L.latLngBounds(pts).pad(0.25), { maxZoom: 17 });
     }
     for (const p of others) {
@@ -384,33 +377,41 @@ export function positionPanel(map, { huntId, guestToken, canSeeAll = false, onCh
   }
 
   // --- Affichage ----------------------------------------------------------
-  function guidanceBlock() {
-    const post = sheet.post;
-    if (!post) return null;
-    const inPlace = !!sheet.me?.in_place;
-    const confirm = inPlace
+  function confirmBlock() {
+    const t = ctx.target;
+    if (t?.kind !== 'post' || !t.canConfirm) return null;
+    return ctx.me?.in_place
       ? h('div.in-place.done', h('strong', '✅ Vous avez confirmé être en place'),
           h('button.link', { onclick: () => setInPlace(false), disabled: busy }, 'Annuler'))
       : h('button', { class: onPost?.status === 'sur_poste' ? 'primary in-place' : 'in-place', onclick: () => setInPlace(true), disabled: busy }, '✅ Je suis en place');
+  }
 
+  function guidanceBlock() {
+    const t = ctx.target;
+    const isPost = t.kind === 'post';
+    const title = isPost ? `Poste n° ${t.number}${t.name ? ` · ${t.name}` : ''}` : t.title;
+    const confirm = confirmBlock();
     if (!guiding) {
       return {
         top: [
-          h('h3', `🥾 Rejoindre mon poste n° ${post.number}`),
-          h('div.buttons', h('button.primary', { onclick: startGuiding }, 'Démarrer le guidage à pied'), confirm),
-          h('p.small.muted', post.access_path
+          h('h3', isPost ? `🥾 ${ctx.compact ? 'Votre poste' : 'Rejoindre mon poste'} n° ${t.number}` : `🥾 ${t.title}`),
+          h('div.buttons',
+            h(ctx.compact ? 'button' : 'button.primary', { onclick: startGuiding }, isPost ? 'Démarrer le guidage à pied' : 'Me guider à pied'),
+            confirm),
+          !ctx.compact ? h('p.small.muted', isPost && t.path
             ? 'La carte vous suit, avec la distance restante le long du chemin et une flèche vers le poste.'
-            : 'Pas de chemin tracé : le guidage indique la direction et la distance à vol d’oiseau.'),
+            : 'Le guidage indique la direction et la distance à vol d’oiseau.') : null,
         ],
         bottom: null,
       };
     }
     const here = fix ? [fix.lon, fix.lat] : null;
-    const prog = here ? pathProgress(post.access_path?.coordinates ?? null, here, post.geom.coordinates) : null;
+    const path = isPost ? t.path : null;
+    const prog = here ? pathProgress(path, here, t.coords) : null;
     const st = POSITION_STATUS[onPost?.status ?? 'localise'];
     const reached = onPost?.status === 'sur_poste';
     const top = [
-      h('h3', `🥾 Poste n° ${post.number}${post.name ? ` · ${post.name}` : ''}`),
+      h('h3', `🥾 ${title}`),
       zone ? h('p.alert.danger.zone-alert', `⚠ ${ZONE_ALERT[zone]}`) : null,
       geoError ? h('p.error.small', geoError) : null,
       !fix && !geoError ? h('p.small.muted', 'Recherche du signal GPS…') : null,
@@ -418,9 +419,9 @@ export function positionPanel(map, { huntId, guestToken, canSeeAll = false, onCh
         ? h('div.guide', { class: reached ? 'reached' : '' },
             reached ? h('div.guide-arrow.done', '✓') : arrow,
             h('div.guide-text',
-              h('p.guide-distance', reached ? 'Vous êtes sur votre poste' : post.access_path ? `${formatDistance(prog.remaining)} par le chemin` : `${formatDistance(prog.direct)} à vol d’oiseau`),
-              !reached && post.access_path ? h('p', `${formatDistance(prog.direct)} à vol d’oiseau${prog.offPath > 25 ? ` · vous êtes à ${formatDistance(prog.offPath)} du chemin` : ''}`) : null,
-              h('p.my-position', h('span.dot', { style: `background:${st.color}` }), h('strong', st.label),
+              h('p.guide-distance', reached ? (isPost ? 'Vous êtes sur votre poste' : 'Vous êtes arrivé') : path ? `${formatDistance(prog.remaining)} par le chemin` : `${formatDistance(prog.direct)} à vol d’oiseau`),
+              !reached && path ? h('p', `${formatDistance(prog.direct)} à vol d’oiseau${prog.offPath > 25 ? ` · vous êtes à ${formatDistance(prog.offPath)} du chemin` : ''}`) : null,
+              h('p.my-position', h('span.dot', { style: `background:${st.color}` }), h('strong', isPost || st !== POSITION_STATUS.sur_poste ? st.label : 'Arrivé'),
                 h('span.small.muted', ` · précision ±${fix.accuracy} m`)),
               !reached ? h('p.small.muted', heading === null ? 'Flèche : nord en haut de l’écran.' : 'Flèche orientée selon votre téléphone.') : null))
         : null,
@@ -438,8 +439,8 @@ export function positionPanel(map, { huntId, guestToken, canSeeAll = false, onCh
   }
 
   function render() {
-    const hasPost = !!sheet?.post;
-    if (!running() || (!canShare() && !canSeeAll && !hasPost)) {
+    const showList = canSeeAll && ctx.running;
+    if (!ctx.target && !canShare() && !showList) {
       fill(content);
       fill(below);
       el.hidden = true;
@@ -451,16 +452,17 @@ export function positionPanel(map, { huntId, guestToken, canSeeAll = false, onCh
       ? [
           h('label.check.share',
             h('input', { type: 'checkbox', checked: sharing, onchange: (e) => setSharing(e.target.checked) }),
-            'Partager ma position avec le responsable pendant cette battue'),
+            'Partager ma position avec le responsable pendant les battues de la journée'),
           h('p.small.muted', sharing
             ? 'Partage actif : gardez l’application ouverte, écran allumé. Il s’arrête si vous fermez l’application ou verrouillez le téléphone.'
             : 'Votre position reste sur votre téléphone tant que vous ne la partagez pas. Seuls le président et les responsables voient les positions partagées ; elles sont effacées automatiquement.'),
         ]
       : null;
 
-    // Sans poste (traqueur, chef de ligne, responsable) : simple affichage de sa position.
-    const ownWithoutPost = !hasPost && (canShare() || canSeeAll)
+    // Sans cible (traqueur, chef de ligne, responsable) : simple affichage de sa position.
+    const ownWithoutTarget = !ctx.target
       ? [
+          h('h3', '📍 Positions en direct'),
           watchId === null ? h('button', { onclick: startWatch }, 'Afficher ma position sur la carte') : null,
           geoError ? h('p.error.small', geoError) : null,
           fix ? h('p.my-position', h('span.dot', { style: `background:${POSITION_STATUS.localise.color}` }), h('strong', 'Localisé'), h('span.small.muted', ` · précision ±${fix.accuracy} m`)) : null,
@@ -468,7 +470,7 @@ export function positionPanel(map, { huntId, guestToken, canSeeAll = false, onCh
         ]
       : null;
 
-    const list = canSeeAll && others.length
+    const list = showList && others.length
       ? (() => {
           const shared = others.filter((p) => p.shared);
           const ready = others.filter((p) => p.status === 'sur_poste' || p.status === 'confirme').length;
@@ -488,46 +490,59 @@ export function positionPanel(map, { huntId, guestToken, canSeeAll = false, onCh
         })()
       : null;
 
-    const guide = hasPost ? guidanceBlock() : { top: h('h3', '📍 Positions en direct'), bottom: null };
-    fill(content, guide.top, ownWithoutPost);
+    const guide = ctx.target ? guidanceBlock() : { top: null, bottom: null };
+    fill(content, guide.top, ownWithoutTarget);
     fill(below, guide.bottom, share, list);
   }
 
-  function start() {
-    if (active) return;
-    active = true;
-    if (isGuest) return;
-    poll();
-    pollTimer = setInterval(() => document.visibilityState === 'visible' && poll(), canSeeAll ? 10_000 : 60_000);
-    // À l'arrêt, le GPS ne produit pas toujours de nouvelle mesure : on en redemande une.
-    sendTimer = setInterval(refreshFix, MOVING_MS);
-  }
-  function stop() {
-    active = false;
-    clearInterval(pollTimer);
-    clearInterval(sendTimer);
-    othersLayer.clearLayers();
-    others = [];
-    sharing = false;
-    guiding = false;
-    restoreMap();
-    stopCompass();
-    stopWatch();
+  function syncTimers() {
+    const wantPoll = !isGuest && canSeeAll && ctx.running && ctx.huntId;
+    if (wantPoll && polledHunt !== ctx.huntId) {
+      clearInterval(pollTimer);
+      polledHunt = ctx.huntId;
+      fittedOthers = false;
+      poll();
+      pollTimer = setInterval(() => document.visibilityState === 'visible' && poll(), 10_000);
+    } else if (!wantPoll && polledHunt) {
+      clearInterval(pollTimer);
+      polledHunt = null;
+      others = [];
+      othersLayer.clearLayers();
+    }
+    if (!sendTimer && !isGuest) sendTimer = setInterval(refreshFix, MOVING_MS);
   }
 
   return {
     el,
     update(next) {
-      const postChanged = sheet?.post?.number !== next?.post?.number;
-      sheet = next;
-      if (next?.gps_tolerance_m) tolerance = next.gps_tolerance_m;
-      if (postChanged) onPost = null;
-      if (running() && (canShare() || canSeeAll || sheet.post)) start();
-      else if (active) stop();
+      const changed = targetKey(next.target) !== targetKey(ctx.target);
+      ctx = { ...ctx, ...next };
+      if (changed) {
+        onPost = null;
+        centeredOnMe = false;
+        evaluateOnPost();
+      }
+      if (next.sharing !== undefined && next.sharing !== sharing && canShare()) {
+        sharing = next.sharing;
+        if (sharing) {
+          startWatch();
+          acquireWakeLock();
+        }
+      }
+      if (!ctx.dayRunning) {
+        sharing = false;
+        if (guiding) stopGuiding();
+      }
+      if (!ctx.target && guiding) stopGuiding();
+      syncTimers();
       render();
     },
     destroy() {
-      stop();
+      clearInterval(pollTimer);
+      clearInterval(sendTimer);
+      restoreMap();
+      stopCompass();
+      stopWatch();
       map.off('dragstart', onDrag);
       document.removeEventListener('visibilitychange', onVisible);
     },

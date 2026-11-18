@@ -21,6 +21,7 @@ export async function settingsView(main, { refreshMe }) {
           gps_tolerance_m: Number(fd.get('gps_tolerance_m')),
           position_retention_h: Number(fd.get('position_retention_h')),
           show_all_posts: fd.get('show_all_posts') === 'on',
+          hunters_per_car: Number(fd.get('hunters_per_car')),
         };
         try {
           await api.patch('/tenant', body);
@@ -57,6 +58,12 @@ export async function settingsView(main, { refreshMe }) {
     field('gps_tolerance_m', 'Tolérance GPS « sur le poste » (m)', { type: 'number', min: 5, max: 200, required: true }),
     field('position_retention_h', 'Conservation des positions GPS (heures)', { type: 'number', min: 1, max: 720, required: true }),
     h('label.check', h('input', { type: 'checkbox', name: 'show_all_posts', checked: tenant.show_all_posts }), 'Les chasseurs voient tous les postes occupés (sinon : le leur et leurs voisins)'),
+    field(
+      'hunters_per_car',
+      'Covoiturage : chasseurs au plus par voiture (conducteur compris)',
+      { type: 'number', min: 2, max: 9, required: true },
+      'Chaque chasseur qui a une voiture la prend ; ce nombre évite de trop charger une voiture : les voitures resservent pour les battues suivantes.',
+    ),
     h('button.primary', { type: 'submit' }, 'Enregistrer'),
   );
   main.append(h('h1', 'Paramètres'), form);

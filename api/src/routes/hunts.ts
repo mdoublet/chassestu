@@ -1,51 +1,39 @@
-// Lot 4 — Battues : convocation, réponses, rond du matin (présents, postes du
-// jour, attribution, tirage au sort), publication des attributions, liens
-// invités, début et fin de battue.
+// Battues d'une journée de chasse : volontaires parmi les présents, postes du
+// jour, attribution (tirage au sort tenant compte de la marche), espèces,
+// publication, début et fin, prélèvements, positions GPS, « Je suis en
+// place », covoiturage. La convocation et la présence relèvent de la journée
+// (routes/days.ts).
 import { Hono, type Context } from 'hono';
 import { z } from 'zod';
-import type { AppEnv, Env } from '../env';
+import type { AppEnv } from '../env';
 import type { Tx } from '../db';
 import { withTx } from '../db';
 import { notFoundIfNull, parseId, tenantTx, type Role } from '../context';
 import { AppError } from '../errors';
-import { randomToken, sha256Hex } from '../auth';
-import { geomOut, geomParam, pointSchema } from '../geo';
+import { sha256Hex } from '../auth';
 import { loadPlans } from './plans';
 import { drawAssignments, proposePosts } from '../proposal';
+import { planCarpool, type CarpoolPlan } from '../carpool';
 import { notifyUsers } from './notifications';
 
 export const huntRoutes = new Hono<AppEnv>();
 
-const MANAGERS: Role[] = ['president', 'responsable'];
+export const MANAGERS: Role[] = ['president', 'responsable'];
 
-const HUNT_SELECT = `h.id, h.territory_id, t.name AS territory_name, to_char(h.date, 'YYYY-MM-DD') AS date,
-  to_char(h.meeting_time, 'HH24:MI') AS meeting_time, h.meeting_place, ${geomOut('h.meeting_point', 'meeting_point')},
+const HUNT_SELECT = `h.id, h.day_id, h.number, h.territory_id, t.name AS territory_name, to_char(h.date, 'YYYY-MM-DD') AS date,
   h.briefing, h.leader_user_id, lu.display_name AS leader_name, h.status, h.assignments_published_at,
   h.started_at, h.ended_at, h.created_at, h.revision::int AS revision`;
 const HUNT_FROM = `hunts h JOIN territories t ON t.id = h.territory_id LEFT JOIN users lu ON lu.id = h.leader_user_id`;
 
-export function guestUrl(env: Env, token: string): string {
-  const origin = (env.APP_ORIGIN ?? '').split(',')[0].trim().replace(/\/$/, '');
-  return `${origin}/#/battue-invite/${token}`;
-}
-
-async function loadHunt(tx: Tx, id: string) {
+export async function loadHunt(tx: Tx, id: string) {
   return notFoundIfNull(await tx.maybeOne<Record<string, any>>(`SELECT ${HUNT_SELECT} FROM ${HUNT_FROM} WHERE h.id = $1`, [id]), 'Battue');
 }
 
-function requireStatus(hunt: Record<string, any>, allowed: string[], action: string) {
-  if (!allowed.includes(hunt.status)) {
-    throw new AppError(409, 'HUNT_BAD_STATUS', `${action} impossible : la battue est « ${STATUS_LABEL[hunt.status] ?? hunt.status} ».`);
-  }
+/** Battue modifiable : en cours ; `notStarted` : avant le début de battue. */
+function requireOpen(hunt: Record<string, any>, action: string, notStarted = false) {
+  if (hunt.status !== 'en_cours') throw new AppError(409, 'HUNT_BAD_STATUS', `${action} impossible : la battue est terminée.`);
+  if (notStarted && hunt.started_at) throw new AppError(409, 'HUNT_STARTED', `${action} impossible : la battue a commencé.`);
 }
-
-const STATUS_LABEL: Record<string, string> = {
-  brouillon: 'en brouillon',
-  publiee: 'publiée',
-  en_cours: 'en cours',
-  terminee: 'terminée',
-  annulee: 'annulée',
-};
 
 /** Postes disponibles du territoire (actifs, hors zone d'habitation). */
 async function availablePostIds(tx: Tx, territoryId: string) {
@@ -57,13 +45,15 @@ async function availablePostIds(tx: Tx, territoryId: string) {
 }
 
 /** Vue complète d'une battue pour le président / responsable. */
-async function huntDetail(tx: Tx, id: string) {
+export async function huntDetail(tx: Tx, id: string) {
   const hunt = await loadHunt(tx, id);
   const participants = await tx.query(
-    `SELECT hp.id, hp.user_id, coalesce(u.display_name, hp.guest_name) AS name, hp.user_id IS NULL AS guest,
-            hp.role, hp.response, hp.present, hp.guest_token_hash IS NOT NULL AS has_guest_link, hp.in_place_at,
-            a.post_id, a.locked
+    `SELECT hp.id, hp.user_id, hp.day_participant_id, coalesce(u.display_name, hp.guest_name) AS name, hp.user_id IS NULL AS guest,
+            hp.role, hp.present, hp.in_place_at, a.post_id, a.locked,
+            coalesce(dp.walking_ability, u.walking_ability) AS walking_ability,
+            coalesce(dp.has_car, u.has_car) AS has_car, coalesce(dp.car_seats, u.car_seats) AS car_seats
        FROM hunt_participants hp
+       JOIN day_participants dp ON dp.id = hp.day_participant_id
        LEFT JOIN users u ON u.id = hp.user_id
        LEFT JOIN hunt_assignments a ON a.participant_id = hp.id
       WHERE hp.hunt_id = $1
@@ -88,101 +78,40 @@ async function huntDetail(tx: Tx, id: string) {
 }
 
 // ---------------------------------------------------------------------------
-// Alertes aux participants (cloche + notification push)
+// Alertes aux participants de la battue (cloche + notification push)
 // ---------------------------------------------------------------------------
 
-/** « samedi 5 décembre » (date stockée sans heure : pas de fuseau). */
-function frenchDate(iso: string) {
-  const [y, m, d] = iso.split('-').map(Number);
-  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' });
-}
-const frenchTime = (hhmm: string) => {
-  const [h, m] = hhmm.split(':');
-  return `${Number(h)}h${m === '00' ? '' : m}`;
-};
-
-type HuntEvent = 'convocation' | 'annulation' | 'attributions' | 'debut' | 'fin';
+type HuntEvent = 'attributions' | 'debut' | 'fin';
 
 async function notifyHunt(c: Context<AppEnv>, tx: Tx, huntId: string, event: HuntEvent) {
   const hunt = await loadHunt(tx, huntId);
-  const where = `${hunt.territory_name}`;
-  const rdv = `RDV ${frenchTime(hunt.meeting_time)}${hunt.meeting_place ? `, ${hunt.meeting_place}` : ''}`;
-  // Convocation et annulation : tous les convoqués ; ensuite : les présents.
+  const what = `Battue n° ${hunt.number} (${hunt.territory_name})`;
   const people = await tx.query<{ user_id: string; role: string; post_number: number | null; post_name: string | null }>(
     `SELECT hp.user_id, hp.role, p.number AS post_number, p.name AS post_name
        FROM hunt_participants hp
        LEFT JOIN hunt_assignments a ON a.participant_id = hp.id
        LEFT JOIN posts p ON p.id = a.post_id
-      WHERE hp.hunt_id = $1 AND hp.user_id IS NOT NULL
-        AND ($2 OR hp.present)`,
-    [huntId, event === 'convocation' || event === 'annulation'],
+      WHERE hp.hunt_id = $1 AND hp.user_id IS NOT NULL AND hp.present`,
+    [huntId],
   );
   const items = people.map((u) => {
     switch (event) {
-      case 'convocation':
-        return { user_id: u.user_id, title: `Battue le ${frenchDate(hunt.date)}`, body: `${where} · ${rdv}. Répondez présent ou absent.` };
-      case 'annulation':
-        return { user_id: u.user_id, title: 'Battue annulée', body: `La battue du ${frenchDate(hunt.date)} (${where}) est annulée.` };
       case 'attributions':
         return u.post_number
-          ? { user_id: u.user_id, title: `Votre poste : ${u.post_number}${u.post_name ? ` · ${u.post_name}` : ''}`, body: `${where} : chemin, voisins et consignes dans l’application.` }
-          : { user_id: u.user_id, title: 'Postes attribués', body: u.role === 'poste' ? `${where} : pas de poste pour vous pour l’instant, voyez le responsable.` : `${where} : vous êtes ${u.role === 'traqueur' ? 'traqueur' : 'chef de ligne'}.` };
+          ? { user_id: u.user_id, title: `Votre poste : ${u.post_number}${u.post_name ? ` · ${u.post_name}` : ''}`, body: `${what} : rejoignez votre poste (itinéraire et covoiturage dans l’application).` }
+          : { user_id: u.user_id, title: 'Postes attribués', body: u.role === 'poste' ? `${what} : pas de poste pour vous, voyez le responsable.` : `${what} : vous êtes ${u.role === 'traqueur' ? 'traqueur' : 'chef de ligne'}.` };
       case 'debut':
-        return { user_id: u.user_id, title: 'Début de battue', body: `${where} : la traque commence. Restez à votre poste, angles de tir respectés.` };
+        return { user_id: u.user_id, title: 'Début de battue', body: `${what} : la traque commence. Restez à votre poste, angles de tir respectés.` };
       case 'fin':
-        return { user_id: u.user_id, title: 'Fin de battue', body: `${where} : déchargez vos armes et rejoignez le rendez-vous.` };
+        return { user_id: u.user_id, title: 'Fin de battue', body: `${what} : déchargez vos armes. Le point de regroupement va vous être indiqué.` };
     }
   });
-  return notifyUsers(c, tx, huntId, event, items);
+  return notifyUsers(c, tx, { huntId, dayId: hunt.day_id }, event, items);
 }
 
 // ---------------------------------------------------------------------------
-// Liste, création, modification
+// Battue : lecture, consignes, suppression (avant le début)
 // ---------------------------------------------------------------------------
-
-huntRoutes.get('/hunts', (c) =>
-  tenantTx(c, null, async (tx) => {
-    const hunts = await tx.query(
-      `SELECT ${HUNT_SELECT},
-              (SELECT count(*)::int FROM hunt_participants x WHERE x.hunt_id = h.id AND x.user_id IS NOT NULL) AS convoked,
-              (SELECT count(*)::int FROM hunt_participants x WHERE x.hunt_id = h.id AND x.response = 'present') AS answered_present,
-              (SELECT x.response FROM hunt_participants x WHERE x.hunt_id = h.id AND x.user_id = $1) AS my_response,
-              EXISTS (SELECT 1 FROM hunt_participants x WHERE x.hunt_id = h.id AND x.user_id = $1) AS convoked_me
-         FROM ${HUNT_FROM}
-        ORDER BY h.date DESC, h.meeting_time DESC`,
-      [c.get('user').id],
-    );
-    return c.json({ hunts });
-  }),
-);
-
-const dateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date invalide (AAAA-MM-JJ).');
-const timeSchema = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Heure invalide (HH:MM).');
-const huntFields = z.object({
-  territory_id: z.uuid(),
-  date: dateSchema,
-  meeting_time: timeSchema,
-  meeting_place: z.string().trim().max(200),
-  meeting_point: pointSchema.nullable(),
-  briefing: z.string().max(5000),
-  participant_user_ids: z.array(z.string().min(1).max(64)).max(500),
-});
-
-huntRoutes.post('/hunts', async (c) => {
-  const body = huntFields.partial({ meeting_time: true, meeting_place: true, meeting_point: true, briefing: true, participant_user_ids: true }).strict().parse(await c.req.json());
-  return tenantTx(c, MANAGERS, async (tx, { tenantId }) => {
-    const { id } = await tx.one<{ id: string }>(
-      `INSERT INTO hunts (territory_id, date, meeting_time, meeting_place, meeting_point, briefing, leader_user_id)
-       VALUES ($1, $2, coalesce($3::time, '08:00'), coalesce($4, ''),
-               CASE WHEN $5::text IS NULL THEN NULL ELSE ${geomParam(5)} END, coalesce($6, ''), app.current_user_id())
-       RETURNING id`,
-      [body.territory_id, body.date, body.meeting_time ?? null, body.meeting_place ?? null,
-       body.meeting_point ? JSON.stringify(body.meeting_point) : null, body.briefing ?? null],
-    );
-    if (body.participant_user_ids?.length) await setConvocations(tx, id, tenantId, body.participant_user_ids);
-    return c.json(await huntDetail(tx, id), 201);
-  });
-});
 
 huntRoutes.get('/hunts/:id', (c) => {
   const id = parseId(c.req.param('id'));
@@ -191,152 +120,107 @@ huntRoutes.get('/hunts/:id', (c) => {
 
 huntRoutes.patch('/hunts/:id', async (c) => {
   const id = parseId(c.req.param('id'));
-  const body = huntFields.omit({ territory_id: true, participant_user_ids: true })
-    .extend({ leader_user_id: z.string().min(1).max(64) })
-    .partial().strict().parse(await c.req.json());
+  const body = z.object({ briefing: z.string().max(5000), leader_user_id: z.string().min(1).max(64) }).partial().strict().parse(await c.req.json());
   return tenantTx(c, MANAGERS, async (tx) => {
-    requireStatus(await loadHunt(tx, id), ['brouillon', 'publiee', 'en_cours'], 'Modification');
-    const sets: string[] = [];
-    const params: unknown[] = [id];
-    for (const [k, v] of Object.entries(body)) {
-      params.push(k === 'meeting_point' && v ? JSON.stringify(v) : v);
-      sets.push(k === 'meeting_point' && v ? `${k} = ${geomParam(params.length)}` : `${k} = $${params.length}`);
-    }
-    if (!sets.length) throw new AppError(400, 'VALIDATION', 'Aucune modification.');
-    await tx.execute(`UPDATE hunts SET ${sets.join(', ')} WHERE id = $1`, params);
+    requireOpen(await loadHunt(tx, id), 'Modification');
+    await tx.execute(
+      'UPDATE hunts SET briefing = coalesce($2, briefing), leader_user_id = coalesce($3, leader_user_id) WHERE id = $1',
+      [id, body.briefing ?? null, body.leader_user_id ?? null],
+    );
     return c.json(await huntDetail(tx, id));
   });
 });
 
+/** Battue créée par erreur : supprimable tant qu'elle n'a pas commencé. */
 huntRoutes.delete('/hunts/:id', (c) => {
   const id = parseId(c.req.param('id'));
   return tenantTx(c, MANAGERS, async (tx) => {
-    requireStatus(await loadHunt(tx, id), ['brouillon', 'annulee'], 'Suppression');
+    requireOpen(await loadHunt(tx, id), 'Suppression', true);
     await tx.execute('DELETE FROM hunts WHERE id = $1', [id]);
     return c.body(null, 204);
   });
 });
 
 // ---------------------------------------------------------------------------
-// Convocations, réponses, invités, présents
+// Volontaires (parmi les présents de la journée) et rôles
 // ---------------------------------------------------------------------------
 
-/** Convoque exactement ces membres (les invités sans compte ne sont pas touchés). */
-async function setConvocations(tx: Tx, huntId: string, tenantId: string, userIds: string[]) {
-  await tx.execute('DELETE FROM hunt_participants WHERE hunt_id = $1 AND user_id IS NOT NULL AND NOT (user_id = ANY($2))', [huntId, userIds]);
-  await tx.execute(
-    `INSERT INTO hunt_participants (hunt_id, user_id)
-     SELECT $1, m.user_id FROM memberships m WHERE m.tenant_id = $2 AND m.user_id = ANY($3)
-     ON CONFLICT (hunt_id, user_id) DO NOTHING`,
-    [huntId, tenantId, userIds],
+/** Participants de la battue = exactement ces présents de la journée. */
+export async function setSelection(tx: Tx, huntId: string, dayParticipantIds: string[]) {
+  const hunt = await loadHunt(tx, huntId);
+  await tx.execute('DELETE FROM hunt_participants WHERE hunt_id = $1 AND NOT (day_participant_id = ANY($2))', [huntId, dayParticipantIds]);
+  // Rôle repris de la battue précédente de la journée, posté sinon.
+  const added = await tx.query(
+    `INSERT INTO hunt_participants (hunt_id, day_participant_id, user_id, guest_name, present, role)
+     SELECT $1, dp.id, dp.user_id, dp.guest_name, true,
+            coalesce((SELECT x.role FROM hunt_participants x JOIN hunts ph ON ph.id = x.hunt_id
+                       WHERE x.day_participant_id = dp.id AND ph.day_id = $3 AND ph.id <> $1
+                       ORDER BY ph.number DESC LIMIT 1), 'poste')
+       FROM day_participants dp
+      WHERE dp.day_id = $3 AND dp.present AND dp.id = ANY($2)
+     ON CONFLICT (hunt_id, day_participant_id) DO NOTHING
+     RETURNING id`,
+    [huntId, dayParticipantIds, hunt.day_id],
   );
+  const missing = await tx.one<{ n: number }>(
+    `SELECT count(*)::int AS n FROM unnest($2::uuid[]) x(id)
+      WHERE NOT EXISTS (SELECT 1 FROM hunt_participants hp WHERE hp.hunt_id = $1 AND hp.day_participant_id = x.id)`,
+    [huntId, dayParticipantIds],
+  );
+  if (missing.n) throw new AppError(422, 'NOT_PRESENT', 'Seuls les présents de la journée peuvent participer à une battue.');
+  return added.length;
 }
 
-huntRoutes.put('/hunts/:id/convocations', async (c) => {
+huntRoutes.put('/hunts/:id/selection', async (c) => {
   const id = parseId(c.req.param('id'));
-  const { user_ids } = z.object({ user_ids: z.array(z.string().min(1).max(64)).max(500) }).strict().parse(await c.req.json());
-  return tenantTx(c, MANAGERS, async (tx, { tenantId }) => {
-    requireStatus(await loadHunt(tx, id), ['brouillon', 'publiee', 'en_cours'], 'Convocation');
-    await setConvocations(tx, id, tenantId, user_ids);
-    return c.json(await huntDetail(tx, id));
-  });
-});
-
-huntRoutes.post('/hunts/:id/respond', async (c) => {
-  const id = parseId(c.req.param('id'));
-  const { response } = z.object({ response: z.enum(['present', 'absent']) }).strict().parse(await c.req.json());
-  return tenantTx(c, null, async (tx) => {
-    await tx.query('SELECT app.respond_hunt($1, $2)', [id, response]);
-    return c.json({ sheet: (await tx.one('SELECT app.my_hunt_sheet($1) AS s', [id])).s });
-  });
-});
-
-huntRoutes.post('/hunts/:id/guests', async (c) => {
-  const id = parseId(c.req.param('id'));
-  const { name } = z.object({ name: z.string().trim().min(1).max(120) }).strict().parse(await c.req.json());
+  const { day_participant_ids } = z.object({ day_participant_ids: z.array(z.uuid()).max(500) }).strict().parse(await c.req.json());
   return tenantTx(c, MANAGERS, async (tx) => {
-    requireStatus(await loadHunt(tx, id), ['publiee', 'en_cours'], 'Ajout d’un invité');
-    await tx.execute(`INSERT INTO hunt_participants (hunt_id, guest_name, present) VALUES ($1, $2, true)`, [id, name]);
-    return c.json(await huntDetail(tx, id), 201);
+    requireOpen(await loadHunt(tx, id), 'Choix des participants', true);
+    await setSelection(tx, id, day_participant_ids);
+    return c.json(await huntDetail(tx, id));
   });
 });
 
 huntRoutes.patch('/hunts/:id/participants/:pid', async (c) => {
   const id = parseId(c.req.param('id'));
   const pid = parseId(c.req.param('pid'));
-  const body = z.object({ present: z.boolean(), role: z.enum(['poste', 'traqueur', 'chef_de_ligne']) }).partial().strict().parse(await c.req.json());
+  const { role } = z.object({ role: z.enum(['poste', 'traqueur', 'chef_de_ligne']) }).strict().parse(await c.req.json());
   return tenantTx(c, MANAGERS, async (tx) => {
-    const hunt = await loadHunt(tx, id);
-    requireStatus(hunt, body.present !== undefined ? ['en_cours'] : ['brouillon', 'publiee', 'en_cours'], 'Modification du participant');
-    const n = await tx.execute(
-      `UPDATE hunt_participants SET present = coalesce($3, present), role = coalesce($4::hunt_role, role)
-        WHERE id = $2 AND hunt_id = $1`,
-      [id, pid, body.present ?? null, body.role ?? null],
-    );
+    requireOpen(await loadHunt(tx, id), 'Modification du rôle');
+    const n = await tx.execute('UPDATE hunt_participants SET role = $3 WHERE id = $2 AND hunt_id = $1', [id, pid, role]);
     if (!n) throw new AppError(404, 'NOT_FOUND', 'Participant introuvable.');
     return c.json(await huntDetail(tx, id));
   });
 });
 
-huntRoutes.delete('/hunts/:id/participants/:pid', (c) => {
-  const id = parseId(c.req.param('id'));
-  const pid = parseId(c.req.param('pid'));
-  return tenantTx(c, MANAGERS, async (tx) => {
-    requireStatus(await loadHunt(tx, id), ['brouillon', 'publiee', 'en_cours'], 'Retrait du participant');
-    await tx.execute('DELETE FROM hunt_participants WHERE id = $2 AND hunt_id = $1', [id, pid]);
-    return c.json(await huntDetail(tx, id));
-  });
-});
-
 // ---------------------------------------------------------------------------
-// Cycle de vie
+// Début et fin de battue
 // ---------------------------------------------------------------------------
 
-huntRoutes.post('/hunts/:id/actions/:action{publier|demarrer|debut|fin|annuler|brouillon}', (c) => {
+huntRoutes.post('/hunts/:id/actions/:action{debut|fin}', (c) => {
   const id = parseId(c.req.param('id'));
   const action = c.req.param('action');
   return tenantTx(c, MANAGERS, async (tx) => {
     const hunt = await loadHunt(tx, id);
-    switch (action) {
-      case 'publier':
-        if (!(await tx.one<{ n: number }>('SELECT count(*)::int AS n FROM hunt_participants WHERE hunt_id = $1', [id])).n) {
-          throw new AppError(422, 'HUNT_NO_PARTICIPANT', 'Convoquez au moins un chasseur avant de publier.');
-        }
-        await tx.execute(`UPDATE hunts SET status = 'publiee' WHERE id = $1`, [id]);
-        await notifyHunt(c, tx, id, 'convocation');
-        break;
-      case 'brouillon':
-        await tx.execute(`UPDATE hunts SET status = 'brouillon' WHERE id = $1`, [id]);
-        break;
-      case 'demarrer':
-        // Rond du matin : présents pré-cochés d'après les réponses.
-        await tx.execute(`UPDATE hunts SET status = 'en_cours' WHERE id = $1`, [id]);
-        await tx.execute(`UPDATE hunt_participants SET present = true WHERE hunt_id = $1 AND response = 'present'`, [id]);
-        break;
-      case 'debut':
-        requireStatus(hunt, ['en_cours'], 'Début de battue');
-        if (!hunt.assignments_published_at) {
-          throw new AppError(422, 'ASSIGNMENTS_NOT_PUBLISHED', 'Publiez les attributions avant de lancer la battue.');
-        }
-        await tx.execute('UPDATE hunts SET started_at = coalesce(started_at, now()) WHERE id = $1', [id]);
-        if (!hunt.started_at) await notifyHunt(c, tx, id, 'debut');
-        break;
-      case 'fin':
-        await tx.execute(`UPDATE hunts SET status = 'terminee' WHERE id = $1`, [id]);
-        await notifyHunt(c, tx, id, 'fin');
-        break;
-      case 'annuler':
-        const wasPublished = hunt.status === 'publiee';
-        await tx.execute(`UPDATE hunts SET status = 'annulee' WHERE id = $1`, [id]);
-        if (wasPublished) await notifyHunt(c, tx, id, 'annulation'); // un brouillon n'a prévenu personne
-        break;
+    requireOpen(hunt, action === 'debut' ? 'Début de battue' : 'Fin de battue');
+    if (action === 'debut') {
+      if (!hunt.assignments_published_at) {
+        throw new AppError(422, 'ASSIGNMENTS_NOT_PUBLISHED', 'Publiez les postes avant de lancer la battue.');
+      }
+      await tx.execute('UPDATE hunts SET started_at = coalesce(started_at, now()) WHERE id = $1', [id]);
+      if (!hunt.started_at) await notifyHunt(c, tx, id, 'debut');
+    } else {
+      await tx.execute(`UPDATE hunts SET status = 'terminee' WHERE id = $1`, [id]);
+      // Le regroupement précédent ne vaut plus : le responsable en annonce un nouveau.
+      await tx.execute('UPDATE hunt_days SET regroup_at = NULL WHERE id = $1', [hunt.day_id]);
+      await notifyHunt(c, tx, id, 'fin');
     }
     return c.json(await huntDetail(tx, id));
   });
 });
 
 // ---------------------------------------------------------------------------
-// Postes du jour et attribution (en cours)
+// Postes du jour et attribution
 // ---------------------------------------------------------------------------
 
 huntRoutes.put('/hunts/:id/posts', async (c) => {
@@ -344,10 +228,9 @@ huntRoutes.put('/hunts/:id/posts', async (c) => {
   const { post_ids } = z.object({ post_ids: z.array(z.uuid()).max(999) }).strict().parse(await c.req.json());
   return tenantTx(c, MANAGERS, async (tx) => {
     const hunt = await loadHunt(tx, id);
-    requireStatus(hunt, ['en_cours'], 'Choix des postes');
+    requireOpen(hunt, 'Choix des postes');
     const available = await availablePostIds(tx, hunt.territory_id);
-    const unavailable = post_ids.filter((p) => !available.has(p));
-    if (unavailable.length) {
+    if (post_ids.some((p) => !available.has(p))) {
       throw new AppError(422, 'POST_UNAVAILABLE', 'Un poste choisi est désactivé, trop près d’une habitation ou hors du territoire.');
     }
     await tx.execute('DELETE FROM hunt_posts WHERE hunt_id = $1 AND NOT (post_id = ANY($2))', [id, post_ids]);
@@ -382,22 +265,32 @@ huntRoutes.delete('/hunts/:id/assignments/:pid', (c) => {
   });
 });
 
-/** Tirage au sort : garde les attributions verrouillées, répartit les autres. */
+/**
+ * Tirage au sort : garde les attributions verrouillées, répartit les autres,
+ * sans jamais donner un poste plus difficile que la capacité de marche.
+ */
 huntRoutes.post('/hunts/:id/draw', async (c) => {
   const id = parseId(c.req.param('id'));
   const { allow_double } = z.object({ allow_double: z.boolean().default(false) }).strict().parse(await c.req.json().catch(() => ({})));
   return tenantTx(c, MANAGERS, async (tx) => {
-    requireStatus(await loadHunt(tx, id), ['en_cours'], 'Tirage au sort');
-    const posts = (await tx.query<{ post_id: string }>('SELECT post_id FROM hunt_posts WHERE hunt_id = $1', [id])).map((r) => r.post_id);
-    if (!posts.length) throw new AppError(422, 'NO_DAY_POSTS', 'Choisissez d’abord les postes du jour.');
-    const hunters = (await tx.query<{ id: string }>(
-      `SELECT id FROM hunt_participants WHERE hunt_id = $1 AND present AND role = 'poste'`, [id],
-    )).map((r) => r.id);
+    requireOpen(await loadHunt(tx, id), 'Tirage au sort');
+    const posts = await tx.query<{ post_id: string; difficulty: number | null }>(
+      `SELECT hp.post_id, app.post_difficulty(p.access_difficulty, p.access_path) AS difficulty
+         FROM hunt_posts hp JOIN posts p ON p.id = hp.post_id WHERE hp.hunt_id = $1`, [id]);
+    if (!posts.length) throw new AppError(422, 'NO_DAY_POSTS', 'Choisissez d’abord les postes de la battue.');
+    const hunters = await tx.query<{ id: string; ability: number | null }>(
+      `SELECT hp.id, coalesce(dp.walking_ability, u.walking_ability) AS ability
+         FROM hunt_participants hp JOIN day_participants dp ON dp.id = hp.day_participant_id
+         LEFT JOIN users u ON u.id = hp.user_id
+        WHERE hp.hunt_id = $1 AND hp.present AND hp.role = 'poste'`, [id]);
     const locked = await tx.query<{ post_id: string; participant_id: string }>(
       'SELECT post_id, participant_id FROM hunt_assignments WHERE hunt_id = $1 AND locked', [id],
     );
     await tx.execute('DELETE FROM hunt_assignments WHERE hunt_id = $1 AND NOT locked', [id]);
-    const { assignments, unplaced } = drawAssignments(posts, hunters, locked, allow_double);
+    const { assignments, unplaced } = drawAssignments(
+      posts.map((p) => p.post_id), hunters.map((h) => h.id), locked, allow_double, undefined,
+      { difficulty: new Map(posts.map((p) => [p.post_id, p.difficulty])), ability: new Map(hunters.map((h) => [h.id, h.ability])) },
+    );
     for (const a of assignments) {
       await tx.execute('INSERT INTO hunt_assignments (hunt_id, post_id, participant_id) VALUES ($1, $2, $3)', [id, a.post_id, a.participant_id]);
     }
@@ -405,80 +298,122 @@ huntRoutes.post('/hunts/:id/draw', async (c) => {
   });
 });
 
-/**
- * Publie les attributions : chaque chasseur voit son poste. Les invités sans
- * lien en reçoivent un (renvoyé une seule fois : seule l'empreinte est stockée).
- */
+/** Publie les postes : chaque chasseur voit le sien et doit s'y rendre. */
 huntRoutes.post('/hunts/:id/publish-assignments', (c) => {
   const id = parseId(c.req.param('id'));
   return tenantTx(c, MANAGERS, async (tx) => {
-    requireStatus(await loadHunt(tx, id), ['en_cours'], 'Publication des attributions');
+    requireOpen(await loadHunt(tx, id), 'Publication des postes');
     await tx.execute('UPDATE hunts SET assignments_published_at = now() WHERE id = $1', [id]);
-    const guests = await tx.query<{ id: string; guest_name: string }>(
-      'SELECT id, guest_name FROM hunt_participants WHERE hunt_id = $1 AND user_id IS NULL AND guest_token_hash IS NULL', [id],
-    );
-    const links = [];
-    for (const g of guests) links.push({ participant_id: g.id, name: g.guest_name, url: await newGuestLink(tx, g.id, c.env) });
     const notified = await notifyHunt(c, tx, id, 'attributions');
-    return c.json({ ...(await huntDetail(tx, id)), guest_links: links, notified });
+    return c.json({ ...(await huntDetail(tx, id)), notified });
   });
 });
 
-async function newGuestLink(tx: Tx, participantId: string, env: Env) {
-  const token = randomToken();
-  await tx.execute('UPDATE hunt_participants SET guest_token_hash = $2 WHERE id = $1 AND user_id IS NULL', [participantId, await sha256Hex(token)]);
-  return guestUrl(env, token);
+// ---------------------------------------------------------------------------
+// Covoiturage (du rendez-vous aux parkings)
+// ---------------------------------------------------------------------------
+
+/** Plan de covoiturage d'une battue (responsable ou participant). */
+export async function carpoolFor(tx: Tx, huntId: string): Promise<CarpoolPlan & { mine: string | null }> {
+  const people = await tx.query<any>('SELECT * FROM app.battue_people($1)', [huntId]);
+  const { per_car } = await tx.one<{ per_car: number }>(
+    'SELECT t.hunters_per_car AS per_car FROM hunts h JOIN tenants t ON t.id = h.tenant_id WHERE h.id = $1', [huntId]);
+  const plan = planCarpool(
+    people.map((p) => ({
+      id: p.participant_id,
+      name: p.name,
+      hasCar: p.has_car,
+      seats: p.car_seats,
+      destination: p.parking_id ?? (p.post_number ? `poste-${p.post_number}` : p.role === 'poste' ? 'sans-poste' : 'traque'),
+      destinationName: p.parking_name ? `parking ${p.parking_name}` : p.post_number ? `poste ${p.post_number}` : p.role === 'poste' ? 'rendez-vous (sans poste)' : 'départ de la traque',
+      lon: p.parking_lon,
+      lat: p.parking_lat,
+    })),
+    per_car,
+  );
+  return { ...plan, mine: people.find((p) => p.mine)?.participant_id ?? null };
 }
 
-/** Nouveau lien pour un invité (l'ancien cesse de fonctionner). */
-huntRoutes.post('/hunts/:id/participants/:pid/guest-link', (c) => {
+huntRoutes.get('/hunts/:id/carpool', (c) => {
   const id = parseId(c.req.param('id'));
-  const pid = parseId(c.req.param('pid'));
-  return tenantTx(c, MANAGERS, async (tx) => {
-    const g = notFoundIfNull(await tx.maybeOne<{ id: string; guest_name: string }>(
-      'SELECT id, guest_name FROM hunt_participants WHERE id = $2 AND hunt_id = $1 AND user_id IS NULL', [id, pid],
-    ), 'Invité');
-    return c.json({ participant_id: g.id, name: g.guest_name, url: await newGuestLink(tx, g.id, c.env) });
-  });
-});
-
-huntRoutes.delete('/hunts/:id/participants/:pid/guest-link', (c) => {
-  const id = parseId(c.req.param('id'));
-  const pid = parseId(c.req.param('pid'));
-  return tenantTx(c, MANAGERS, async (tx) => {
-    await tx.execute('UPDATE hunt_participants SET guest_token_hash = NULL WHERE id = $2 AND hunt_id = $1', [id, pid]);
-    return c.body(null, 204);
-  });
+  return tenantTx(c, MANAGERS, async (tx) => c.json(await carpoolFor(tx, id)));
 });
 
 // ---------------------------------------------------------------------------
-// Vue chasseur (tout le monde), version, espèces, prélèvements
+// Espèces et prélèvements
 // ---------------------------------------------------------------------------
-
-/** Fiche de la battue : la sienne pour un convoqué, vue d'ensemble pour un responsable. */
-huntRoutes.get('/hunts/:id/view', (c) => {
-  const id = parseId(c.req.param('id'));
-  return tenantTx(c, null, async (tx) => {
-    const { v } = await tx.one<{ v: unknown }>('SELECT app.view_hunt($1) AS v', [id]);
-    if (!v) throw new AppError(404, 'NOT_FOUND', 'Battue introuvable ou vous n’y êtes pas convoqué.');
-    return c.json({ sheet: v });
-  });
-});
-
-/** Numéro de version (les écrans ouverts se rechargent s'il change). */
-huntRoutes.get('/hunts/:id/revision', (c) => {
-  const id = parseId(c.req.param('id'));
-  return tenantTx(c, null, async (tx) => {
-    const row = notFoundIfNull(await tx.maybeOne('SELECT revision::int AS revision, status, date::text AS date FROM hunts WHERE id = $1', [id]), 'Battue');
-    return c.json(row);
-  });
-});
 
 const SPECIES_RE = /^[\p{L}\p{N} '’.\-()]{1,60}$/u;
 const speciesSchema = z.string().trim().min(1).max(60).regex(SPECIES_RE, 'Nom d’espèce invalide.');
 
+huntRoutes.put('/hunts/:id/species', async (c) => {
+  const id = parseId(c.req.param('id'));
+  const { species } = z.object({
+    species: z.array(z.object({ species: speciesSchema, quota: z.number().int().min(0).max(999).nullable() }).strict()).max(30),
+  }).strict().parse(await c.req.json());
+  return tenantTx(c, MANAGERS, async (tx) => {
+    requireOpen(await loadHunt(tx, id), 'Modification des espèces');
+    const names = species.map((x) => x.species);
+    if (new Set(names.map((n) => n.toLowerCase())).size !== names.length) throw new AppError(422, 'DUPLICATE', 'Espèce en double.');
+    await tx.execute('DELETE FROM hunt_species WHERE hunt_id = $1 AND NOT (species = ANY($2))', [id, names]);
+    for (const x of species) {
+      await tx.execute(
+        `INSERT INTO hunt_species (hunt_id, species, quota) VALUES ($1, $2, $3)
+         ON CONFLICT (hunt_id, species) DO UPDATE SET quota = EXCLUDED.quota`,
+        [id, x.species, x.quota],
+      );
+    }
+    return c.json(await huntDetail(tx, id));
+  });
+});
+
+const harvestSchema = z.object({
+  species: speciesSchema,
+  category: z.enum(['male', 'femelle', 'jeune', 'indetermine']).default('indetermine'),
+  notes: z.string().trim().max(500).default(''),
+  participant_id: z.uuid().nullable().optional(), // responsable : tireur au choix
+}).strict();
+
+async function viewOfHuntDay(tx: Tx, huntId: string) {
+  return (await tx.one<{ v: unknown }>('SELECT app.view_day(h.day_id) AS v FROM hunts h WHERE h.id = $1', [huntId])).v;
+}
+
+/** Déclarer un prélèvement : le participant pour lui-même, le responsable pour n'importe qui. */
+huntRoutes.post('/hunts/:id/harvests', async (c) => {
+  const id = parseId(c.req.param('id'));
+  const body = harvestSchema.parse(await c.req.json());
+  return tenantTx(c, null, async (tx, { role }) => {
+    if (MANAGERS.includes(role) && body.participant_id !== undefined) {
+      const hunt = await loadHunt(tx, id);
+      if (!['en_cours', 'terminee'].includes(hunt.status)) throw new AppError(409, 'HUNT_BAD_STATUS', 'Saisie impossible.');
+      await tx.execute(
+        `INSERT INTO hunt_harvests (hunt_id, species, category, notes, participant_id, recorded_by)
+         VALUES ($1, $2, $3, $4, $5, app.current_user_id())`,
+        [id, body.species, body.category, body.notes, body.participant_id],
+      );
+    } else {
+      await tx.query('SELECT app.declare_harvest($1, $2, $3, $4)', [id, body.species, body.category, body.notes]);
+    }
+    return c.json({ view: await viewOfHuntDay(tx, id) }, 201);
+  });
+});
+
+huntRoutes.delete('/hunts/:id/harvests/:hid', (c) => {
+  const id = parseId(c.req.param('id'));
+  const hid = parseId(c.req.param('hid'));
+  return tenantTx(c, null, async (tx, { role }) => {
+    if (MANAGERS.includes(role)) {
+      const n = await tx.execute('DELETE FROM hunt_harvests WHERE id = $1 AND hunt_id = $2', [hid, id]);
+      if (!n) throw new AppError(404, 'NOT_FOUND', 'Prélèvement introuvable.');
+    } else {
+      await tx.query('SELECT app.withdraw_harvest($1)', [hid]);
+    }
+    return c.json({ view: await viewOfHuntDay(tx, id) });
+  });
+});
+
 // ---------------------------------------------------------------------------
-// Positions GPS en direct (consentement par battue, dernière position seulement)
+// Positions GPS en direct (accord donné pour la journée, dernière position)
 // ---------------------------------------------------------------------------
 
 /** Statut d'un participant sur la carte du responsable. */
@@ -500,15 +435,6 @@ const positionBody = z.object({
   accuracy: z.number().min(0).max(100_000),
   recorded_at: z.string().datetime({ offset: true }).optional(),
 }).strict();
-
-huntRoutes.put('/hunts/:id/position-sharing', async (c) => {
-  const id = parseId(c.req.param('id'));
-  const { share } = z.object({ share: z.boolean() }).strict().parse(await c.req.json());
-  return tenantTx(c, null, async (tx) => {
-    await tx.query('SELECT app.set_position_sharing($1, $2)', [id, share]);
-    return c.json({ share });
-  });
-});
 
 huntRoutes.post('/hunts/:id/position', async (c) => {
   const id = parseId(c.req.param('id'));
@@ -533,19 +459,20 @@ huntRoutes.put('/hunts/:id/in-place', async (c) => {
 huntRoutes.get('/hunts/:id/positions', (c) => {
   const id = parseId(c.req.param('id'));
   return tenantTx(c, null, async (tx) => {
-    const hunt = notFoundIfNull(await tx.maybeOne<{ status: string; tolerance: number }>(
-      `SELECT h.status, t.gps_tolerance_m AS tolerance FROM hunts h JOIN tenants t ON t.id = h.tenant_id WHERE h.id = $1`, [id]), 'Battue');
+    const hunt = notFoundIfNull(await tx.maybeOne<{ status: string; tolerance: number; day_id: string }>(
+      `SELECT h.status, h.day_id, t.gps_tolerance_m AS tolerance FROM hunts h JOIN tenants t ON t.id = h.tenant_id WHERE h.id = $1`, [id]), 'Battue');
     const me = await tx.maybeOne<{ shared: boolean }>(
-      'SELECT position_shared_at IS NOT NULL AS shared FROM hunt_participants WHERE hunt_id = $1 AND user_id = app.current_user_id()', [id]);
+      'SELECT position_shared_at IS NOT NULL AS shared FROM day_participants WHERE day_id = $1 AND user_id = app.current_user_id()', [hunt.day_id]);
     const { manager } = await tx.one<{ manager: boolean }>(`SELECT app.has_role('president', 'responsable') AS manager`);
     const rows = await tx.query<any>(
       `SELECT hp.id AS participant_id, coalesce(u.display_name, hp.guest_name) AS name, hp.role,
-              hp.user_id IS NULL AS guest, hp.position_shared_at IS NOT NULL AS shared, hp.in_place_at IS NOT NULL AS in_place,
+              hp.user_id IS NULL AS guest, dp.position_shared_at IS NOT NULL AS shared, hp.in_place_at IS NOT NULL AS in_place,
               hp.user_id = app.current_user_id() AS mine, p.number AS post_number,
               ST_X(pos.geom::geometry) AS lon, ST_Y(pos.geom::geometry) AS lat, pos.accuracy_m,
               extract(epoch FROM now() - pos.recorded_at)::int AS age_s,
               CASE WHEN pos.geom IS NOT NULL AND p.geom IS NOT NULL THEN round(ST_Distance(pos.geom, p.geom::geography))::int END AS distance_m
          FROM hunt_participants hp
+         JOIN day_participants dp ON dp.id = hp.day_participant_id
          LEFT JOIN users u ON u.id = hp.user_id
          LEFT JOIN hunt_assignments a ON a.participant_id = hp.id
          LEFT JOIN posts p ON p.id = a.post_id
@@ -563,81 +490,23 @@ huntRoutes.get('/hunts/:id/positions', (c) => {
   });
 });
 
-huntRoutes.put('/hunts/:id/species', async (c) => {
-  const id = parseId(c.req.param('id'));
-  const { species } = z.object({
-    species: z.array(z.object({ species: speciesSchema, quota: z.number().int().min(0).max(999).nullable() }).strict()).max(30),
-  }).strict().parse(await c.req.json());
-  return tenantTx(c, MANAGERS, async (tx) => {
-    requireStatus(await loadHunt(tx, id), ['brouillon', 'publiee', 'en_cours'], 'Modification des espèces');
-    const names = species.map((x) => x.species);
-    if (new Set(names.map((n) => n.toLowerCase())).size !== names.length) throw new AppError(422, 'DUPLICATE', 'Espèce en double.');
-    await tx.execute('DELETE FROM hunt_species WHERE hunt_id = $1 AND NOT (species = ANY($2))', [id, names]);
-    for (const x of species) {
-      await tx.execute(
-        `INSERT INTO hunt_species (hunt_id, species, quota) VALUES ($1, $2, $3)
-         ON CONFLICT (hunt_id, species) DO UPDATE SET quota = EXCLUDED.quota`,
-        [id, x.species, x.quota],
-      );
-    }
-    return c.json(await huntDetail(tx, id));
-  });
-});
-
-const harvestSchema = z.object({
-  species: speciesSchema,
-  category: z.enum(['male', 'femelle', 'jeune', 'indetermine']).default('indetermine'),
-  notes: z.string().trim().max(500).default(''),
-  participant_id: z.uuid().nullable().optional(), // responsable : tireur au choix
-}).strict();
-
-/** Déclarer un prélèvement : le participant pour lui-même, le responsable pour n'importe qui. */
-huntRoutes.post('/hunts/:id/harvests', async (c) => {
-  const id = parseId(c.req.param('id'));
-  const body = harvestSchema.parse(await c.req.json());
-  return tenantTx(c, null, async (tx, { role }) => {
-    if (MANAGERS.includes(role) && body.participant_id !== undefined) {
-      requireStatus(await loadHunt(tx, id), ['en_cours', 'terminee'], 'Saisie d’un prélèvement');
-      await tx.execute(
-        `INSERT INTO hunt_harvests (hunt_id, species, category, notes, participant_id, recorded_by)
-         VALUES ($1, $2, $3, $4, $5, app.current_user_id())`,
-        [id, body.species, body.category, body.notes, body.participant_id],
-      );
-    } else {
-      await tx.query('SELECT app.declare_harvest($1, $2, $3, $4)', [id, body.species, body.category, body.notes]);
-    }
-    return c.json({ sheet: (await tx.one('SELECT app.view_hunt($1) AS v', [id])).v }, 201);
-  });
-});
-
-huntRoutes.delete('/hunts/:id/harvests/:hid', (c) => {
-  const id = parseId(c.req.param('id'));
-  const hid = parseId(c.req.param('hid'));
-  return tenantTx(c, null, async (tx, { role }) => {
-    if (MANAGERS.includes(role)) {
-      const n = await tx.execute('DELETE FROM hunt_harvests WHERE id = $1 AND hunt_id = $2', [hid, id]);
-      if (!n) throw new AppError(404, 'NOT_FOUND', 'Prélèvement introuvable.');
-    } else {
-      await tx.query('SELECT app.withdraw_harvest($1)', [hid]);
-    }
-    return c.json({ sheet: (await tx.one('SELECT app.view_hunt($1) AS v', [id])).v });
-  });
-});
-
 // ---------------------------------------------------------------------------
-// Fiche « Ma battue » (membre) et lien invité (sans compte)
+// Invité (lien sans compte) : vue de la journée et « Je suis en place »
 // ---------------------------------------------------------------------------
 
-huntRoutes.get('/hunts/:id/sheet', (c) => {
-  const id = parseId(c.req.param('id'));
-  return tenantTx(c, null, async (tx) => {
-    const { s } = await tx.one<{ s: unknown }>('SELECT app.my_hunt_sheet($1) AS s', [id]);
-    if (!s) throw new AppError(404, 'NOT_FOUND', 'Vous n’êtes pas convoqué à cette battue.');
-    return c.json({ sheet: s });
+export const TOKEN_RE = /^[A-Za-z0-9_-]{32,64}$/;
+const expired = () => new AppError(410, 'GUEST_LINK_EXPIRED', 'Ce lien n’est plus valable : la journée est terminée ou le lien a été remplacé.');
+
+huntRoutes.get('/guest/:token', async (c: Context<AppEnv>) => {
+  const token = c.req.param('token') ?? '';
+  if (!TOKEN_RE.test(token)) throw new AppError(404, 'GUEST_LINK_UNKNOWN', 'Lien inconnu.');
+  const hash = await sha256Hex(token);
+  return withTx(c.get('pool'), { userId: null, tenantId: null }, async (tx) => {
+    const { v } = await tx.one<{ v: unknown }>('SELECT app.guest_day_view($1) AS v', [hash]);
+    if (!v) throw expired();
+    return c.json({ view: v });
   });
 });
-
-const TOKEN_RE = /^[A-Za-z0-9_-]{32,64}$/;
 
 huntRoutes.put('/guest/:token/in-place', async (c: Context<AppEnv>) => {
   const token = c.req.param('token') ?? '';
@@ -646,18 +515,8 @@ huntRoutes.put('/guest/:token/in-place', async (c: Context<AppEnv>) => {
   const hash = await sha256Hex(token);
   return withTx(c.get('pool'), { userId: null, tenantId: null }, async (tx) => {
     const { ok } = await tx.one<{ ok: boolean }>('SELECT app.guest_set_in_place($1, $2) AS ok', [hash, in_place]);
-    if (!ok) throw new AppError(410, 'GUEST_LINK_EXPIRED', 'Ce lien n’est plus valable : la battue est terminée ou le lien a été remplacé.');
+    if (!ok) throw expired();
     return c.json({ in_place });
   });
 });
 
-huntRoutes.get('/guest/:token', async (c: Context<AppEnv>) => {
-  const token = c.req.param('token') ?? '';
-  if (!TOKEN_RE.test(token)) throw new AppError(404, 'GUEST_LINK_UNKNOWN', 'Lien inconnu.');
-  const hash = await sha256Hex(token);
-  return withTx(c.get('pool'), { userId: null, tenantId: null }, async (tx) => {
-    const { s } = await tx.one<{ s: unknown }>('SELECT app.guest_hunt_sheet($1) AS s', [hash]);
-    if (!s) throw new AppError(410, 'GUEST_LINK_EXPIRED', 'Ce lien n’est plus valable : la battue est terminée ou le lien a été remplacé.');
-    return c.json({ sheet: s });
-  });
-});

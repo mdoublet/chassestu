@@ -15,12 +15,13 @@ import { checkPost, selfIntersects } from '../lib/checks.js';
 import booleanPointInPolygon from '@turf/boolean-point-in-polygon';
 import { simplifyMeters, lineLengthMeters, distanceMeters } from '../lib/simplify.js';
 import { parseGeoFile } from '../lib/importer.js';
+import { DIFFICULTY_LABELS } from '../lib/hunts.js';
 
 /** Champs nécessaires pour recréer un objet supprimé (annulation). */
 const FIELDS = {
   reserves: ['name', 'reason', 'geom'],
   parkings: ['name', 'geom'],
-  posts: ['number', 'name', 'geom', 'parking_id', 'access_path', 'instructions', 'active'],
+  posts: ['number', 'name', 'geom', 'parking_id', 'access_path', 'instructions', 'active', 'access_difficulty'],
   dwellings: ['geom', 'comment'],
 };
 const LABEL = { territories: 'du territoire', reserves: 'de la réserve', parkings: 'du parking', posts: 'du poste', dwellings: 'de l’habitation' };
@@ -844,6 +845,7 @@ export async function editorView(main) {
       isOutside(item) ? h('p.alert.warn', 'Poste hors du territoire : il faut le droit de chasse à cet endroit (ou l’accord du propriétaire).') : null,
       h('div.row', field('Numéro', bound(kind, item, 'number', { type: 'number', min: 1, max: 999, required: true })), field('Nom', bound(kind, item, 'name', { maxlength: 200 }))),
       field('Parking', parkingSelect),
+      field('Difficulté d’accès (pour les chasseurs qui marchent peu)', difficultySelect(item)),
       field('Consignes', bound(kind, item, 'instructions', { rows: 3, maxlength: 2000 }, 'textarea')),
       h('label.check', bound(kind, item, 'active', { type: 'checkbox' }), 'Poste actif'),
       h('p.small', item.access_path ? `Chemin d’accès : ${item.access_path_length_m} m. Déplacez ses sommets pour l’ajuster.` : 'Pas encore de chemin d’accès.'),
@@ -857,6 +859,15 @@ export async function editorView(main) {
         : null,
       del,
     );
+  }
+
+  /** 1 très facile … 5 escarpé ; vide : estimée d'après la longueur du chemin. */
+  function difficultySelect(item) {
+    const estimated = item.access_difficulty == null && item.difficulty != null ? ` (${item.difficulty} · ${DIFFICULTY_LABELS[item.difficulty]})` : '';
+    const el = h('select', { disabled: !canEdit, onchange: () => run(() => updateItem('posts', item, { access_difficulty: el.value ? Number(el.value) : null })) },
+      h('option', { value: '' }, item.access_path ? `Estimée d’après le chemin${estimated}` : 'Non renseignée'),
+      Object.entries(DIFFICULTY_LABELS).map(([v, l]) => h('option', { value: v, selected: String(item.access_difficulty ?? '') === v }, `${v} · ${l}`)));
+    return el;
   }
 
   function dwellingPanel(d) {

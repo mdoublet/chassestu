@@ -1,6 +1,6 @@
 /** Rythme rapide pendant la battue et le jour même (rond du matin imminent). */
 export function isLive(status, date, today = localToday()) {
-  return status === 'en_cours' || (status === 'publiee' && !!date && date <= today);
+  return status === 'en_cours' || (['convoquee', 'publiee'].includes(status) && !!date && date <= today);
 }
 export function localToday() {
   const d = new Date();

@@ -10,7 +10,7 @@ import { deleteClerkUsers } from '../clerk-admin';
 export const tenantRoutes = new Hono<AppEnv>();
 
 const TENANT_COLUMNS = `id, name, kind, departement, buffer_distance_m, gps_tolerance_m,
-  position_retention_h, show_all_posts, post_max_outside_m, created_at`;
+  position_retention_h, show_all_posts, post_max_outside_m, hunters_per_car, created_at`;
 
 const tenantCreateSchema = z.object({
   name: z.string().trim().min(1).max(200),
@@ -93,6 +93,7 @@ const tenantPatchSchema = z
     position_retention_h: z.number().int().min(1).max(720),
     show_all_posts: z.boolean(),
     post_max_outside_m: z.number().int().min(0).max(500),
+    hunters_per_car: z.number().int().min(2).max(9),
   })
   .partial()
   .strict();
@@ -119,7 +120,7 @@ tenantRoutes.patch('/tenant', async (c) => {
 tenantRoutes.get('/members', (c) =>
   tenantTx(c, ['president', 'responsable'], async (tx, { tenantId }) => {
     const members = await tx.query(
-      `SELECT u.id, u.display_name, u.email, u.phone, m.role, m.created_at
+      `SELECT u.id, u.display_name, u.email, u.phone, m.role, m.created_at, u.walking_ability, u.has_car, u.car_seats
          FROM memberships m JOIN users u ON u.id = m.user_id
         WHERE m.tenant_id = $1
         ORDER BY m.role, u.display_name`,

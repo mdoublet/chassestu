@@ -100,10 +100,28 @@ function cryptoRandom(): number {
   return crypto.getRandomValues(new Uint32Array(1))[0] / 2 ** 32;
 }
 
+/** Difficulté d'accès des postes et capacité de marche des chasseurs (1 à 5 ; null : inconnue). */
+export interface Mobility {
+  difficulty: Map<string, number | null>;
+  ability: Map<string, number | null>;
+}
+
+/** Le chasseur peut-il tenir ce poste ? (inconnu d'un côté ou de l'autre : oui) */
+export function canReach(difficulty: number | null | undefined, ability: number | null | undefined): boolean {
+  return difficulty == null || ability == null || difficulty <= ability;
+}
+
 /**
  * Tirage au sort : les attributions verrouillées sont conservées ; les autres
  * chasseurs postés sont répartis au hasard sur les postes libres. Avec
  * `allowDouble`, les chasseurs en trop complètent les postes (2 au plus).
+ *
+ * Avec `mobility` : jamais un poste plus difficile que la capacité de marche
+ * du chasseur. Les chasseurs qui marchent le moins sont placés d'abord, et
+ * ceux qui marchent peu (1 ou 2) reçoivent le poste le plus facile restant.
+ * (Les postes accessibles à un chasseur sont inclus dans ceux accessibles à
+ * un meilleur marcheur : placer d'abord les moins mobiles trouve une
+ * répartition dès qu'il en existe une.)
  * Renvoie les nouvelles attributions (hors verrouillées) et les non-placés.
  */
 export function drawAssignments(
@@ -112,27 +130,51 @@ export function drawAssignments(
   locked: { post_id: string; participant_id: string }[],
   allowDouble: boolean,
   random?: () => number,
+  mobility?: Mobility,
 ): { assignments: { post_id: string; participant_id: string }[]; unplaced: string[] } {
   const lockedHunters = new Set(locked.map((l) => l.participant_id));
   const load = new Map(postIds.map((id) => [id, 0]));
   for (const l of locked) load.set(l.post_id, (load.get(l.post_id) ?? 0) + 1);
+  const diff = (p: string) => mobility?.difficulty.get(p) ?? null;
+  const ab = (h: string) => mobility?.ability.get(h) ?? null;
 
-  const toPlace = shuffle(hunters.filter((h) => !lockedHunters.has(h)), random);
-  const free = shuffle(postIds.filter((id) => (load.get(id) ?? 0) === 0), random);
+  // Au hasard, puis (tri stable) les moins mobiles d'abord.
+  const toPlace = shuffle(hunters.filter((h) => !lockedHunters.has(h)), random)
+    .sort((a, b) => (ab(a) ?? 99) - (ab(b) ?? 99));
   const assignments: { post_id: string; participant_id: string }[] = [];
+  const unplaced: string[] = [];
 
-  while (toPlace.length && free.length) {
-    const post_id = free.pop()!;
-    assignments.push({ post_id, participant_id: toPlace.pop()! });
-    load.set(post_id, 1);
-  }
-  if (allowDouble) {
-    const singles = shuffle(postIds.filter((id) => (load.get(id) ?? 0) === 1), random);
-    while (toPlace.length && singles.length) {
-      const post_id = singles.pop()!;
-      assignments.push({ post_id, participant_id: toPlace.pop()! });
-      load.set(post_id, 2);
+  const pick = (h: string, candidates: string[]) => {
+    const ok = candidates.filter((p) => canReach(diff(p), ab(h)));
+    if (!ok.length) return null;
+    const a = ab(h);
+    if (a !== null && a <= 2) {
+      // Marche difficile : le poste connu le plus facile (inconnu en dernier recours).
+      return ok.slice().sort((x, y) => (diff(x) ?? 6) - (diff(y) ?? 6))[0];
+    }
+    return ok[0]; // candidats déjà mélangés
+  };
+
+  const rest: string[] = [];
+  for (const h of toPlace) {
+    const free = shuffle(postIds.filter((id) => (load.get(id) ?? 0) === 0), random);
+    const post_id = pick(h, free);
+    if (post_id) {
+      assignments.push({ post_id, participant_id: h });
+      load.set(post_id, 1);
+    } else {
+      rest.push(h);
     }
   }
-  return { assignments, unplaced: toPlace };
+  for (const h of rest) {
+    const singles = allowDouble ? shuffle(postIds.filter((id) => (load.get(id) ?? 0) === 1), random) : [];
+    const post_id = pick(h, singles);
+    if (post_id) {
+      assignments.push({ post_id, participant_id: h });
+      load.set(post_id, 2);
+    } else {
+      unplaced.push(h);
+    }
+  }
+  return { assignments, unplaced };
 }

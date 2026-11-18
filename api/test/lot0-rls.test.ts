@@ -25,21 +25,24 @@ async function seedCartography(user: string, tenant: string, lon: number) {
   expect(post.status).toBe(201);
   const plan = await api(user, 'PUT', `/api/territories/${id}/coverage-plans/1`, { tenant, body: { post_ids: [post.body.item.id] } });
   expect(plan.status).toBe(200);
-  // Battue en cours avec le président posté sur le poste (tables du lot 4).
-  const hunt = await api(user, 'POST', '/api/hunts', { tenant, body: { territory_id: id, date: '2026-12-01', participant_user_ids: [`dev_${user}`] } });
-  expect(hunt.status).toBe(201);
-  const huntId = hunt.body.hunt.id;
-  await api(user, 'POST', `/api/hunts/${huntId}/actions/publier`, { tenant });
-  const started = await api(user, 'POST', `/api/hunts/${huntId}/actions/demarrer`, { tenant });
-  const me = started.body.participants[0];
-  await api(user, 'PATCH', `/api/hunts/${huntId}/participants/${me.id}`, { tenant, body: { present: true } });
+  // Journée en cours et battue avec le président posté sur le poste (lot 4).
+  const day = await api(user, 'POST', '/api/days', { tenant, body: { date: '2026-12-01', participant_user_ids: [`dev_${user}`] } });
+  expect(day.status).toBe(201);
+  const dayId = day.body.day.id;
+  await api(user, 'POST', `/api/days/${dayId}/actions/convoquer`, { tenant });
+  await api(user, 'POST', `/api/days/${dayId}/respond`, { tenant, body: { response: 'present' } });
+  await api(user, 'POST', `/api/days/${dayId}/actions/demarrer`, { tenant });
+  const battue = await api(user, 'POST', `/api/days/${dayId}/battues`, { tenant, body: { territory_id: id } });
+  expect(battue.status).toBe(201);
+  const huntId = battue.body.hunt_id;
+  const me = (await api(user, 'GET', `/api/hunts/${huntId}`, { tenant })).body.participants[0];
   await api(user, 'PUT', `/api/hunts/${huntId}/posts`, { tenant, body: { post_ids: [post.body.item.id] } });
   const assigned = await api(user, 'PUT', `/api/hunts/${huntId}/assignments`, { tenant, body: { participant_id: me.id, post_id: post.body.item.id } });
   expect(assigned.status).toBe(200);
   await api(user, 'PUT', `/api/hunts/${huntId}/species`, { tenant, body: { species: [{ species: 'Sanglier', quota: 3 }] } });
   const harvest = await api(user, 'POST', `/api/hunts/${huntId}/harvests`, { tenant, body: { species: 'Sanglier', category: 'male' } });
   expect(harvest.status).toBe(201);
-  expect((await api(user, 'PUT', `/api/hunts/${huntId}/position-sharing`, { tenant, body: { share: true } })).status).toBe(200);
+  expect((await api(user, 'PUT', `/api/days/${dayId}/position-sharing`, { tenant, body: { share: true } })).status).toBe(200);
   expect((await api(user, 'POST', `/api/hunts/${huntId}/position`, { tenant, body: { lon: lon - 0.01, lat: 43, accuracy: 8 } })).status).toBe(204);
   const inv = await api(user, 'POST', '/api/invitations', { tenant, body: {} });
   expect(inv.status).toBe(201);
@@ -80,7 +83,7 @@ describe('isolation entre tenants (RLS)', () => {
   });
 
   it('couvre bien les tables métier attendues', () => {
-    for (const t of ['memberships', 'invitations', 'audit_log', 'territories', 'reserve_zones', 'parkings', 'posts', 'dwellings', 'exclusion_zones', 'coverage_plans', 'coverage_plan_posts', 'hunts', 'hunt_participants', 'hunt_posts', 'hunt_assignments', 'hunt_species', 'hunt_harvests', 'hunt_positions']) {
+    for (const t of ['memberships', 'invitations', 'audit_log', 'territories', 'reserve_zones', 'parkings', 'posts', 'dwellings', 'exclusion_zones', 'coverage_plans', 'coverage_plan_posts', 'hunts', 'hunt_participants', 'hunt_posts', 'hunt_assignments', 'hunt_species', 'hunt_harvests', 'hunt_positions', 'hunt_days', 'day_participants']) {
       expect(tenantTables).toContain(t);
     }
   });

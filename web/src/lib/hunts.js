@@ -52,49 +52,90 @@ export function postedSummary(participants) {
 export const CATEGORY_LABELS = { male: 'mâle', femelle: 'femelle', jeune: 'jeune', indetermine: 'indéterminé' };
 export const COMMON_SPECIES = ['Sanglier', 'Chevreuil', 'Cerf élaphe', 'Daim', 'Mouflon', 'Chamois', 'Renard'];
 
+export const DAY_STATUS_LABELS = {
+  brouillon: 'Brouillon',
+  convoquee: 'Convoquée',
+  en_cours: 'En cours',
+  terminee: 'Terminée',
+  annulee: 'Annulée',
+};
+
+/** Capacité de marche déclarée par le chasseur (profil). */
+export const WALK_LABELS = {
+  1: '1 · très peu (poste au bord du chemin)',
+  2: '2 · peu (quelques centaines de mètres faciles)',
+  3: '3 · moyennement',
+  4: '4 · bien',
+  5: '5 · beaucoup, chemins escarpés compris',
+};
+
+/** Difficulté d'accès d'un poste (1 facile … 5 escarpé). */
+export const DIFFICULTY_LABELS = { 1: 'très facile', 2: 'facile', 3: 'moyen', 4: 'difficile', 5: 'escarpé' };
+
 /**
- * Bandeau de la vue chasseur : quoi faire maintenant, selon le statut de la
- * battue, la publication des postes, le début de battue et le rôle.
- * @returns {{ tone: 'info'|'warn'|'go'|'done'|'danger', title: string, text: string }}
+ * Où en est la journée pour ce chasseur, et quoi faire maintenant.
+ * `view` : réponse de /days/:id/view (journée, moi, battues, battue courante).
+ * @returns {{ phase: string, tone: 'info'|'warn'|'go'|'done'|'danger', title: string, text: string }}
  */
-export function hunterInstruction(sheet) {
-  const { hunt, me, post } = sheet;
-  const rdv = `${formatTime(hunt.meeting_time)}${hunt.meeting_place ? `, ${hunt.meeting_place}` : ''}`;
-  const role = me?.role;
-  switch (hunt.status) {
+export function dayPhase(view) {
+  const { day, me, battues = [], current } = view;
+  const rdv = `${formatTime(day.meeting_time)}${day.meeting_place ? `, ${day.meeting_place}` : ''}`;
+  const last = battues[battues.length - 1] ?? null;
+  const hunt = current?.hunt;
+  const role = current?.me?.role;
+  const post = current?.post;
+  const what = last ? `Battue n° ${last.number} (${last.territory_name})` : '';
+  switch (day.status) {
     case 'annulee':
-      return { tone: 'danger', title: 'Battue annulée', text: `La battue du ${formatHuntDate(hunt.date)} n’aura pas lieu.` };
+      return { phase: 'annulee', tone: 'danger', title: 'Journée annulée', text: `La journée du ${formatHuntDate(day.date)} n’aura pas lieu.` };
     case 'terminee':
-      return { tone: 'done', title: 'Battue terminée', text: 'Déchargez votre arme et rejoignez le rendez-vous. Signalez vos prélèvements s’ils ne sont pas encore déclarés.' };
-    case 'publiee':
-      if (!me) return { tone: 'info', title: `Battue prévue le ${formatHuntDate(hunt.date)}`, text: `Rendez-vous à ${rdv}.` };
-      if (!me.response) return { tone: 'warn', title: 'Serez-vous présent ?', text: `Battue le ${formatHuntDate(hunt.date)}, rendez-vous à ${rdv}. Répondez ci-dessous.` };
-      if (me.response === 'absent') return { tone: 'info', title: 'Vous êtes noté absent', text: 'Vous pouvez changer d’avis ci-dessous tant que la battue n’a pas commencé.' };
-      return { tone: 'info', title: `Rendez-vous le ${formatHuntDate(hunt.date)}`, text: `À ${rdv}. Votre poste sera attribué au rond du matin.` };
-    case 'en_cours':
-      if (!me) {
-        return hunt.started_at
-          ? { tone: 'go', title: 'Battue en cours', text: `${hunt.posted_count} posté(s) sur ${hunt.present_count} présent(s).` }
-          : { tone: 'warn', title: 'Rond du matin', text: `${hunt.present_count} présent(s) ; ${hunt.assignments_published ? 'postes publiés, en attente du début de battue.' : 'postes pas encore publiés.'}` };
-      }
-      if (!hunt.assignments_published) {
-        return { tone: 'warn', title: 'Rond du matin', text: `Rejoignez le rendez-vous (${rdv}) : les postes sont attribués sur place.` };
-      }
-      if (hunt.started_at) {
-        if (role === 'traqueur') return { tone: 'go', title: 'Battue en cours : traque', text: 'Gilet orange, restez en ligne avec les autres traqueurs, signalez-vous à la voix.' };
-        if (role === 'chef_de_ligne') return { tone: 'go', title: 'Battue en cours', text: 'Veillez à la ligne de postes et à la sécurité. Fin de battue annoncée par le responsable.' };
-        return post
-          ? { tone: 'go', title: `Battue en cours — poste ${post.number}`, text: 'Restez à votre poste. Tir uniquement dans les angles autorisés, jamais vers vos voisins ni vers les habitations.' }
-          : { tone: 'warn', title: 'Battue en cours', text: 'Vous n’avez pas de poste : voyez le responsable.' };
-      }
-      if (role === 'traqueur') return { tone: 'warn', title: 'Vous êtes traqueur', text: 'Préparez-vous : la traque démarrera au signal du responsable.' };
-      if (role === 'chef_de_ligne') return { tone: 'warn', title: 'Vous êtes chef de ligne', text: 'Vérifiez la mise en place des postés avant le début de battue.' };
-      return post
-        ? { tone: 'warn', title: `Rejoignez votre poste n° ${post.number}`, text: 'Chargez votre arme seulement une fois au poste et attendez le signal de début de battue.' }
-        : { tone: 'warn', title: 'Pas de poste attribué', text: 'Voyez le responsable de la battue.' };
+      return { phase: 'terminee', tone: 'done', title: 'Journée terminée', text: 'Merci à tous. Bon retour.' };
+    case 'brouillon':
+    case 'convoquee':
+      if (!me) return { phase: 'convoque', tone: 'info', title: `Journée du ${formatHuntDate(day.date)}`, text: `Rendez-vous à ${rdv}.` };
+      if (!me.response) return { phase: 'reponse', tone: 'warn', title: 'Serez-vous présent ?', text: `Journée de chasse le ${formatHuntDate(day.date)}, rendez-vous à ${rdv}.` };
+      if (me.response === 'absent') return { phase: 'absent', tone: 'info', title: 'Vous êtes noté absent', text: 'Vous pouvez changer d’avis ci-dessous jusqu’au début de la journée.' };
+      return { phase: 'rdv', tone: 'info', title: `Rendez-vous le ${formatHuntDate(day.date)}`, text: `À ${rdv}.${day.lunch_offered ? (me.lunch ? ' Vous êtes inscrit au déjeuner.' : ' Vous n’êtes pas inscrit au déjeuner.') : ''}` };
     default:
-      return { tone: 'info', title: STATUS_LABELS[hunt.status] ?? hunt.status, text: '' };
+      break;
   }
+  // Journée en cours.
+  if (me && !me.present) {
+    return { phase: 'non_present', tone: 'info', title: 'Vous n’êtes pas noté présent', text: 'Arrivé au rendez-vous ? Signalez-vous à l’organisateur.' };
+  }
+  if (!last) {
+    return { phase: 'attente_battue', tone: 'info', title: 'Rendez-vous', text: `${rdv}. La première battue va être organisée.` };
+  }
+  if (last.status === 'terminee') {
+    if (day.regroup) {
+      const where = day.regroup.place || 'au point indiqué sur la carte';
+      return { phase: 'regroupement', tone: 'warn', title: 'Regroupement', text: `Rendez-vous ${where}${day.regroup.time ? ` à ${formatTime(day.regroup.time)}` : ''}.` };
+    }
+    return { phase: 'fin', tone: 'done', title: `Fin de la battue n° ${last.number}`, text: 'Déchargez votre arme. Le lieu de regroupement va vous être indiqué.' };
+  }
+  if (!current) {
+    return { phase: 'non_volontaire', tone: 'info', title: `${what} en cours`, text: 'Vous ne participez pas à cette battue. Attendez le regroupement.' };
+  }
+  if (!me) {
+    return hunt.started_at
+      ? { phase: 'traque', tone: 'go', title: `${what} : traque en cours`, text: `${hunt.posted_count} posté(s).` }
+      : { phase: 'preparation', tone: 'warn', title: `${what} en préparation`, text: hunt.assignments_published ? 'Postes publiés : les chasseurs rejoignent leur poste.' : 'Postes pas encore publiés.' };
+  }
+  if (!hunt.assignments_published) {
+    return { phase: 'preparation', tone: 'warn', title: `${what} en préparation`, text: 'Restez au rendez-vous : les postes vont être attribués.' };
+  }
+  if (hunt.started_at) {
+    if (role === 'traqueur') return { phase: 'traque', tone: 'go', title: 'Traque en cours', text: 'Gilet orange, restez en ligne avec les autres traqueurs, signalez-vous à la voix.' };
+    if (role === 'chef_de_ligne') return { phase: 'traque', tone: 'go', title: 'Battue en cours', text: 'Veillez à la ligne de postes et à la sécurité. La fin vous sera annoncée.' };
+    return post
+      ? { phase: 'traque', tone: 'go', title: `Battue en cours — poste ${post.number}`, text: 'Restez à votre poste. Tir uniquement dans les angles autorisés. La fin vous sera annoncée ici.' }
+      : { phase: 'traque', tone: 'warn', title: 'Battue en cours', text: 'Vous n’avez pas de poste : voyez le responsable.' };
+  }
+  if (role === 'traqueur') return { phase: 'rejoindre', tone: 'warn', title: 'Vous êtes traqueur', text: 'Préparez-vous : la traque démarrera au signal du responsable.' };
+  if (role === 'chef_de_ligne') return { phase: 'rejoindre', tone: 'warn', title: 'Vous êtes chef de ligne', text: 'Vérifiez la mise en place des postés avant le début de battue.' };
+  return post
+    ? { phase: 'rejoindre', tone: 'warn', title: `Rejoignez votre poste n° ${post.number}`, text: 'En voiture jusqu’au parking, puis à pied. Chargez votre arme seulement au poste et confirmez « Je suis en place ».' }
+    : { phase: 'rejoindre', tone: 'warn', title: 'Pas de poste attribué', text: 'Voyez le responsable de la battue.' };
 }
 
 export const NAV_APPS = { google: 'Google Maps', waze: 'Waze', apple: 'Plans' };

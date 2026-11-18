@@ -199,48 +199,28 @@ describe('menu principal', () => {
   });
   it('entrées selon le rôle', () => {
     const labels = (who) => navItems(who).map((i) => i.label);
-    expect(labels({ role: 'president', isSuperAdmin: true, hasTenant: true })).toEqual(['Accueil', 'Battues', 'Cartographie', 'Plans', 'Membres', 'Paramètres', 'Administration']);
-    expect(labels({ role: 'responsable', isSuperAdmin: false, hasTenant: true })).toEqual(['Accueil', 'Battues', 'Carte', 'Plans', 'Membres']);
-    expect(labels({ role: 'chasseur', isSuperAdmin: false, hasTenant: true })).toEqual(['Accueil', 'Battues', 'Carte']);
+    expect(labels({ role: 'president', isSuperAdmin: true, hasTenant: true })).toEqual(['Accueil', 'Journées', 'Cartographie', 'Plans', 'Membres', 'Paramètres', 'Administration']);
+    expect(labels({ role: 'responsable', isSuperAdmin: false, hasTenant: true })).toEqual(['Accueil', 'Journées', 'Carte', 'Plans', 'Membres']);
+    expect(labels({ role: 'chasseur', isSuperAdmin: false, hasTenant: true })).toEqual(['Accueil', 'Journées', 'Carte']);
     expect(labels({ role: null, isSuperAdmin: false, hasTenant: false })).toEqual(['Accueil']);
   });
   it('entrée active, y compris pour les sous-pages', () => {
     const items = navItems({ role: 'president', isSuperAdmin: false, hasTenant: true });
     expect(activeHref('#/', items)).toBe('#/');
     expect(activeHref('', items)).toBe('#/');
-    expect(activeHref('#/battues/3f2b0c3e-1111-2222-3333-444455556666', items)).toBe('#/battues');
+    expect(activeHref('#/journees/3f2b0c3e-1111-2222-3333-444455556666', items)).toBe('#/journees');
     expect(activeHref('#/plans', items)).toBe('#/plans');
     expect(activeHref('#/invitation/abc', items)).toBeNull();
   });
 });
 
-import { hunterInstruction, navigationLinks } from '../src/lib/hunts.js';
-describe('vue chasseur : quoi faire maintenant', () => {
-  const base = { date: '2026-12-05', meeting_time: '07:45', meeting_place: 'Cabane', assignments_published: false, started_at: null, posted_count: 5, present_count: 7 };
-  const sheet = (hunt, me = { role: 'poste', response: 'present' }, post = null) => ({ hunt: { ...base, ...hunt }, me, post });
-  it('selon le statut, la publication des postes, le début de battue et le rôle', () => {
-    expect(hunterInstruction(sheet({ status: 'publiee' }, { role: 'poste', response: null })).title).toBe('Serez-vous présent ?');
-    expect(hunterInstruction(sheet({ status: 'en_cours' })).title).toBe('Rond du matin');
-    expect(hunterInstruction(sheet({ status: 'en_cours', assignments_published: true }, undefined, { number: 5 }))).toMatchObject({ tone: 'warn', title: 'Rejoignez votre poste n° 5' });
-    expect(hunterInstruction(sheet({ status: 'en_cours', assignments_published: true, started_at: 'x' }, undefined, { number: 5 }))).toMatchObject({ tone: 'go', title: 'Battue en cours — poste 5' });
-    expect(hunterInstruction(sheet({ status: 'en_cours', assignments_published: true, started_at: 'x' }, { role: 'traqueur' })).title).toBe('Battue en cours : traque');
-    expect(hunterInstruction(sheet({ status: 'terminee' })).tone).toBe('done');
-    expect(hunterInstruction(sheet({ status: 'annulee' })).tone).toBe('danger');
-    expect(hunterInstruction(sheet({ status: 'en_cours', started_at: 'x' }, null)).text).toBe('5 posté(s) sur 7 présent(s).');
-  });
-  it('liens d’itinéraire (Google Maps, Waze, Plans) vers latitude, longitude', () => {
-    expect(navigationLinks([2.3456789, 43.2])).toEqual({
-      google: 'https://www.google.com/maps/dir/?api=1&destination=43.200000,2.345679&travelmode=driving',
-      waze: 'https://waze.com/ul?ll=43.200000,2.345679&navigate=yes',
-      apple: 'https://maps.apple.com/?daddr=43.200000,2.345679',
-    });
-  });
-});
+import { navigationLinks } from '../src/lib/hunts.js';
 
 describe('isLive', () => {
   it('rythme rapide pendant la battue et le jour même', () => {
     expect(isLive('en_cours', '2026-11-10', '2026-11-17')).toBe(true);
     expect(isLive('publiee', '2026-11-17', '2026-11-17')).toBe(true);
+    expect(isLive('convoquee', '2026-11-17', '2026-11-17')).toBe(true);
     expect(isLive('publiee', '2026-11-21', '2026-11-17')).toBe(false);
     expect(isLive('terminee', '2026-11-17', '2026-11-17')).toBe(false);
     expect(isLive('publiee', undefined, '2026-11-17')).toBe(false);
@@ -323,5 +303,32 @@ describe('guidage à pied', () => {
     expect(headingFromOrientation({ webkitCompassHeading: 90 })).toBe(90);
     expect(headingFromOrientation({ absolute: true, alpha: 90 })).toBe(270);
     expect(headingFromOrientation({ absolute: false, alpha: 90 })).toBe(null);
+  });
+});
+
+import { dayPhase } from '../src/lib/hunts.js';
+describe('vue chasseur : phase de la journée', () => {
+  const day = { date: '2026-12-05', meeting_time: '07:45', meeting_place: 'Cabane', status: 'convoquee', lunch_offered: true, regroup: null };
+  const me = { response: null, present: false, lunch: false };
+  const battue = (status, extra = {}) => ({ number: 1, territory_name: 'Grand bois', status, ...extra });
+  const current = (hunt, post = { number: 4 }, role = 'poste') => ({ hunt: { assignments_published: false, started_at: null, ...hunt }, me: { role }, post });
+  it('avant la journée : répondre, puis rendez-vous et déjeuner', () => {
+    expect(dayPhase({ day, me }).phase).toBe('reponse');
+    expect(dayPhase({ day, me: { ...me, response: 'present', lunch: true } }).text).toBe('À 7h45, Cabane. Vous êtes inscrit au déjeuner.');
+    expect(dayPhase({ day, me: { ...me, response: 'absent' } }).phase).toBe('absent');
+  });
+  it('jour J : de l’attente à la traque, puis regroupement', () => {
+    const run = { ...day, status: 'en_cours' };
+    const here = { ...me, response: 'present', present: true };
+    expect(dayPhase({ day: run, me: { ...here, present: false }, battues: [] }).phase).toBe('non_present');
+    expect(dayPhase({ day: run, me: here, battues: [] }).phase).toBe('attente_battue');
+    expect(dayPhase({ day: run, me: here, battues: [battue('en_cours')], current: null }).phase).toBe('non_volontaire');
+    expect(dayPhase({ day: run, me: here, battues: [battue('en_cours')], current: current({}) }).phase).toBe('preparation');
+    const go = dayPhase({ day: run, me: here, battues: [battue('en_cours')], current: current({ assignments_published: true }) });
+    expect(go).toMatchObject({ phase: 'rejoindre', title: 'Rejoignez votre poste n° 4' });
+    expect(dayPhase({ day: run, me: here, battues: [battue('en_cours')], current: current({ assignments_published: true, started_at: 'x' }) }).title).toBe('Battue en cours — poste 4');
+    expect(dayPhase({ day: run, me: here, battues: [battue('terminee')], current: current({ status: 'terminee' }) }).phase).toBe('fin');
+    const rg = dayPhase({ day: { ...run, regroup: { place: 'Croix du Loup', time: '11:30' } }, me: here, battues: [battue('terminee')] });
+    expect(rg).toMatchObject({ phase: 'regroupement', text: 'Rendez-vous Croix du Loup à 11h30.' });
   });
 });

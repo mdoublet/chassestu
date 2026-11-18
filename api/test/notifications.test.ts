@@ -3,7 +3,7 @@
 import { createDecipheriv, createECDH, createPublicKey, hkdfSync, randomBytes, verify } from 'node:crypto';
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { generateVapidKeys, sendPushes } from '../src/push';
-import { api, asOwner, createTenant, east, point, pushService, square } from './helpers';
+import { api, asOwner, createTenant, east, newBattue, point, pushService, runningDay, square } from './helpers';
 
 const b64u = (b: Buffer) => b.toString('base64url');
 
@@ -94,21 +94,21 @@ describe('alertes des battues', () => {
   });
 
   it('publication : chaque convoqué reçoit une alerte (cloche) et une notification sur ses appareils', async () => {
-    const hunt = await as(P, 'POST', '/api/hunts', { territory_id: territoryId, date: '2026-12-12', meeting_time: '07:30', meeting_place: 'Cabane', participant_user_ids: ['dev_n_ch1', 'dev_n_ch2'] });
-    const id = hunt.body.hunt.id;
-    await as(P, 'POST', `/api/hunts/${id}/actions/publier`);
+    const day = await as(P, 'POST', '/api/days', { date: '2026-12-12', meeting_time: '07:30', meeting_place: 'Cabane', lunch_offered: true, participant_user_ids: ['dev_n_ch1', 'dev_n_ch2'] });
+    const id = day.body.day.id;
+    await as(P, 'POST', `/api/days/${id}/actions/convoquer`);
 
     const bell = await api('n_ch1', 'GET', '/api/notifications');
     expect(bell.body.unread).toBe(1);
-    expect(bell.body.notifications[0]).toMatchObject({ title: 'Battue le samedi 12 décembre', kind: 'convocation', url: `#/battues/${id}`, tenant_name: 'ACCA des alertes' });
-    expect(bell.body.notifications[0].body).toMatch(/Bois sonore · RDV 7h30, Cabane/);
+    expect(bell.body.notifications[0]).toMatchObject({ title: 'Journée de chasse le samedi 12 décembre', kind: 'convocation', url: `#/journees/${id}`, tenant_name: 'ACCA des alertes' });
+    expect(bell.body.notifications[0].body).toMatch(/RDV 7h30, Cabane\. Répondez présent ou absent et dites si vous restez déjeuner/);
     expect((await api('n_ch3', 'GET', '/api/notifications')).body.unread).toBe(0); // non convoqué
 
     // Seul n_ch1 a un appareil : un envoi, déchiffrable par son téléphone.
     expect(pushService.calls).toHaveLength(1);
     expect(pushService.calls[0].url).toBe(ch1.subscription.endpoint);
     const pushed = JSON.parse(decrypt(ch1, await bodyOf(pushService.calls[0].init)));
-    expect(pushed).toMatchObject({ title: 'Battue le samedi 12 décembre', url: `/?tenant=${tenant}#/battues/${id}` });
+    expect(pushed).toMatchObject({ title: 'Journée de chasse le samedi 12 décembre', url: `/?tenant=${tenant}#/journees/${id}` });
     expect((await api('n_ch1', 'GET', '/api/notifications/unread')).body).toEqual({ unread: 1 });
 
     // Lu : le compteur retombe à zéro.
@@ -117,18 +117,17 @@ describe('alertes des battues', () => {
   });
 
   it('attributions personnalisées, début et fin : seulement les présents', async () => {
-    const hunt = await as(P, 'POST', '/api/hunts', { territory_id: territoryId, date: '2026-12-19', participant_user_ids: ['dev_n_ch1', 'dev_n_ch2'] });
-    const id = hunt.body.hunt.id;
-    await as(P, 'POST', `/api/hunts/${id}/actions/publier`);
-    const started = (await as(P, 'POST', `/api/hunts/${id}/actions/demarrer`)).body;
-    const p1 = started.participants.find((p: any) => p.user_id === 'dev_n_ch1');
-    await as(P, 'PATCH', `/api/hunts/${id}/participants/${p1.id}`, { present: true });
+    // n_ch2 présent à la journée mais pas volontaire pour cette battue.
+    const { dayId, detail: day } = await runningDay(as, P, ['n_ch1', 'n_ch2'], { date: '2026-12-19' });
+    const volunteer = day.participants.find((p: any) => p.user_id === 'dev_n_ch1').id;
+    const { huntId: id, detail } = await newBattue(as, P, dayId, territoryId, [volunteer]);
+    const p1 = detail.participants[0];
     await as(P, 'PUT', `/api/hunts/${id}/posts`, { post_ids: [postId] });
     await as(P, 'PUT', `/api/hunts/${id}/assignments`, { participant_id: p1.id, post_id: postId });
     pushService.calls = [];
 
     const pub = await as(P, 'POST', `/api/hunts/${id}/publish-assignments`);
-    expect(pub.body.notified).toBe(1); // n_ch2 absent : pas d'alerte
+    expect(pub.body.notified).toBe(1); // n_ch2 non volontaire : pas d'alerte
     const n1 = (await api('n_ch1', 'GET', '/api/notifications')).body.notifications[0];
     expect(n1).toMatchObject({ kind: 'attributions', title: 'Votre poste : 1 · Le hêtre' });
     expect(JSON.parse(decrypt(ch1, await bodyOf(pushService.calls[0].init))).title).toBe('Votre poste : 1 · Le hêtre');
@@ -138,14 +137,18 @@ describe('alertes des battues', () => {
     const titles = (await api('n_ch1', 'GET', '/api/notifications')).body.notifications.slice(0, 2).map((n: any) => n.title);
     expect(titles).toEqual(['Fin de battue', 'Début de battue']);
     expect((await api('n_ch2', 'GET', '/api/notifications')).body.notifications.map((n: any) => n.kind)).not.toContain('debut');
+    // Regroupement : tous les présents de la journée, volontaires ou non.
+    const rg = await as(P, 'POST', `/api/days/${dayId}/regroup`, { place: 'Cabane', time: '11:30' });
+    expect(rg.body.notified).toBe(2);
+    expect((await api('n_ch2', 'GET', '/api/notifications')).body.notifications[0]).toMatchObject({ kind: 'regroupement', body: 'Rendez-vous Cabane à 11h30. Itinéraire dans l’application.' });
   });
 
   it('un appareil désabonné (410) est supprimé ; les alertes restent dans la cloche', async () => {
     const dev = fakeDevice('ch3');
     await api('n_ch3', 'POST', '/api/push/subscriptions', { body: dev.subscription });
     pushService.status = 410;
-    const hunt = await as(P, 'POST', '/api/hunts', { territory_id: territoryId, date: '2026-12-26', participant_user_ids: ['dev_n_ch3'] });
-    await as(P, 'POST', `/api/hunts/${hunt.body.hunt.id}/actions/publier`);
+    const day = await as(P, 'POST', '/api/days', { date: '2026-12-26', participant_user_ids: ['dev_n_ch3'] });
+    await as(P, 'POST', `/api/days/${day.body.day.id}/actions/convoquer`);
     expect(pushService.calls.map((x) => x.url)).toEqual([dev.subscription.endpoint]);
     expect(await asOwner('SELECT count(*)::int AS n FROM push_subscriptions WHERE endpoint = $1', [dev.subscription.endpoint])).toEqual([{ n: 0 }]);
     expect((await api('n_ch3', 'GET', '/api/notifications')).body.unread).toBe(1);

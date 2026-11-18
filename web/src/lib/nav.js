@@ -9,7 +9,7 @@ export function navItems({ role, isSuperAdmin, hasTenant }) {
   const manager = role === 'president' || role === 'responsable';
   return [
     { href: '#/', label: 'Accueil', icon: '🏠' },
-    hasTenant && { href: '#/battues', label: 'Battues', icon: '🎯' },
+    hasTenant && { href: '#/journees', label: 'Journées', icon: '🎯' },
     hasTenant && { href: '#/carte', label: role === 'president' ? 'Cartographie' : 'Carte', icon: '🗺️' },
     hasTenant && manager && { href: '#/plans', label: 'Plans', icon: '📋' },
     hasTenant && manager && { href: '#/membres', label: 'Membres', icon: '👥' },
@@ -18,7 +18,7 @@ export function navItems({ role, isSuperAdmin, hasTenant }) {
   ].filter(Boolean);
 }
 
-/** Entrée du menu correspondant à l'adresse courante (#/battues/… → Battues). */
+/** Entrée du menu correspondant à l'adresse courante (#/journees/… → Journées). */
 export function activeHref(hash, items) {
   const h = hash || '#/';
   let best = null;

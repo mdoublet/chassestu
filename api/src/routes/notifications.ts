@@ -10,24 +10,25 @@ import { getVapidKeys, sendPushes, vapidSubject, type PushTarget } from '../push
 export const notificationRoutes = new Hono<AppEnv>();
 
 /**
- * Crée les alertes d'une battue (une par destinataire) et met en file les
- * notifications push de leurs appareils (envoyées après validation).
+ * Crée les alertes d'une journée ou d'une de ses battues (une par
+ * destinataire) et met en file les notifications push de leurs appareils
+ * (envoyées après validation). Le lien ouvre la journée.
  */
 export async function notifyUsers(
   c: Context<AppEnv>,
   tx: Tx,
-  huntId: string,
+  target: { dayId: string; huntId?: string },
   kind: string,
   items: { user_id: string; title: string; body: string }[],
 ) {
   if (!items.length) return 0;
-  const url = `#/battues/${huntId}`;
+  const url = `#/journees/${target.dayId}`;
   // Ouverture depuis la notification : la page bascule sur la bonne association.
   const tenantId = c.req.header('X-Tenant-Id') ?? '';
   const openUrl = `/?tenant=${encodeURIComponent(tenantId)}${url}`;
   const rows = await tx.query<{ user_id: string; title: string; body: string; endpoint: string | null; p256dh: string; auth: string }>(
-    'SELECT * FROM app.notify_users($1, $2, $3, $4)',
-    [huntId, kind, url, JSON.stringify(items)],
+    target.huntId ? 'SELECT * FROM app.notify_users($1, $2, $3, $4)' : 'SELECT * FROM app.notify_day_users($1, $2, $3, $4)',
+    [target.huntId ?? target.dayId, kind, url, JSON.stringify(items)],
   );
   for (const r of rows) {
     if (r.endpoint) c.get('pushQueue').push({ endpoint: r.endpoint, p256dh: r.p256dh, auth: r.auth, title: r.title, body: r.body, url: openUrl });

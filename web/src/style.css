@@ -346,3 +346,16 @@ ul.readiness .light { color: var(--muted, #868e96); font-size: 1.1rem; }
 ul.readiness li.ok .light { color: #2f9e44; }
 .all-ready { color: #2b8a3e; font-weight: 600; }
 .sheet-map.guiding { height: 45vh; min-height: 280px; margin: 0.5rem 0; border-radius: var(--radius); }
+
+/* Journées de chasse */
+.regroup-icon { display: grid; place-items: center; }
+.regroup-icon span { font-size: 1.9rem; line-height: 1; color: #c2410c; text-shadow: 0 0 3px #fff, 0 0 3px #fff; }
+h2.section-title { margin: 1.25rem 0 0.5rem; }
+ul.battues li { padding: 0.35rem 0; border-bottom: 1px solid var(--border); }
+ul.battues li.running { font-weight: 600; }
+.battue { border-left: 4px solid #2f9e44; padding-left: 0.75rem; margin: 0.5rem 0 1rem; }
+.battue-head h2 { margin: 0.25rem 0 0.5rem; }
+table.presents th { font-weight: 600; font-size: 0.85rem; text-align: left; }
+table.presents select { width: auto; }
+tr.absent { opacity: 0.55; }
+section.carpool ul li { padding: 0.25rem 0; }

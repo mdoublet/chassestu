@@ -54,6 +54,8 @@ const postFields = z.object({
   access_path: lineSchema.nullable(),
   instructions: z.string().max(2000),
   active: z.boolean(),
+  // Difficulté d'accès saisie par le président (1 facile … 5 escarpé) ; NULL : estimée.
+  access_difficulty: z.number().int().min(1).max(5).nullable(),
 });
 
 const KINDS: Record<string, FeatureKind> = {
@@ -78,16 +80,17 @@ const KINDS: Record<string, FeatureKind> = {
     table: 'posts',
     label: 'Poste',
     geoms: { geom: 'Point', access_path: 'LineString' },
-    columns: ['id', 'territory_id', 'number', 'name', 'parking_id', 'instructions', 'active', 'invalid_reason', 'updated_at'],
+    columns: ['id', 'territory_id', 'number', 'name', 'parking_id', 'instructions', 'active', 'invalid_reason', 'access_difficulty', 'updated_at'],
     // nearest_dwelling_m : renseigné si une habitation est à moins de distance + 50 m
     // (bande d'avertissement : tir interdit en direction de l'habitation).
     extraSelect: `round(ST_Length(access_path::geography))::int AS access_path_length_m,
+      app.post_difficulty(access_difficulty, access_path) AS difficulty,
       floor(app.nearest_dwelling_m(territory_id, geom,
         (SELECT buffer_distance_m + app.warning_margin_m() FROM tenants WHERE id = posts.tenant_id)))::int AS nearest_dwelling_m,
       coalesce((SELECT array_agg(cp.hunter_count ORDER BY cp.hunter_count)
                   FROM coverage_plan_posts cpp JOIN coverage_plans cp ON cp.id = cpp.plan_id
                  WHERE cpp.post_id = posts.id), '{}') AS plan_counts`,
-    create: postFields.partial({ number: true, name: true, parking_id: true, access_path: true, instructions: true, active: true }).strict(),
+    create: postFields.partial({ number: true, name: true, parking_id: true, access_path: true, instructions: true, active: true, access_difficulty: true }).strict(),
     patch: postFields.partial().strict(),
   },
 };

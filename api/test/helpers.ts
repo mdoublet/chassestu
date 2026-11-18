@@ -135,3 +135,33 @@ export function square(lon: number, lat: number, d = 0.01) {
 }
 
 export const point = (lon: number, lat: number) => ({ type: 'Point', coordinates: [lon, lat] });
+
+// ---------------------------------------------------------------------------
+// Journées de chasse et battues (parcours complet par l'API)
+// ---------------------------------------------------------------------------
+
+type As = (user: string, method: string, path: string, body?: unknown) => Promise<ApiResult>;
+
+/** Journée convoquée puis démarrée (jour J) ; `present` : membres présents (défaut : tous). */
+export async function runningDay(as: As, manager: string, members: string[], opts: { present?: string[]; date?: string; lunch?: boolean } = {}) {
+  const created = await as(manager, 'POST', '/api/days', {
+    date: opts.date ?? '2026-12-05', meeting_time: '07:45', meeting_place: 'Cabane de chasse',
+    lunch_offered: opts.lunch ?? false, participant_user_ids: members.map((u) => `dev_${u}`),
+  });
+  if (created.status !== 201) throw new Error(`journée : ${JSON.stringify(created.body)}`);
+  const dayId = created.body.day.id as string;
+  await as(manager, 'POST', `/api/days/${dayId}/actions/convoquer`);
+  for (const u of opts.present ?? members) await as(u, 'POST', `/api/days/${dayId}/respond`, { response: 'present' });
+  const started = await as(manager, 'POST', `/api/days/${dayId}/actions/demarrer`);
+  if (started.status !== 200) throw new Error(`démarrage : ${JSON.stringify(started.body)}`);
+  return { dayId, detail: started.body };
+}
+
+/** Nouvelle battue de la journée (volontaires : tous les présents par défaut). */
+export async function newBattue(as: As, manager: string, dayId: string, territoryId: string, participantIds?: string[]) {
+  const res = await as(manager, 'POST', `/api/days/${dayId}/battues`, { territory_id: territoryId, participant_ids: participantIds });
+  if (res.status !== 201) throw new Error(`battue : ${JSON.stringify(res.body)}`);
+  const huntId = res.body.hunt_id as string;
+  const detail = (await as(manager, 'GET', `/api/hunts/${huntId}`)).body;
+  return { huntId, detail, day: res.body };
+}

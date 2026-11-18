@@ -244,8 +244,51 @@ notifications = messages prêts à copier pour WhatsApp à chaque étape ; voisi
 = postes précédent et suivant dans la ligne du jour (tous si l'association le
 permet).
 
-**Alertes et notifications** : à chaque étape d'une battue (convocation,
-annulation, attribution du poste, début, fin), chaque participant concerné
+**Journées de chasse** (réorganisation demandée après le lot 5) : les
+chasseurs sont convoqués à une **journée** (date, heure et lieu du
+rendez-vous, déjeuner facultatif avec inscription), pas à une battue. L'heure,
+le lieu, le point de rendez-vous et le déjeuner sont repris de la dernière
+journée. Le jour J, l'organisateur commence la journée (présents pré-cochés
+d'après les réponses, ajustables), ajoute des invités (lien personnel valable
+toute la journée), puis enchaîne les **battues** : territoire et volontaires
+parmi les présents (on peut décocher ceux qui ne la font pas), postes,
+attribution, espèces tirables et nombre (repris de la battue précédente,
+indépendants d'une battue à l'autre), publication des postes, mise en place
+(« Je suis en place »), lancement, fin, puis **regroupement** (lieu, heure,
+point sur la carte ou position de l'organisateur) annoncé à tous les présents,
+avec l'itinéraire en voiture et le guidage à pied. Une battue à la fois ; la
+journée ne se termine pas pendant une battue.
+
+La vue chasseur suit la journée phase par phase : répondre (et le déjeuner),
+rendez-vous, battue en préparation, « rejoignez votre poste » (voiture
+jusqu'au parking avec son covoiturage, puis guidage à pied), traque (écran
+réduit : confirmer sa place, déclarer un animal tué, être prévenu de la fin),
+fin, regroupement. Un présent non volontaire voit que la battue se fait sans
+lui.
+
+*Marche et voiture* : chaque chasseur renseigne dans son profil sa capacité de
+marche (1 très peu … 5 chemins escarpés), s'il vient en voiture et ses places
+libres ; l'organisateur peut les changer pour la journée (invités compris).
+Chaque poste a une difficulté d'accès (1 … 5) saisie par le président, sinon
+estimée d'après la longueur du chemin depuis le parking. Le tirage au sort ne
+donne **jamais** un poste plus difficile que la marche déclarée (les moins
+mobiles sont placés d'abord, au poste le plus facile) ; l'organisateur peut
+forcer à la main, avec un avertissement.
+
+*Covoiturage* (du rendez-vous aux parkings, après publication des postes) :
+chaque chasseur qui a une voiture la prend (on ne réduit pas le nombre de
+voitures : elles resservent aux battues suivantes) ; une voiture emmène au
+plus le nombre de chasseurs fixé par le président (Paramètres, 4 par défaut,
+conducteur compris) ; un passager monte avec un conducteur qui va au même
+parking, sinon au plus proche (dépose en chemin) ; les chasseurs sans place et
+le nombre de voitures conseillé sont signalés à l'organisateur.
+
+Conversion : chaque ancienne battue est devenue une journée de même
+identifiant (les anciens liens fonctionnent) ; l'accord de partage GPS est
+donné pour la journée.
+
+**Alertes et notifications** : convocation et annulation de la journée,
+attribution du poste, début et fin de battue, regroupement : chaque participant concerné
 reçoit une alerte dans l'application (cloche 🔔) et, s'il les a activées, une
 notification push (Web Push chiffré, RFC 8291/8292, clés VAPID générées par
 l'API au premier usage). Sur iPhone, le push exige l'application installée
