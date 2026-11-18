@@ -11,7 +11,7 @@ export async function huntsView(main) {
   const canManage = MANAGERS.includes(state.role);
   const listBox = h('div');
   const formBox = h('div');
-  main.append(h('h1', 'Battues'), canManage ? formBox : null, listBox);
+  main.append(...[h('h1', 'Battues'), canManage ? formBox : null, listBox].filter(Boolean));
 
   async function loadList() {
     const { hunts } = await api.get('/hunts');
