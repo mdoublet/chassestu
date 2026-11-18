@@ -140,7 +140,12 @@ cartoRoutes.get('/territories', (c) =>
   tenantTx(c, null, async (tx) => {
     const territories = await tx.query(
       `SELECT ${TERRITORY_SELECT},
-              (SELECT count(*)::int FROM posts p WHERE p.territory_id = t.id) AS posts_count
+              (SELECT count(*)::int FROM posts p WHERE p.territory_id = t.id) AS posts_count,
+              (SELECT count(*)::int FROM posts p WHERE p.territory_id = t.id AND p.parking_id IS NULL) AS posts_without_parking,
+              (SELECT count(*)::int FROM posts p WHERE p.territory_id = t.id AND p.invalid_reason IS NOT NULL) AS invalid_posts,
+              (SELECT count(*)::int FROM parkings x WHERE x.territory_id = t.id) AS parkings_count,
+              (SELECT count(*)::int FROM reserve_zones x WHERE x.territory_id = t.id) AS reserves_count,
+              (SELECT count(*)::int FROM coverage_plans x WHERE x.territory_id = t.id) AS plans_count
          FROM territories t ORDER BY name`,
     );
     return c.json({ territories });

@@ -53,9 +53,9 @@ export async function homeView(main, { refreshMe, rerender }) {
         text: role === 'chasseur' ? 'Vos convocations, votre poste, l’itinéraire et le covoiturage.' : 'Convoquer, pointer les présents, organiser les battues.',
       },
       {
-        href: '#/carte',
-        title: role === 'president' ? 'Cartographie' : 'Carte des territoires',
-        text: role === 'president' ? 'Territoires, réserves, postes, parkings et chemins d’accès.' : 'Consulter les territoires et les postes.',
+        href: '#/territoires',
+        title: 'Territoires',
+        text: role === 'president' ? 'Liste, ajout et carte : réserves, postes, parkings, chemins.' : 'Consulter les territoires et les postes.',
       },
       (role === 'president' || role === 'responsable') && {
         href: '#/plans',

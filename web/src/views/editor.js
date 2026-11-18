@@ -95,7 +95,8 @@ function postTooltip(p, bufferM = 150) {
   return label;
 }
 
-export async function editorView(main) {
+/** `start` : identifiant d'un territoire à ouvrir, ou « nouveau » pour en créer un. */
+export async function editorView(main, start) {
   const canEdit = state.role === 'president';
   const history = new History(50);
   const ed = {
@@ -1004,6 +1005,7 @@ export async function editorView(main) {
     const rec = ed.recording;
 
     fill(panel, 
+      h('a.small', { href: '#/territoires' }, '← Liste des territoires'),
       h('p.disclaimer', 'Aide au placement uniquement : la responsabilité du placement des postes reste celle du président.'),
       h(
         'section',
@@ -1080,8 +1082,13 @@ export async function editorView(main) {
   const unsubscribe = history.onChange(() => renderPanel());
 
   try {
+    if (start && start !== 'nouveau') ed.territoryId = start;
     await loadTerritories();
     await reload();
+    if (start === 'nouveau' && canEdit) {
+      window.history.replaceState(null, '', '#/carte'); // un rechargement ne relance pas la création
+      setTimeout(newTerritory, 300);
+    }
   } catch (err) {
     toast(errorMessage(err), 'error');
   }

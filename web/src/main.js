@@ -17,7 +17,8 @@ let cleanup = null;
 // Routes (hachage) : #/, #/journees, #/journees/<id>, #/carte, #/membres, #/parametres, #/admin, #/invitation/<jeton>
 const routes = [
   { re: /^#\/invitation\/([A-Za-z0-9_-]+)$/, view: invitationView, public: true },
-  { re: /^#\/carte$/, view: (el) => import('./views/editor.js').then((m) => m.editorView(el)), tenant: true, full: true },
+  { re: /^#\/territoires$/, view: (el) => import('./views/territories.js').then((m) => m.territoriesView(el)), tenant: true },
+  { re: /^#\/carte(?:\/([0-9a-f-]{36}|nouveau))?$/, view: (el, start) => import('./views/editor.js').then((m) => m.editorView(el, start)), tenant: true, full: true },
   { re: /^#\/(?:journee|battue)-invite\/([A-Za-z0-9_-]+)$/, view: (el, token) => import('./views/day-sheet.js').then((m) => m.guestDayView(el, token)), public: true },
   { re: /^#\/(?:journees|battues)$/, view: (el) => import('./views/days.js').then((m) => m.daysView(el)), tenant: true },
   // Anciennes adresses de battue : la journée convertie garde le même identifiant.

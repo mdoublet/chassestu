@@ -10,7 +10,7 @@ export function navItems({ role, isSuperAdmin, hasTenant }) {
   return [
     { href: '#/', label: 'Accueil', icon: '🏠' },
     hasTenant && { href: '#/journees', label: 'Journées', icon: '🎯' },
-    hasTenant && { href: '#/carte', label: role === 'president' ? 'Cartographie' : 'Carte', icon: '🗺️' },
+    hasTenant && { href: '#/territoires', label: 'Territoires', icon: '🗺️', also: ['#/carte'] },
     hasTenant && role === 'president' && { href: '#/lieux', label: 'Lieux', icon: '📍' },
     hasTenant && manager && { href: '#/plans', label: 'Plans', icon: '📋' },
     hasTenant && manager && { href: '#/membres', label: 'Membres', icon: '👥' },
@@ -25,7 +25,8 @@ export function activeHref(hash, items) {
   const h = hash || '#/';
   let best = null;
   for (const it of items) {
-    const match = it.href === '#/' ? h === '#/' || h === '' : h === it.href || h.startsWith(`${it.href}/`);
+    const match = it.href === '#/' ? h === '#/' || h === ''
+      : [it.href, ...(it.also ?? [])].some((p) => h === p || h.startsWith(`${p}/`));
     if (match && (!best || it.href.length > best.length)) best = it.href;
   }
   return best;
