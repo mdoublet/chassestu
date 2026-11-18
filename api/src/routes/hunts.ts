@@ -243,15 +243,47 @@ huntRoutes.put('/hunts/:id/posts', async (c) => {
   });
 });
 
+/**
+ * Place un chasseur sur un poste. Mode « move » (défaut) : si le poste est
+ * occupé, l'occupant prend l'ancien poste du chasseur (échange), ou passe
+ * « sans poste » si le chasseur n'en avait pas. Mode « double » : le chasseur
+ * rejoint l'occupant (doublon, deux au plus).
+ */
 huntRoutes.put('/hunts/:id/assignments', async (c) => {
   const id = parseId(c.req.param('id'));
-  const body = z.object({ participant_id: z.uuid(), post_id: z.uuid(), locked: z.boolean().default(false) }).strict().parse(await c.req.json());
+  const body = z.object({
+    participant_id: z.uuid(), post_id: z.uuid(), locked: z.boolean().default(false),
+    mode: z.enum(['move', 'double']).default('move'),
+  }).strict().parse(await c.req.json());
   return tenantTx(c, MANAGERS, async (tx) => {
+    const prev = await tx.maybeOne<{ post_id: string }>(
+      'SELECT post_id FROM hunt_assignments WHERE hunt_id = $1 AND participant_id = $2', [id, body.participant_id]);
+    if (prev?.post_id !== body.post_id) {
+      if (body.mode === 'move') {
+        const occupants = await tx.query<{ participant_id: string }>(
+          'SELECT participant_id FROM hunt_assignments WHERE hunt_id = $1 AND post_id = $2 AND participant_id <> $3',
+          [id, body.post_id, body.participant_id]);
+        await tx.execute('DELETE FROM hunt_assignments WHERE hunt_id = $1 AND participant_id = $2', [id, body.participant_id]);
+        for (const o of occupants) {
+          if (prev) await tx.execute('UPDATE hunt_assignments SET post_id = $3, locked = false WHERE hunt_id = $1 AND participant_id = $2', [id, o.participant_id, prev.post_id]);
+          else await tx.execute('DELETE FROM hunt_assignments WHERE hunt_id = $1 AND participant_id = $2', [id, o.participant_id]);
+        }
+      }
+    }
     await tx.execute(
       `INSERT INTO hunt_assignments (hunt_id, post_id, participant_id, locked) VALUES ($1, $2, $3, $4)
        ON CONFLICT (hunt_id, participant_id) DO UPDATE SET post_id = EXCLUDED.post_id, locked = EXCLUDED.locked`,
       [id, body.post_id, body.participant_id, body.locked],
     );
+    return c.json(await huntDetail(tx, id));
+  });
+});
+
+/** Retire tous les chasseurs de leur poste (avant un nouveau tirage). */
+huntRoutes.delete('/hunts/:id/assignments', (c) => {
+  const id = parseId(c.req.param('id'));
+  return tenantTx(c, MANAGERS, async (tx) => {
+    await tx.execute('DELETE FROM hunt_assignments WHERE hunt_id = $1', [id]);
     return c.json(await huntDetail(tx, id));
   });
 });
@@ -271,7 +303,8 @@ huntRoutes.delete('/hunts/:id/assignments/:pid', (c) => {
  */
 huntRoutes.post('/hunts/:id/draw', async (c) => {
   const id = parseId(c.req.param('id'));
-  const { allow_double } = z.object({ allow_double: z.boolean().default(false) }).strict().parse(await c.req.json().catch(() => ({})));
+  const { allow_double, keep_existing } = z.object({ allow_double: z.boolean().default(false), keep_existing: z.boolean().default(false) })
+    .strict().parse(await c.req.json().catch(() => ({})));
   return tenantTx(c, MANAGERS, async (tx) => {
     requireOpen(await loadHunt(tx, id), 'Tirage au sort');
     const posts = await tx.query<{ post_id: string; difficulty: number | null }>(
@@ -284,9 +317,10 @@ huntRoutes.post('/hunts/:id/draw', async (c) => {
          LEFT JOIN users u ON u.id = hp.user_id
         WHERE hp.hunt_id = $1 AND hp.present AND hp.role = 'poste'`, [id]);
     const locked = await tx.query<{ post_id: string; participant_id: string }>(
-      'SELECT post_id, participant_id FROM hunt_assignments WHERE hunt_id = $1 AND locked', [id],
+      // keep_existing : les placements déjà faits (à la main) sont gardés ; on ne place que les autres.
+      `SELECT post_id, participant_id FROM hunt_assignments WHERE hunt_id = $1 AND (locked OR $2)`, [id, keep_existing],
     );
-    await tx.execute('DELETE FROM hunt_assignments WHERE hunt_id = $1 AND NOT locked', [id]);
+    await tx.execute('DELETE FROM hunt_assignments WHERE hunt_id = $1 AND NOT (locked OR $2)', [id, keep_existing]);
     const { assignments, unplaced } = drawAssignments(
       posts.map((p) => p.post_id), hunters.map((h) => h.id), locked, allow_double, undefined,
       { difficulty: new Map(posts.map((p) => [p.post_id, p.difficulty])), ability: new Map(hunters.map((h) => [h.id, h.ability])) },

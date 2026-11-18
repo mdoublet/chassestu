@@ -177,8 +177,8 @@ describe('proposition et attribution', () => {
     const { id, detail } = await runningHunt(3);
     await as(R, 'PUT', `/api/hunts/${id}/posts`, { post_ids: [ids[4], ids[5]] });
     const [a, b, c] = detail.participants;
-    for (const p of [a, b]) await as(R, 'PUT', `/api/hunts/${id}/assignments`, { participant_id: p.id, post_id: ids[4] });
-    expect((await as(R, 'PUT', `/api/hunts/${id}/assignments`, { participant_id: c.id, post_id: ids[4] })).body.code).toBe('POST_FULL');
+    for (const p of [a, b]) await as(R, 'PUT', `/api/hunts/${id}/assignments`, { participant_id: p.id, post_id: ids[4], mode: 'double' });
+    expect((await as(R, 'PUT', `/api/hunts/${id}/assignments`, { participant_id: c.id, post_id: ids[4], mode: 'double' })).body.code).toBe('POST_FULL');
     const after = await as(R, 'PATCH', `/api/hunts/${id}/participants/${a.id}`, { role: 'traqueur' });
     expect(after.body.participants.find((p: any) => p.id === a.id).post_id).toBeNull();
     expect((await as(R, 'POST', `/api/hunts/${id}/actions/debut`)).body.code).toBe('ASSIGNMENTS_NOT_PUBLISHED');
@@ -236,5 +236,36 @@ describe('invités, vue chasseur, regroupement', () => {
     const second = (await as(R, 'POST', `/api/days/${dayId}/participants/${g.participant_id}/guest-link`)).body.url.split('/').pop();
     expect((await app.request(`/api/guest/${g.url.split('/').pop()}`, {}, env)).status).toBe(410);
     expect((await app.request(`/api/guest/${second}`, {}, env)).status).toBe(200);
+  });
+});
+
+describe('attribution simplifiée', () => {
+  it('placer sur un poste occupé échange les deux chasseurs ; sans poste, l’occupant passe sans poste', async () => {
+    const { id, detail } = await runningHunt(3);
+    await as(R, 'PUT', `/api/hunts/${id}/posts`, { post_ids: [ids[1], ids[2]] });
+    const [a, b, c] = detail.participants;
+    await as(R, 'PUT', `/api/hunts/${id}/assignments`, { participant_id: a.id, post_id: ids[1] });
+    await as(R, 'PUT', `/api/hunts/${id}/assignments`, { participant_id: b.id, post_id: ids[2] });
+    let d = (await as(R, 'PUT', `/api/hunts/${id}/assignments`, { participant_id: a.id, post_id: ids[2] })).body;
+    const at = (p: any) => d.participants.find((x: any) => x.id === p.id).post_id;
+    expect([at(a), at(b)]).toEqual([ids[2], ids[1]]); // échange
+    d = (await as(R, 'PUT', `/api/hunts/${id}/assignments`, { participant_id: c.id, post_id: ids[1] })).body;
+    expect([at(c), at(b)]).toEqual([ids[1], null]); // b passe sans poste
+    d = (await as(R, 'PUT', `/api/hunts/${id}/assignments`, { participant_id: b.id, post_id: ids[1], mode: 'double' })).body;
+    expect([at(b), at(c)]).toEqual([ids[1], ids[1]]); // doublon
+  });
+
+  it('le tirage au sort garde les placements faits à la main et place les autres ; « tout effacer » vide', async () => {
+    const { id, detail } = await runningHunt(3);
+    await as(R, 'PUT', `/api/hunts/${id}/posts`, { post_ids: [ids[1], ids[2], ids[3]] });
+    const a = detail.participants[0];
+    await as(R, 'PUT', `/api/hunts/${id}/assignments`, { participant_id: a.id, post_id: ids[3] });
+    for (let run = 0; run < 5; run++) {
+      const d = (await as(R, 'POST', `/api/hunts/${id}/draw`, { keep_existing: true })).body;
+      expect(d.participants.find((x: any) => x.id === a.id).post_id).toBe(ids[3]);
+      expect(d.participants.every((x: any) => x.post_id)).toBe(true);
+    }
+    const cleared = (await as(R, 'DELETE', `/api/hunts/${id}/assignments`)).body;
+    expect(cleared.participants.every((x: any) => !x.post_id)).toBe(true);
   });
 });

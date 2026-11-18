@@ -62,7 +62,7 @@ async function dayConsole(main, dayId) {
   const dv = {
     detail: null, hunt: null, territory: null, territoryId: null, carpool: null,
     members: [], territories: [], allowDouble: false, placing: null,
-    regroup: { place: '', time: '', point: null }, newBattue: { territory_id: null, excluded: new Set() },
+    picked: null, regroup: { place: '', time: '', point: null }, newBattue: { territory_id: null, excluded: new Set() },
   };
   const box = h('div.hunt-console');
   const mapEl = h('div.hunt-map');
@@ -420,69 +420,71 @@ async function dayConsole(main, dayId) {
       }))));
   }
 
-  function postsSection() {
-    const { proposal, day_post_ids, hunt } = dv.hunt;
-    const { posted } = postedSummary(dv.hunt.participants);
-    const sameAsProposal = proposal && proposal.post_ids.length === day_post_ids.length && proposal.post_ids.every((id) => day_post_ids.includes(id));
-    return h('section.card',
-      h('h3', `2. Postes de la battue · ${day_post_ids.length} pour ${posted} posté(s)`),
-      proposal ? h(`p.alert.${['plan', 'none'].includes(proposal.kind) ? 'muted' : proposal.kind === 'too_many' ? 'danger' : 'warn'}`, proposal.message) : null,
-      proposal?.post_ids.length && !sameAsProposal && !hunt.started_at
-        ? h('button', { onclick: () => act(() => api.put(`/hunts/${hunt.id}/posts`, { post_ids: proposal.post_ids }), 'Proposition appliquée.') }, `Utiliser la proposition (${proposal.post_ids.length} poste(s))`)
-        : null,
-      h('p.small.muted', 'Cliquez sur un poste de la carte pour l’ajouter ou le retirer (le plan enregistré n’est pas modifié).'));
-  }
-
+  /**
+   * Postes et chasseurs, en un bloc : une ligne par poste avec ses chasseurs.
+   * Toucher un nom puis un poste le déplace (échange si le poste est occupé) ;
+   * « Sans poste » le retire. Les postes s'ajoutent ou se retirent sur la carte.
+   */
   function assignmentSection() {
     const { participants, proposal, day_post_ids, hunt } = dv.hunt;
-    const { unassigned } = postedSummary(participants);
+    const editable = !hunt.started_at;
     const postsById = new Map(dv.territory.posts.map((p) => [p.id, p]));
     const dayPosts = day_post_ids.map((id) => postsById.get(id)).filter(Boolean).sort((a, b) => a.number - b.number);
-    const postedPeople = participants.filter((p) => p.present && p.role === 'poste');
-    const warnings = [];
-    const rows = dayPosts.map((post) => {
-      const holders = participants.filter((p) => p.post_id === post.id);
-      for (const p of holders) if (!canReach(post.difficulty, p.walking_ability)) warnings.push(`${p.name} (marche ${p.walking_ability}) au poste ${post.number} (accès ${DIFFICULTY_LABELS[post.difficulty]})`);
-      const cell = (holder, slot) => h('select', {
-        'aria-label': `Poste ${post.number}${slot ? ' (doublon)' : ''}`,
-        onchange: (e) => {
-          const pid = e.target.value;
-          if (!pid) return holder && act(() => api.del(`/hunts/${hunt.id}/assignments/${holder.id}`));
-          act(() => api.put(`/hunts/${hunt.id}/assignments`, { participant_id: pid, post_id: post.id, locked: holder?.locked ?? false }));
-        },
+    const posted = participants.filter((p) => p.present && p.role === 'poste');
+    const picked = posted.find((p) => p.id === dv.picked) ?? null;
+    if (!picked) dv.picked = null;
+    const sameAsProposal = proposal && proposal.post_ids.length === day_post_ids.length && proposal.post_ids.every((id) => day_post_ids.includes(id));
+
+    const moveTo = (post) => {
+      const p = picked;
+      dv.picked = null;
+      if (!post) return act(() => api.del(`/hunts/${hunt.id}/assignments/${p.id}`));
+      if (p.post_id === post.id) return render();
+      const occupied = participants.some((x) => x.post_id === post.id && x.id !== p.id);
+      act(() => api.put(`/hunts/${hunt.id}/assignments`, { participant_id: p.id, post_id: post.id, mode: occupied && dv.allowDouble ? 'double' : 'move' }));
+    };
+    const chip = (p, post) => h('button.chip', {
+      type: 'button',
+      disabled: !editable,
+      class: `${p.id === dv.picked ? 'picked' : ''} ${post && !canReach(post.difficulty, p.walking_ability) ? 'too-hard' : ''}`,
+      title: post && !canReach(post.difficulty, p.walking_ability) ? 'Poste plus difficile que sa marche' : '',
+      onclick: (e) => {
+        e.stopPropagation();
+        if (!dv.picked) { dv.picked = p.id; return render(); }
+        if (dv.picked === p.id) { dv.picked = null; return render(); }
+        moveTo(post);
       },
-      h('option', { value: '' }, slot ? '+ doublon' : '— libre —'),
-      postedPeople.filter((p) => !p.post_id || p.id === holder?.id).map((p) => h('option', { value: p.id, selected: p.id === holder?.id },
-        `${p.name}${p.walking_ability ? ` 🥾${p.walking_ability}` : ''}${canReach(post.difficulty, p.walking_ability) ? '' : ' ⚠'}`)));
-      return h('tr',
-        h('th', `${post.number}${post.name ? ` · ${post.name}` : ''}`, post.difficulty ? h('span.small.muted', { title: 'Difficulté d’accès' }, ` · accès ${post.difficulty}`) : null),
-        h('td', cell(holders[0], 0), holders[0] ? h('label.check.small', h('input', {
-          type: 'checkbox', checked: holders[0].locked, title: 'Verrouillé : conservé par le tirage au sort',
-          onchange: (e) => act(() => api.put(`/hunts/${hunt.id}/assignments`, { participant_id: holders[0].id, post_id: post.id, locked: e.target.checked })),
-        }), '🔒') : null),
-        h('td', holders[0] && (holders[1] || proposal?.kind === 'too_many' || unassigned.length > 0) ? cell(holders[1], 1) : null));
-    });
-    return h('section.card',
-      h('h3', '3. Attribution'),
-      dayPosts.length ? h('table.list.compact', h('tbody', rows)) : h('p.muted', 'Choisissez d’abord les postes.'),
-      warnings.length ? h('p.alert.warn', `⚠ Poste plus difficile que la capacité de marche déclarée : ${warnings.join(' ; ')}.`) : null,
-      dayPosts.length && !hunt.started_at
-        ? h('div.row',
-            h('button', { onclick: async () => {
-              const res = await act(() => api.post(`/hunts/${hunt.id}/draw`, { allow_double: dv.allowDouble }), 'Tirage au sort effectué (postes verrouillés conservés, marche respectée).');
-              if (res?.unplaced) toast(`${res.unplaced} chasseur(s) sans poste accessible : ajoutez un poste plus facile, passez-les en traque ou autorisez les doublons.`, 'warn');
-            } }, '🎲 Tirer au sort'),
-            proposal?.kind === 'too_many' ? h('label.check', h('input', { type: 'checkbox', checked: dv.allowDouble, onchange: (e) => { dv.allowDouble = e.target.checked; } }), 'Autoriser les doublons') : null)
+    }, p.name, p.walking_ability ? h('span.walk', ` 🥾${p.walking_ability}`) : null, post && !canReach(post.difficulty, p.walking_ability) ? ' ⚠' : '');
+    const row = (post, people, label, extra) => h('li.assign-row', {
+      class: picked ? 'target' : '',
+      onclick: () => picked && moveTo(post),
+    }, h('span.post-label', label, extra ? h('small', extra) : null), h('span.chips', people.map((p) => chip(p, post))));
+
+    const unassigned = posted.filter((p) => !p.post_id);
+    return h('section.card.assign',
+      h('h3', `2. Postes · ${dayPosts.length} pour ${posted.length} posté(s)`),
+      editable && proposal?.post_ids.length && !sameAsProposal
+        ? h('button', { onclick: () => act(() => api.put(`/hunts/${hunt.id}/posts`, { post_ids: proposal.post_ids }), 'Postes du plan choisis.') },
+            proposal.plan_count ? `Prendre le plan à ${proposal.plan_count} chasseurs (${proposal.post_ids.length} postes)` : `Prendre la proposition (${proposal.post_ids.length} postes)`)
         : null,
-      unassigned.length ? h('p.alert.warn', `Sans poste : ${unassigned.map((p) => {
-        const free = dayPosts.filter((post) => !participants.some((x) => x.post_id === post.id));
-        return free.length && !free.some((post) => canReach(post.difficulty, p.walking_ability))
-          ? `${p.name} (marche ${p.walking_ability} : aucun poste libre assez accessible, ajoutez-en un plus facile)` : p.name;
-      }).join(', ')}.`) : null,
-      !hunt.started_at ? h('div.row',
-        h('button.primary', { disabled: !dayPosts.length, onclick: () => act(() => api.post(`/hunts/${hunt.id}/publish-assignments`), 'Postes publiés : chaque chasseur a son poste, l’itinéraire et le covoiturage.') },
-          hunt.assignments_published_at ? 'Republier les postes' : '4. Publier les postes')) : null,
-      hunt.assignments_published_at ? h('p.small.muted', `Publiés à ${timeOf(hunt.assignments_published_at)}.`) : null);
+      editable ? h('p.small.muted', picked ? `Touchez le poste où placer ${picked.name}.` : 'Touchez un nom puis un poste pour le placer. Postes : ajout et retrait sur la carte.') : null,
+      dayPosts.length || unassigned.length
+        ? h('ul.plain.assign-list',
+            dayPosts.map((post) => row(post, participants.filter((p) => p.post_id === post.id), String(post.number), post.difficulty ? ` accès ${post.difficulty}` : '')),
+            unassigned.length || picked ? row(null, unassigned, 'Sans poste', '') : null)
+        : h('p.muted', 'Choisissez les postes sur la carte.'),
+      editable && dayPosts.length
+        ? h('div.buttons',
+            h('button', { onclick: async () => {
+              const res = await act(() => api.post(`/hunts/${hunt.id}/draw`, { allow_double: dv.allowDouble, keep_existing: true }), 'Chasseurs sans poste placés au hasard (marche respectée).');
+              if (res?.unplaced) toast(`${res.unplaced} chasseur(s) sans poste accessible : ajoutez un poste plus facile ou passez-les en traque.`, 'warn');
+            } }, '🎲 Placer au hasard'),
+            participants.some((p) => p.post_id) ? h('button.link', { onclick: () => act(() => api.del(`/hunts/${hunt.id}/assignments`)) }, 'Tout effacer') : null,
+            proposal?.kind === 'too_many' ? h('label.check', h('input', { type: 'checkbox', checked: dv.allowDouble, onchange: (e) => { dv.allowDouble = e.target.checked; } }), 'Doublons') : null)
+        : null,
+      editable ? h('button.primary', { disabled: !dayPosts.length, onclick: () => act(() => api.post(`/hunts/${hunt.id}/publish-assignments`), 'Postes publiés.') },
+        hunt.assignments_published_at ? 'Republier les postes' : 'Publier les postes') : null,
+      hunt.assignments_published_at && editable ? h('span.small.muted', ` publiés à ${timeOf(hunt.assignments_published_at)}`) : null);
   }
 
   /** Espèces tirables et quotas de cette battue (vides = sans limite fixée). */
@@ -579,7 +581,7 @@ async function dayConsole(main, dayId) {
         h('h2.section-title', 'Battues'),
         battuesList(),
         run && dv.hunt
-          ? [h('div.battue', battueHeader(), readinessSection(), volunteersSection(), postsSection(), assignmentSection(), speciesEditor(), carpoolSection(), harvestSection())]
+          ? [h('div.battue', battueHeader(), readinessSection(), volunteersSection(), assignmentSection(), speciesEditor(), carpoolSection(), harvestSection())]
           : [last?.status === 'terminee' ? regroupForm() : null, newBattueForm(),
              last && dv.hunt ? harvestSection() : null],
         infoSection(false),
