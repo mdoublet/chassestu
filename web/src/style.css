@@ -374,3 +374,15 @@ button.chip { padding: 0.25rem 0.65rem; border-radius: 99px; font-size: 0.95rem;
 button.chip.picked { background: #2f9e44; color: #fff; border-color: #2f9e44; }
 button.chip.too-hard { border-color: var(--danger); }
 button.chip .walk { font-size: 0.8rem; opacity: 0.8; }
+
+/* Lieux */
+.places-layout { display: grid; grid-template-columns: minmax(280px, 1fr) 2fr; gap: 1rem; align-items: start; }
+.places-map { height: 70vh; min-height: 320px; border-radius: var(--radius); border: 1px solid var(--border); }
+@media (max-width: 800px) { .places-layout { grid-template-columns: 1fr; } .places-map { height: 50vh; } }
+ul.places-list li { padding: 0.35rem 0; border-bottom: 1px solid var(--border); }
+ul.places-list li.editing { background: color-mix(in srgb, var(--accent) 8%, transparent); padding: 0.5rem; border-radius: 6px; }
+.place-edit { display: grid; gap: 0.4rem; }
+button.place-name { text-align: left; }
+.place-icon { display: grid; place-items: center; background: #fff; border: 2px solid #1f5130; border-radius: 50%; font-size: 1rem; }
+.place-icon.parking { border-color: #1c7ed6; color: #1c7ed6; font-weight: 700; }
+.place-icon.selected { border-color: #e8590c; box-shadow: 0 0 0 3px color-mix(in srgb, #e8590c 35%, transparent); }

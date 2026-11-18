@@ -18,6 +18,7 @@ import {
 import { canReach } from '../lib/mobility.js';
 import { watchRevision } from '../lib/live.js';
 import { memberDayView } from './day-sheet.js';
+import { placeSelect } from './place-picker.js';
 
 const MANAGERS = ['president', 'responsable'];
 const TAB_KEY = 'chassestu.huntTab';
@@ -62,7 +63,7 @@ async function dayConsole(main, dayId) {
   const dv = {
     detail: null, hunt: null, territory: null, territoryId: null, carpool: null,
     members: [], territories: [], allowDouble: false, placing: null,
-    picked: null, regroup: { place: '', time: '', point: null }, newBattue: { territory_id: null, excluded: new Set() },
+    picked: null, places: { places: [], parkings: [] }, regroup: { choice: null, place: '', time: '', point: null, when: 'now' }, newBattue: { territory_id: null, excluded: new Set() },
   };
   const box = h('div.hunt-console');
   const mapEl = h('div.hunt-map');
@@ -144,7 +145,7 @@ async function dayConsole(main, dayId) {
       }
     }
     if (day.meeting_point) layers.base.addLayer(L.circleMarker(toLatLng(day.meeting_point.coordinates), { radius: 8, color: '#0b6bcb', fillOpacity: 0.9 }).bindTooltip('Rendez-vous'));
-    const rg = dv.regroup.point ?? day.regroup_point;
+    const rg = (dv.regroup.choice === 'other' ? dv.regroup.point : dv.regroup.choice?.point) ?? day.regroup_point;
     if (rg) layers.base.addLayer(L.marker(toLatLng(rg.coordinates), { icon: L.divIcon({ className: 'regroup-icon', html: '<span>⚑</span>', iconSize: [30, 30], iconAnchor: [15, 28] }) }).bindTooltip('Regroupement'));
     const key = tLayer ? `t:${dv.territoryId}` : day.meeting_point ? 'meeting' : 'none';
     if (fittedFor !== key) {
@@ -169,6 +170,7 @@ async function dayConsole(main, dayId) {
       act(() => api.patch(`/days/${dayId}`, { meeting_point: point }), 'Point de rendez-vous enregistré.');
     } else if (dv.placing === 'regroup') {
       dv.placing = null;
+      dv.regroup.choice = 'other';
       dv.regroup.point = point;
       render();
     }
@@ -211,7 +213,11 @@ async function dayConsole(main, dayId) {
     return h('details.card', { open },
       h('summary', 'Rendez-vous, déjeuner et consignes'),
       h('div.row', field('date', 'Date', { type: 'date' }), field('meeting_time', 'Heure du rendez-vous', { type: 'time' })),
-      field('meeting_place', 'Lieu du rendez-vous', { maxlength: 200 }),
+      editable ? h('label', 'Choisir le lieu du rendez-vous', placeSelect(dv.places, {
+        current: day.meeting_place,
+        onpick: (c) => c && c !== 'other' && act(() => api.patch(`/days/${dayId}`, { meeting_place: c.name, meeting_point: c.point }), 'Rendez-vous enregistré.'),
+      })) : null,
+      field('meeting_place', 'Lieu du rendez-vous (texte)', { maxlength: 200 }),
       editable ? h('button.link', { onclick: () => { dv.placing = 'meeting'; toast('Cliquez sur la carte à l’endroit du rendez-vous.'); } }, day.meeting_point ? 'Déplacer le point de rendez-vous' : 'Placer le rendez-vous sur la carte') : null,
       field('lunch_offered', 'Déjeuner proposé (inscription facultative)', { type: 'checkbox' }),
       day.lunch_offered ? field('lunch_info', 'Déjeuner : lieu, prix…', { maxlength: 300 }) : null,
@@ -346,29 +352,44 @@ async function dayConsole(main, dayId) {
         const ids = present.filter((p) => !nb.excluded.has(p.id)).map((p) => p.id);
         if (!ids.length) return toast('Choisissez au moins un volontaire.', 'error');
         const res = await act(() => api.post(`/days/${dayId}/battues`, { territory_id: nb.territory_id, participant_ids: ids }), 'Battue créée : choisissez les postes.');
-        if (res) { nb.excluded.clear(); dv.regroup = { place: '', time: '', point: null }; }
+        if (res) { nb.excluded.clear(); dv.regroup = { choice: null, place: '', time: '', point: null, when: 'now' }; }
       } }, 'Créer la battue'));
   }
 
+  /** Regroupement : un lieu (lieux de l'association, parkings, ou point sur la carte), immédiat par défaut. */
   function regroupForm() {
     const { day } = dv.detail;
     const rg = dv.regroup;
-    const place = h('input', { maxlength: 200, placeholder: 'ex. cabane, croisement de la D12…', value: rg.place || day.regroup_place || '', oninput: (e) => { rg.place = e.target.value; } });
-    const at = h('input', { type: 'time', value: rg.time || day.regroup_time || '', oninput: (e) => { rg.time = e.target.value; } });
-    const point = rg.point ?? day.regroup_point;
+    rg.when ??= 'now';
+    const isOther = rg.choice === 'other';
+    const point = isOther ? rg.point : rg.choice?.point ?? null;
+    const placeName = isOther ? rg.place : rg.choice?.name ?? '';
+    const at = h('input', { type: 'time', value: rg.time, 'aria-label': 'Heure du regroupement', oninput: (e) => { rg.time = e.target.value; } });
     return h('section.card.regroup',
-      h('h2', day.regroup_at ? '⚑ Regroupement annoncé' : '⚑ Regroupement'),
-      day.regroup_at ? h('p.small', `Annoncé à ${timeOf(day.regroup_at)} : ${day.regroup_place || 'point sur la carte'}${day.regroup_time ? ` à ${formatTime(day.regroup_time)}` : ''}. Les présents ont l’itinéraire.`) : h('p.small.muted', 'Convoquez les chasseurs à un point pour faire le point et décider d’une nouvelle battue.'),
-      h('div.row', h('label', 'Lieu', place), h('label', 'Heure', at)),
-      h('div.buttons',
-        h('button', { onclick: () => { dv.placing = 'regroup'; toast('Cliquez sur la carte à l’endroit du regroupement.'); } }, point ? '⚑ Déplacer le point' : '⚑ Placer sur la carte'),
-        h('button', { onclick: () => navigator.geolocation?.getCurrentPosition(
-          (p) => { rg.point = { type: 'Point', coordinates: [p.coords.longitude, p.coords.latitude] }; render(); toast('Votre position actuelle sera le point de regroupement.'); },
-          () => toast('Position indisponible.', 'error'), { enableHighAccuracy: true, timeout: 15000 }) }, '📍 Ici (ma position)')),
-      point ? h('p.small', `Point : ${point.coordinates[1].toFixed(5)}, ${point.coordinates[0].toFixed(5)}`) : null,
+      h('h2', '⚑ Regroupement'),
+      day.regroup_at ? h('p.small', `Annoncé à ${timeOf(day.regroup_at)} : ${day.regroup_place || 'point sur la carte'} ${day.regroup_time ? `à ${formatTime(day.regroup_time)}` : '(immédiat)'}.`) : null,
+      h('label', 'Lieu', placeSelect(dv.places, {
+        selectedKey: rg.choice === 'other' ? 'other' : rg.choice?.key ?? '',
+        other: 'Autre : point sur la carte',
+        onpick: (c) => { rg.choice = c; rg.point = null; render(); },
+      })),
+      isOther ? [
+        h('input', { maxlength: 200, placeholder: 'Nom (facultatif), ex. croisement de la D12', value: rg.place, oninput: (e) => { rg.place = e.target.value; } }),
+        h('div.buttons',
+          h('button', { onclick: () => { dv.placing = 'regroup'; toast('Cliquez sur la carte à l’endroit du regroupement.'); } }, point ? '⚑ Déplacer le point' : '⚑ Placer sur la carte'),
+          h('button', { onclick: () => navigator.geolocation?.getCurrentPosition(
+            (p) => { rg.point = { type: 'Point', coordinates: [p.coords.longitude, p.coords.latitude] }; render(); },
+            () => toast('Position indisponible.', 'error'), { enableHighAccuracy: true, timeout: 15000 }) }, '📍 Ma position')),
+      ] : null,
+      h('div.row',
+        h('label', 'Quand', h('select', { onchange: (e) => { rg.when = e.target.value; render(); } },
+          h('option', { value: 'now', selected: rg.when === 'now' }, 'Immédiat'),
+          h('option', { value: 'time', selected: rg.when === 'time' }, 'À une heure précise'))),
+        rg.when === 'time' ? h('label', 'Heure', at) : null),
       h('button.primary', { onclick: () => {
-        if (!rg.place && !point) return toast('Indiquez un lieu ou placez un point.', 'error');
-        act(() => api.post(`/days/${dayId}/regroup`, { place: rg.place || day.regroup_place || '', point: point ?? null, time: rg.time || day.regroup_time || null }), 'Regroupement annoncé aux présents.');
+        if (!point && !placeName) return toast('Choisissez un lieu.', 'error');
+        if (rg.when === 'time' && !rg.time) return toast('Indiquez l’heure.', 'error');
+        act(() => api.post(`/days/${dayId}/regroup`, { place: placeName, point, time: rg.when === 'time' ? rg.time : null }), 'Regroupement annoncé aux présents.');
       } }, day.regroup_at ? 'Annoncer à nouveau' : 'Annoncer le regroupement'));
   }
 
@@ -600,8 +621,9 @@ async function dayConsole(main, dayId) {
   }
 
   try {
-    const [members, territories] = await Promise.all([api.get('/members'), api.get('/territories')]);
+    const [members, territories, places] = await Promise.all([api.get('/members'), api.get('/territories'), api.get('/places')]);
     dv.members = members.members;
+    dv.places = places;
     dv.territories = territories.territories;
     await load();
   } catch (err) {

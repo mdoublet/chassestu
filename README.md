@@ -283,6 +283,11 @@ conducteur compris) ; un passager monte avec un conducteur qui va au même
 parking, sinon au plus proche (dépose en chemin) ; les chasseurs sans place et
 le nombre de voitures conseillé sont signalés à l'organisateur.
 
+*Lieux* (menu du président) : cabanes, restaurants et autres points placés
+sur une carte, proposés avec les parkings des territoires pour le rendez-vous
+de la journée et pour le regroupement (« Immédiat » par défaut, ou à une
+heure précise ; « Autre : point sur la carte » en dépannage).
+
 Conversion : chaque ancienne battue est devenue une journée de même
 identifiant (les anciens liens fonctionnent) ; l'accord de partage GPS est
 donné pour la journée.

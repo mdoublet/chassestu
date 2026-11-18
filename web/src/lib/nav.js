@@ -11,6 +11,7 @@ export function navItems({ role, isSuperAdmin, hasTenant }) {
     { href: '#/', label: 'Accueil', icon: '🏠' },
     hasTenant && { href: '#/journees', label: 'Journées', icon: '🎯' },
     hasTenant && { href: '#/carte', label: role === 'president' ? 'Cartographie' : 'Carte', icon: '🗺️' },
+    hasTenant && role === 'president' && { href: '#/lieux', label: 'Lieux', icon: '📍' },
     hasTenant && manager && { href: '#/plans', label: 'Plans', icon: '📋' },
     hasTenant && manager && { href: '#/membres', label: 'Membres', icon: '👥' },
     hasTenant && role === 'president' && { href: '#/parametres', label: 'Paramètres', icon: '⚙️' },

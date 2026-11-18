@@ -109,7 +109,7 @@ export function dayPhase(view) {
   if (last.status === 'terminee') {
     if (day.regroup) {
       const where = day.regroup.place || 'au point indiqué sur la carte';
-      return { phase: 'regroupement', tone: 'warn', title: 'Regroupement', text: `Rendez-vous ${where}${day.regroup.time ? ` à ${formatTime(day.regroup.time)}` : ''}.` };
+      return { phase: 'regroupement', tone: 'warn', title: 'Regroupement', text: `Rendez-vous ${where} ${day.regroup.time ? `à ${formatTime(day.regroup.time)}` : 'dès maintenant'}.` };
     }
     return { phase: 'fin', tone: 'done', title: `Fin de la battue n° ${last.number}`, text: 'Déchargez votre arme. Le lieu de regroupement va vous être indiqué.' };
   }

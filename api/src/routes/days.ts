@@ -92,7 +92,7 @@ async function notifyDay(c: Context<AppEnv>, tx: Tx, dayId: string, kind: 'convo
       case 'annulation':
         return { user_id, title: 'Journée annulée', body: `La journée de chasse du ${frenchDate(day.date)} est annulée.` };
       case 'regroupement':
-        return { user_id, title: 'Regroupement', body: `Rendez-vous ${day.regroup_place || 'au point indiqué sur la carte'}${day.regroup_time ? ` à ${frenchTime(day.regroup_time)}` : ''}. Itinéraire dans l’application.` };
+        return { user_id, title: 'Regroupement', body: `Rendez-vous ${day.regroup_place || 'au point indiqué sur la carte'} ${day.regroup_time ? `à ${frenchTime(day.regroup_time)}` : 'dès maintenant'}. Itinéraire dans l’application.` };
     }
   };
   return notifyUsers(c, tx, { dayId }, kind, users.map((u) => item(u.user_id)));

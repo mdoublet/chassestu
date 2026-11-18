@@ -6,6 +6,7 @@ import { state } from '../state.js';
 import { h, fill, toast, errorMessage } from '../ui.js';
 import { DAY_STATUS_LABELS, formatHuntDate, formatTime } from '../lib/hunts.js';
 import { every } from '../lib/live.js';
+import { placeSelect } from './place-picker.js';
 
 const MANAGERS = ['president', 'responsable'];
 const OPEN = ['brouillon', 'convoquee', 'en_cours'];
@@ -39,7 +40,9 @@ export async function daysView(main) {
   }
 
   async function renderForm() {
-    const [{ members }, defaults] = await Promise.all([api.get('/members'), api.get('/days/defaults')]);
+    const [{ members }, defaults, places] = await Promise.all([api.get('/members'), api.get('/days/defaults'), api.get('/places')]);
+    let meetingPoint = defaults.meeting_point;
+    const placeInput = h('input', { name: 'meeting_place', maxlength: 200, value: defaults.meeting_place ?? '', placeholder: 'ex. cabane de chasse' });
     const nextSaturday = (() => {
       const d = new Date();
       d.setDate(d.getDate() + ((6 - d.getDay() + 7) % 7 || 7));
@@ -57,6 +60,7 @@ export async function daysView(main) {
             date: fd.get('date'),
             meeting_time: fd.get('meeting_time'),
             meeting_place: fd.get('meeting_place'),
+            meeting_point: meetingPoint ?? null,
             briefing: fd.get('briefing'),
             lunch_offered: lunch.checked,
             lunch_info: lunchInfo.value,
@@ -71,8 +75,15 @@ export async function daysView(main) {
     h('div.row',
       h('label', 'Date', h('input', { type: 'date', name: 'date', value: nextSaturday, required: true })),
       h('label', 'Rendez-vous', h('input', { type: 'time', name: 'meeting_time', value: defaults.meeting_time, required: true }))),
-    h('label', 'Lieu du rendez-vous', h('input', { name: 'meeting_place', maxlength: 200, value: defaults.meeting_place ?? '', placeholder: 'ex. cabane de chasse' })),
-    defaults.meeting_point ? h('p.small.muted', 'Le point de rendez-vous sur la carte est repris de la dernière journée.') : null,
+    h('label', 'Lieu du rendez-vous', placeSelect(places, {
+      current: defaults.meeting_place,
+      other: 'Autre (texte libre)',
+      onpick: (c) => {
+        if (c && c !== 'other') { placeInput.value = c.name; meetingPoint = c.point; }
+        else if (c === 'other') { meetingPoint = null; placeInput.focus(); }
+      },
+    })),
+    h('label', 'Lieu (texte)', placeInput),
     h('label.check', lunch, 'Déjeuner proposé (inscription facultative)'),
     h('label', 'Déjeuner : lieu, prix…', lunchInfo),
     h('label', 'Consignes de la journée', h('textarea', { name: 'briefing', rows: 2, maxlength: 5000 })),

@@ -13,6 +13,7 @@ import { dwellingRoutes } from './routes/dwellings';
 import { planRoutes } from './routes/plans';
 import { huntRoutes } from './routes/hunts';
 import { dayRoutes } from './routes/days';
+import { placeRoutes } from './routes/places';
 import { fetchBuildingPages, type Bbox } from './bdtopo';
 import { ensureMigrated } from './migrate';
 import { flushPushQueue } from './routes/notifications';
@@ -82,6 +83,7 @@ export function createApp(getPool: PoolProvider, options: AppOptions = {}) {
   app.route('/api', dwellingRoutes);
   app.route('/api', planRoutes);
   app.route('/api', dayRoutes);
+  app.route('/api', placeRoutes);
   app.route('/api', huntRoutes);
   app.route('/api', notificationRoutes);
 
