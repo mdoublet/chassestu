@@ -12,6 +12,13 @@ import { adminView } from './views/admin.js';
 import { invitationView, PENDING_INVITE_KEY } from './views/invitation.js';
 
 const app = document.getElementById('app');
+
+/** Garde-fou : un bloc conditionnel absent (null, undefined, false) n'est jamais écrit « null » dans la page. */
+function safeAppend(el) {
+  const append = el.append.bind(el);
+  el.append = (...nodes) => append(...nodes.flat(Infinity).filter((n) => n !== null && n !== undefined && n !== false));
+  return el;
+}
 let cleanup = null;
 
 // Routes (hachage) : #/, #/journees, #/journees/<id>, #/carte, #/membres, #/parametres, #/admin, #/invitation/<jeton>
@@ -139,7 +146,7 @@ async function render() {
   if (!isSignedIn()) {
     if (route.public) {
       app.append(header());
-      const main = h('main.page');
+      const main = safeAppend(h('main.page'));
       app.append(main);
       cleanup = (await route.view(main, ...params)) ?? null;
       return;
@@ -200,7 +207,7 @@ async function render() {
   }
 
   app.append(header());
-  const main = h(route.full ? 'main.page.full' : 'main.page');
+  const main = safeAppend(h(route.full ? 'main.page.full' : 'main.page'));
   app.append(main);
   try {
     cleanup = (await route.view(main, ...params, { refreshMe, rerender: render })) ?? null;

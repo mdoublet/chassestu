@@ -113,28 +113,11 @@ export async function homeView(main, { refreshMe, rerender }) {
     main.append(h('p', h('a', { href: '#/admin' }, 'Administration de la plateforme')));
   }
 
-  main.append(
-    !state.user.walking_ability || state.user.has_car === null || state.user.has_car === undefined
-      ? h('a.current-hunt', { href: '#/profil' }, h('strong', '👤 Complétez votre profil'), h('span', 'Votre marche et votre voiture : pour des postes accessibles et le covoiturage →'))
-      : null,
-    h(
-      'details.card.small',
-      h('summary', 'Mon compte'),
-      h('p', 'Supprimer votre compte retire votre accès à toutes vos associations.'),
-      h('button.danger', {
-        onclick: async () => {
-          if (!confirm('Supprimer définitivement votre compte ?')) return;
-          try {
-            await api.del('/me', { tenant: false });
-            toast('Compte supprimé.');
-            location.reload();
-          } catch (err) {
-            toast(errorMessage(err), 'error');
-          }
-        },
-      }, 'Supprimer mon compte'),
-    ),
-  );
+  // Rappel en haut de page tant que le profil (marche, voiture) n'est pas rempli.
+  if (!state.user.walking_ability || state.user.has_car === null || state.user.has_car === undefined) {
+    main.querySelector('h1')?.after(
+      h('a.current-hunt', { href: '#/profil' }, h('strong', '👤 Complétez votre profil'), h('span', 'Votre marche et votre voiture : pour des postes accessibles et le covoiturage →')));
+  }
   return () => stopRefresh?.();
 }
 
