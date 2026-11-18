@@ -267,7 +267,32 @@ jamais écrasée. Les prélèvements sont un **décompte par battue** (le chasse
 déclare les siens pendant la battue, le responsable corrige pendant et après) :
 ce n'est pas le carnet de prélèvements individuel, hors du périmètre V1.
 
-**Positions en direct** (début du lot 5) : pendant une battue en cours,
+**Lot 5 — Interface chasseur et GPS**
+
+- [x] Le bouton voiture ouvre Google Maps, Waze ou Plans vers le parking (et le rendez-vous) ; choix de l'appli mémorisé sur le téléphone.
+- [x] La distance restante le long du chemin diminue en marchant (test avec une trace simulée, unitaire et dans le navigateur).
+- [x] Le statut passe à « Sur le poste » après 10 s dans le rayon de tolérance, et à « Position imprécise » si la précision dépasse 2 × la tolérance.
+- [x] Le responsable voit les positions et statuts de tous les participants ayant consenti.
+- [x] Aucune position n'est enregistrée hors de l'état « En cours », et la purge supprime celles de plus de 24 h.
+
+Guidage à pied (« Démarrer le guidage à pied ») : la carte passe sous la
+flèche et suit le chasseur ; distance restante par le chemin (orienté
+automatiquement vers le poste) et à vol d'oiseau, écart au chemin ; flèche
+vers le poste orientée par la boussole du téléphone (sur iPhone, bouton
+« Activer la boussole » ; sans boussole, nord en haut) ; écran maintenu
+allumé ; vibration et alerte en entrant dans une réserve ou dans la zone de
+sécurité autour des habitations. « ✅ Je suis en place » (membres et invités)
+est transmis au responsable : section « 4. Mise en place » de l'onglet
+Gestion (vert quand chaque poste du jour est occupé et confirmé) et compteur
+à côté de « Début de battue ». La confirmation tombe si le poste change.
+Le statut côté responsable est calculé sur la dernière position reçue (sans
+la règle des 10 s, faute d'historique : seule la dernière position est gardée).
+
+Correctif de sécurité (migration 0011) : la fonction qui construit la fiche
+d'une battue ne vérifiait pas l'association de l'appelant ; elle n'est plus
+appelable que par les fonctions d'accès qui font ce contrôle.
+
+**Positions en direct** : pendant une battue en cours,
 chacun peut afficher sa position sur la carte de la vue chasseur (elle reste
 sur le téléphone) avec son statut (« Sur le poste » dans le rayon de
 tolérance, « En route », « Position imprécise ») et sa distance au poste.

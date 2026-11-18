@@ -97,6 +97,8 @@ export function hunterInstruction(sheet) {
   }
 }
 
+export const NAV_APPS = { google: 'Google Maps', waze: 'Waze', apple: 'Plans' };
+
 /** Liens d'itinéraire en voiture vers un point [lon, lat] (applis du téléphone). */
 export function navigationLinks([lon, lat]) {
   const ll = `${lat.toFixed(6)},${lon.toFixed(6)}`;

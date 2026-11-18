@@ -61,7 +61,7 @@ async function huntDetail(tx: Tx, id: string) {
   const hunt = await loadHunt(tx, id);
   const participants = await tx.query(
     `SELECT hp.id, hp.user_id, coalesce(u.display_name, hp.guest_name) AS name, hp.user_id IS NULL AS guest,
-            hp.role, hp.response, hp.present, hp.guest_token_hash IS NOT NULL AS has_guest_link,
+            hp.role, hp.response, hp.present, hp.guest_token_hash IS NOT NULL AS has_guest_link, hp.in_place_at,
             a.post_id, a.locked
        FROM hunt_participants hp
        LEFT JOIN users u ON u.id = hp.user_id
@@ -483,9 +483,10 @@ const speciesSchema = z.string().trim().min(1).max(60).regex(SPECIES_RE, 'Nom d�
 
 /** Statut d'un participant sur la carte du responsable. */
 export function positionStatus(
-  p: { shared: boolean; age_s: number | null; accuracy_m: number | null; distance_m: number | null },
+  p: { in_place?: boolean; shared: boolean; age_s: number | null; accuracy_m: number | null; distance_m: number | null },
   toleranceM: number,
-): 'non_partage' | 'sans_signal' | 'imprecise' | 'sur_poste' | 'en_route' | 'localise' {
+): 'confirme' | 'non_partage' | 'sans_signal' | 'imprecise' | 'sur_poste' | 'en_route' | 'localise' {
+  if (p.in_place) return 'confirme';   // « Je suis en place » : prime sur le GPS
   if (!p.shared) return 'non_partage';
   if (p.age_s === null || p.age_s > 180) return 'sans_signal';
   if ((p.accuracy_m ?? Infinity) > 2 * toleranceM) return 'imprecise';
@@ -518,6 +519,16 @@ huntRoutes.post('/hunts/:id/position', async (c) => {
   });
 });
 
+// « Je suis en place » (confirmation manuelle, transmise au responsable).
+huntRoutes.put('/hunts/:id/in-place', async (c) => {
+  const id = parseId(c.req.param('id'));
+  const { in_place } = z.object({ in_place: z.boolean() }).strict().parse(await c.req.json());
+  return tenantTx(c, null, async (tx) => {
+    await tx.query('SELECT app.set_in_place($1, $2)', [id, in_place]);
+    return c.json({ in_place });
+  });
+});
+
 // Responsables : tous les présents ; chasseur : lui seul (RLS sur hunt_positions).
 huntRoutes.get('/hunts/:id/positions', (c) => {
   const id = parseId(c.req.param('id'));
@@ -529,7 +540,7 @@ huntRoutes.get('/hunts/:id/positions', (c) => {
     const { manager } = await tx.one<{ manager: boolean }>(`SELECT app.has_role('president', 'responsable') AS manager`);
     const rows = await tx.query<any>(
       `SELECT hp.id AS participant_id, coalesce(u.display_name, hp.guest_name) AS name, hp.role,
-              hp.user_id IS NULL AS guest, hp.position_shared_at IS NOT NULL AS shared,
+              hp.user_id IS NULL AS guest, hp.position_shared_at IS NOT NULL AS shared, hp.in_place_at IS NOT NULL AS in_place,
               hp.user_id = app.current_user_id() AS mine, p.number AS post_number,
               ST_X(pos.geom::geometry) AS lon, ST_Y(pos.geom::geometry) AS lat, pos.accuracy_m,
               extract(epoch FROM now() - pos.recorded_at)::int AS age_s,
@@ -547,7 +558,7 @@ huntRoutes.get('/hunts/:id/positions', (c) => {
       status: hunt.status,
       tolerance_m: hunt.tolerance,
       sharing: me?.shared ?? false,
-      participants: rows.map((r) => ({ ...r, status: r.guest ? 'invite' : positionStatus(r, hunt.tolerance) })),
+      participants: rows.map((r) => ({ ...r, status: r.guest && !r.in_place ? 'invite' : positionStatus(r, hunt.tolerance) })),
     });
   });
 });
@@ -627,6 +638,18 @@ huntRoutes.get('/hunts/:id/sheet', (c) => {
 });
 
 const TOKEN_RE = /^[A-Za-z0-9_-]{32,64}$/;
+
+huntRoutes.put('/guest/:token/in-place', async (c: Context<AppEnv>) => {
+  const token = c.req.param('token') ?? '';
+  if (!TOKEN_RE.test(token)) throw new AppError(404, 'GUEST_LINK_UNKNOWN', 'Lien inconnu.');
+  const { in_place } = z.object({ in_place: z.boolean() }).strict().parse(await c.req.json());
+  const hash = await sha256Hex(token);
+  return withTx(c.get('pool'), { userId: null, tenantId: null }, async (tx) => {
+    const { ok } = await tx.one<{ ok: boolean }>('SELECT app.guest_set_in_place($1, $2) AS ok', [hash, in_place]);
+    if (!ok) throw new AppError(410, 'GUEST_LINK_EXPIRED', 'Ce lien n’est plus valable : la battue est terminée ou le lien a été remplacé.');
+    return c.json({ in_place });
+  });
+});
 
 huntRoutes.get('/guest/:token', async (c: Context<AppEnv>) => {
   const token = c.req.param('token') ?? '';

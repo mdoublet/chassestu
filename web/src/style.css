@@ -329,3 +329,20 @@ a.current-hunt strong { font-size: 1.15rem; }
 ul.position-list li { display: flex; flex-wrap: wrap; align-items: center; gap: 0 0.4rem; padding: 0.3rem 0; border-bottom: 1px solid var(--border); }
 ul.position-list li .small { flex-basis: 100%; padding-left: 1.15rem; }
 ul.position-list li.locatable { cursor: pointer; }
+
+/* Guidage à pied */
+.nav-links select { width: auto; }
+.guide { display: flex; align-items: center; gap: 1rem; margin: 0.5rem 0; }
+.guide-arrow { flex: none; width: 4.5rem; height: 4.5rem; border-radius: 50%; display: grid; place-items: center; background: color-mix(in srgb, #1c7ed6 14%, var(--surface)); border: 2px solid #1c7ed6; color: #1c7ed6; font-size: 2.2rem; transition: transform 0.25s ease-out; }
+.guide-arrow.done { background: #2f9e44; border-color: #2f9e44; color: #fff; font-size: 2.4rem; transition: none; }
+.guide-text p { margin: 0.15rem 0; }
+.guide-distance { font-size: 1.5rem; font-weight: 700; }
+.guide.reached .guide-distance { color: #2b8a3e; }
+.zone-alert { font-weight: 600; }
+.in-place.done { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
+.in-place.done strong { color: #2b8a3e; }
+ul.readiness li { display: flex; flex-wrap: wrap; gap: 0 0.6rem; align-items: baseline; padding: 0.35rem 0; border-bottom: 1px solid var(--border); }
+ul.readiness .light { color: var(--muted, #868e96); font-size: 1.1rem; }
+ul.readiness li.ok .light { color: #2f9e44; }
+.all-ready { color: #2b8a3e; font-weight: 600; }
+.sheet-map.guiding { height: 45vh; min-height: 280px; margin: 0.5rem 0; border-radius: var(--radius); }

@@ -12,17 +12,43 @@ import { state } from '../state.js';
 import { positionPanel } from './positions.js';
 import {
   STATUS_LABELS, ROLE_LABELS, CATEGORY_LABELS, COMMON_SPECIES,
-  formatHuntDate, formatTime, hunterInstruction, navigationLinks,
+  formatHuntDate, formatTime, hunterInstruction, navigationLinks, NAV_APPS,
 } from '../lib/hunts.js';
 
+// Appli de navigation choisie une fois, mémorisée sur ce téléphone.
+const NAV_KEY = 'chassestu.navApp';
+function preferredNavApp() {
+  try {
+    const v = localStorage.getItem(NAV_KEY);
+    if (v && NAV_APPS[v]) return v;
+  } catch {
+    /* stockage indisponible */
+  }
+  return /iPhone|iPad|Macintosh/.test(navigator.userAgent) ? 'apple' : 'google';
+}
+
+/** « Y aller en voiture » vers l'appli choisie, avec choix modifiable. */
 function navButtons(label, coords) {
   const links = navigationLinks(coords);
-  return h('div.nav-links',
-    h('span', label),
-    h('a.button', { href: links.google, target: '_blank', rel: 'noopener' }, 'Google Maps'),
-    h('a.button', { href: links.waze, target: '_blank', rel: 'noopener' }, 'Waze'),
-    h('a.button', { href: links.apple, target: '_blank', rel: 'noopener' }, 'Plans'),
-  );
+  const go = h('a.button.primary', { target: '_blank', rel: 'noopener' });
+  const select = h('select', {
+    'aria-label': 'Application de navigation',
+    onchange: () => {
+      try {
+        localStorage.setItem(NAV_KEY, select.value);
+      } catch {
+        /* rien */
+      }
+      sync();
+    },
+  }, Object.entries(NAV_APPS).map(([k, v]) => h('option', { value: k }, v)));
+  function sync() {
+    go.href = links[select.value];
+    go.textContent = `🚗 Y aller en voiture (${NAV_APPS[select.value]})`;
+  }
+  select.value = preferredNavApp();
+  sync();
+  return h('div.nav-links', h('span', label), go, select);
 }
 
 /**
@@ -89,7 +115,7 @@ export function createSheetView(container, actions = {}) {
           h('h2', `Votre poste : ${post.number}${post.name ? ` · ${post.name}` : ''}`),
           post.shared_with?.length ? h('p', `Poste partagé avec ${post.shared_with.join(', ')}.`) : null,
           post.instructions ? h('p.alert.warn', post.instructions) : null,
-          post.parking ? navButtons(`🚗 Parking « ${post.parking.name} » :`, post.parking.geom.coordinates) : null,
+          post.parking ? navButtons(`Parking « ${post.parking.name} » :`, post.parking.geom.coordinates) : null,
           h('p.small', post.access_path ? `🥾 Chemin à pied : ${post.access_path_length_m} m depuis le parking (pointillés sur la carte).` : 'Pas de chemin tracé : repérez le poste sur la carte.'))
       : null;
 
@@ -117,7 +143,7 @@ export function createSheetView(container, actions = {}) {
       h('section.card',
         h('h3', 'Rendez-vous'),
         h('p', `${formatTime(hunt.meeting_time)}${hunt.meeting_place ? ` · ${hunt.meeting_place}` : ''}`),
-        hunt.meeting_point ? navButtons('🚗 Itinéraire :', hunt.meeting_point.coordinates) : null),
+        hunt.meeting_point ? navButtons('Rendez-vous :', hunt.meeting_point.coordinates) : null),
       postCard,
       panel?.el,
       hunt.briefing ? h('section.card', h('h3', 'Consignes'), h('p.pre', hunt.briefing)) : null,
@@ -204,7 +230,11 @@ export async function memberSheetView(main, huntId) {
     onRespond: (response) => act(() => api.post(`/hunts/${huntId}/respond`, { response }), 'Réponse enregistrée.'),
     onDeclare: (body) => act(() => api.post(`/hunts/${huntId}/harvests`, body), `${body.species} déclaré.`),
     onWithdraw: (x) => act(() => api.del(`/hunts/${huntId}/harvests/${x.id}`), 'Déclaration retirée.'),
-    positions: (map) => positionPanel(map, { huntId, canSeeAll: ['president', 'responsable'].includes(state.role) }),
+    positions: (map) => positionPanel(map, {
+      huntId,
+      canSeeAll: ['president', 'responsable'].includes(state.role),
+      onChanged: () => load().then(() => watcher?.sync()).catch(() => {}),
+    }),
   });
   try {
     await load();
@@ -226,7 +256,9 @@ export async function guestSheetView(main, token) {
   let view;
   try {
     const sheet = await load();
-    view = createSheetView(main);
+    view = createSheetView(main, {
+      positions: (map) => positionPanel(map, { guestToken: token, onChanged: () => load().then((s) => view.update(s)).catch(() => {}) }),
+    });
     view.update(sheet);
   } catch (err) {
     main.append(h('h1', 'Battue'), h('p.error', errorMessage(err)));

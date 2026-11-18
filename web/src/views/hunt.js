@@ -263,7 +263,8 @@ async function consoleView(main, huntId) {
         h('button.danger', { onclick: go('annuler', 'Battue annulée.', 'Annuler la battue ? Les convoqués devront être prévenus.') }, 'Annuler la battue')],
       en_cours: [
         !hunt.started_at
-          ? h('button.primary', { onclick: go('debut', 'Début de battue.'), disabled: !hunt.assignments_published_at, title: hunt.assignments_published_at ? '' : 'Publiez d’abord les attributions' }, 'Début de battue')
+          ? [h('button.primary', { onclick: go('debut', 'Début de battue.'), disabled: !hunt.assignments_published_at, title: hunt.assignments_published_at ? '' : 'Publiez d’abord les attributions' }, 'Début de battue'),
+              readiness() ? h('span.small', { class: readiness().ready === readiness().rows.length ? 'all-ready' : 'muted' }, `${readiness().ready}/${readiness().rows.length} poste(s) confirmé(s)`) : null]
           : h('span.status.status-en_cours', `Battue commencée à ${new Date(hunt.started_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`),
         h('button.danger', { onclick: go('fin', 'Battue terminée.', 'Terminer la battue ? Les liens invités cesseront de fonctionner.') }, 'Fin de battue')],
     }[hunt.status] ?? [];
@@ -346,6 +347,34 @@ async function consoleView(main, huntId) {
     ];
   }
 
+  /** Postes du jour occupés et confirmés (« Je suis en place »), pour lancer la traque. */
+  function readiness() {
+    const { participants, day_post_ids, hunt } = hv.detail;
+    if (hunt.status !== 'en_cours' || !hunt.assignments_published_at) return null;
+    const postsById = new Map(hv.territory.posts.map((p) => [p.id, p]));
+    const rows = day_post_ids.map((id) => postsById.get(id)).filter(Boolean).sort((a, b) => a.number - b.number)
+      .map((post) => {
+        const holders = participants.filter((p) => p.post_id === post.id);
+        const ok = holders.length > 0 && holders.every((p) => p.in_place_at);
+        return { post, holders, ok };
+      });
+    return { rows, ready: rows.filter((r) => r.ok).length };
+  }
+
+  function readinessSection() {
+    const r = readiness();
+    if (!r) return null;
+    return h('section.card',
+      h('h2', `4. Mise en place · ${r.ready}/${r.rows.length} poste(s) occupé(s) et confirmé(s)`),
+      h('ul.plain.readiness', r.rows.map(({ post, holders, ok }) => h('li', { class: ok ? 'ok' : '' },
+        h('span.light', ok ? '●' : '○'),
+        h('strong', `Poste ${post.number}${post.name ? ` · ${post.name}` : ''}`),
+        h('span', holders.length
+          ? holders.map((p) => `${p.name} ${p.in_place_at ? `✅ ${new Date(p.in_place_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}` : '⏳'}`).join(' · ')
+          : 'libre')))),
+      h('p.small.muted', 'Vert : le chasseur a confirmé « Je suis en place ». Positions GPS et statuts en direct : onglet « Vue chasseur ».'));
+  }
+
   async function publishAssignments() {
     const { unassigned } = postedSummary(hv.detail.participants);
     if (unassigned.length && !(await confirmDialog('Chasseurs sans poste', `${unassigned.map((p) => p.name).join(', ')} n’ont pas de poste. Publier quand même ?`, 'Publier'))) return;
@@ -388,6 +417,7 @@ async function consoleView(main, huntId) {
       h('h1', `${formatHuntDate(hunt.date)} · ${hunt.territory_name}`),
       h('p', `Rendez-vous à ${formatTime(hunt.meeting_time)}${hunt.meeting_place ? `, ${hunt.meeting_place}` : ''} · `, h('span.status', { class: `status-${hunt.status}` }, STATUS_LABELS[hunt.status])),
       actionsSection(),
+      readinessSection(),
       hunt.status === 'en_cours' ? morningSection() : null,
       infoSection(),
       convocationSection(),

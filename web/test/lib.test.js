@@ -274,3 +274,54 @@ describe('positions GPS', () => {
     expect(formatDistance(1530)).toBe('1,5 km');
   });
 });
+
+import { pathProgress, bearing, onPostStatus, zoneAt, headingFromOrientation } from '../src/lib/guidance.js';
+describe('guidage à pied', () => {
+  // Chemin en L : parking (2, 43) → 100 m vers l'est → 100 m vers le nord = poste.
+  const m = 1 / 111_195;
+  const k = 1 / Math.cos((43 * Math.PI) / 180);
+  const P = (east, north) => [2 + east * m * k, 43 + north * m];
+  const path = [P(0, 0), P(100, 0), P(100, 100)];
+  const post = P(100, 100);
+  it('la distance restante le long du chemin diminue en marchant (trace simulée)', () => {
+    const trace = [P(0, 0), P(30, 2), P(60, -3), P(100, 10), P(98, 50), P(100, 90)];
+    const rem = trace.map((p) => pathProgress(path, p, post).remaining);
+    for (let i = 1; i < rem.length; i++) expect(rem[i]).toBeLessThan(rem[i - 1]);
+    expect(rem[0]).toBeCloseTo(200, -0.5);
+    expect(rem[3]).toBeCloseTo(90, -0.5);
+    const first = pathProgress(path, P(0, 0), post);
+    expect(first.direct).toBeCloseTo(141.4, -0.5);       // à vol d'oiseau
+    expect(pathProgress(path, P(60, 20), post).offPath).toBeCloseTo(20, -0.5);
+  });
+  it('le chemin est orienté vers le poste même s’il a été tracé à l’envers', () => {
+    expect(pathProgress([...path].reverse(), P(0, 0), post).remaining).toBeCloseTo(200, -0.5);
+  });
+  it('cap vers le poste', () => {
+    expect(bearing(P(0, 0), P(0, 100))).toBeCloseTo(0, 0);
+    expect(bearing(P(0, 0), P(100, 0))).toBeCloseTo(90, 0);
+    expect(bearing(P(0, 0), P(-100, -100))).toBeCloseTo(225, 0);
+  });
+  it('« sur le poste » après 10 s dans le rayon ; imprécise si la précision est mauvaise', () => {
+    let s = onPostStatus(null, { distance: 12, accuracy: 10, toleranceM: 30, now: 0 });
+    expect(s.status).toBe('en_route');
+    s = onPostStatus(s, { distance: 20, accuracy: 10, toleranceM: 30, now: 9_000 });
+    expect(s.status).toBe('en_route');
+    s = onPostStatus(s, { distance: 18, accuracy: 10, toleranceM: 30, now: 10_000 });
+    expect(s.status).toBe('sur_poste');
+    expect(onPostStatus(s, { distance: 18, accuracy: 61, toleranceM: 30, now: 11_000 }).status).toBe('imprecise');
+    s = onPostStatus(s, { distance: 45, accuracy: 10, toleranceM: 30, now: 12_000 });
+    expect(s).toEqual({ status: 'en_route', since: null });
+  });
+  it('détecte réserve et zone d’exclusion', () => {
+    const sq = (e, n, d) => ({ type: 'Polygon', coordinates: [[P(e, n), P(e + d, n), P(e + d, n + d), P(e, n + d), P(e, n)]] });
+    const zones = { reserves: [sq(0, 0, 50)], exclusion: { type: 'MultiPolygon', coordinates: [sq(200, 0, 50).coordinates] } };
+    expect(zoneAt(P(10, 10), zones)).toBe('reserve');
+    expect(zoneAt(P(220, 10), zones)).toBe('exclusion');
+    expect(zoneAt(P(100, 100), zones)).toBe(null);
+  });
+  it('cap de l’appareil : iPhone (boussole) et Android (absolu)', () => {
+    expect(headingFromOrientation({ webkitCompassHeading: 90 })).toBe(90);
+    expect(headingFromOrientation({ absolute: true, alpha: 90 })).toBe(270);
+    expect(headingFromOrientation({ absolute: false, alpha: 90 })).toBe(null);
+  });
+});

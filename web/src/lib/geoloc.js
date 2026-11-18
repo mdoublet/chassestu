@@ -26,6 +26,7 @@ export function ownStatus(fix, postCoords, toleranceM) {
 }
 
 export const POSITION_STATUS = {
+  confirme: { label: 'Confirmé en place', color: '#1b6e2e' },
   sur_poste: { label: 'Sur le poste', color: '#2f9e44' },
   en_route: { label: 'En route', color: '#e8590c' },
   localise: { label: 'Localisé', color: '#1c7ed6' },

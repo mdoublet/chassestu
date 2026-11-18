@@ -14,7 +14,7 @@ const postLon = (n: number) => east(4.995, LAT, n * 200);
 beforeAll(async () => {
   tenant = await createTenant(P, 'ACCA des positions');
   territoryId = (await as(P, 'POST', '/api/territories', { name: 'Bois suivi', geom: square(5.0, LAT, 0.01) })).body.territory.id;
-  for (let n = 1; n <= 2; n++) posts.push((await as(P, 'POST', `/api/territories/${territoryId}/posts`, { geom: point(postLon(n), LAT) })).body.item.id);
+  for (let n = 1; n <= 3; n++) posts.push((await as(P, 'POST', `/api/territories/${territoryId}/posts`, { geom: point(postLon(n), LAT) })).body.item.id);
   const inv = await as(P, 'POST', '/api/invitations', {});
   for (const u of ['g_ch1', 'g_ch2', 'g_autre']) await api(u, 'POST', `/api/invitation-links/${inv.body.invitation.url.split('/').pop()}/accept`);
 });
@@ -25,7 +25,7 @@ async function hunt(start = true) {
   if (!start) return id;
   let d = (await as(P, 'POST', `/api/hunts/${id}/actions/demarrer`)).body;
   for (const p of d.participants) d = (await as(P, 'PATCH', `/api/hunts/${id}/participants/${p.id}`, { present: true })).body;
-  await as(P, 'PUT', `/api/hunts/${id}/posts`, { post_ids: posts });
+  await as(P, 'PUT', `/api/hunts/${id}/posts`, { post_ids: posts.slice(0, 2) });
   const pid = (u: string) => d.participants.find((p: any) => p.user_id === u).id;
   await as(P, 'PUT', `/api/hunts/${id}/assignments`, { participant_id: pid('dev_g_ch1'), post_id: posts[0] });
   await as(P, 'PUT', `/api/hunts/${id}/assignments`, { participant_id: pid('dev_g_ch2'), post_id: posts[1] });
@@ -105,5 +105,64 @@ describe('positions en direct', () => {
   it('la purge n’est pas appelable par le rôle applicatif', async () => {
     const r = await asOwner(`SELECT has_function_privilege('app_rls', 'app.purge_positions()', 'EXECUTE') AS ok`);
     expect(r[0].ok).toBe(false);
+  });
+});
+
+describe('« Je suis en place »', () => {
+  it('confirmé : visible du responsable même sans partage GPS ; annulé si le poste change', async () => {
+    const before = await hunt(false);
+    expect((await as('g_ch1', 'PUT', `/api/hunts/${before}/in-place`, { in_place: true })).status).toBe(422);
+    const id = await hunt();
+    expect((await as('g_ch1', 'PUT', `/api/hunts/${id}/in-place`, { in_place: true })).status).toBe(200);
+    const status = async (n: string) => (await as(P, 'GET', `/api/hunts/${id}/positions`)).body.participants.find((p: any) => p.name.includes(n)).status;
+    expect(await status('g_ch1')).toBe('confirme');
+    expect(await status('g_ch2')).toBe('non_partage');
+    const sheet = (await as('g_ch1', 'GET', `/api/hunts/${id}/view`)).body.sheet;
+    expect(sheet.me.in_place).toBe(true);
+    expect(sheet.gps_tolerance_m).toBe(30);
+    // Le responsable l'envoie sur un autre poste : la confirmation tombe.
+    const detail = (await as(P, 'GET', `/api/hunts/${id}`)).body;
+    const ch1 = detail.participants.find((p: any) => p.user_id === 'dev_g_ch1');
+    expect(ch1.in_place_at).not.toBeNull();
+    await as(P, 'PUT', `/api/hunts/${id}/posts`, { post_ids: posts });
+    await as(P, 'PUT', `/api/hunts/${id}/assignments`, { participant_id: ch1.id, post_id: posts[2] });
+    expect(await status('g_ch1')).toBe('non_partage');
+    expect((await as('g_autre', 'PUT', `/api/hunts/${id}/in-place`, { in_place: true })).status).toBe(403);
+  });
+
+  it('sans poste attribué : refusé', async () => {
+    const id = await hunt();
+    const ch2 = (await as(P, 'GET', `/api/hunts/${id}`)).body.participants.find((p: any) => p.user_id === 'dev_g_ch2');
+    await as(P, 'DELETE', `/api/hunts/${id}/assignments/${ch2.id}`);
+    const r = await as('g_ch2', 'PUT', `/api/hunts/${id}/in-place`, { in_place: true });
+    expect(r.status).toBe(422);
+    expect(r.body.code).toBe('NO_POST');
+  });
+
+  it('un invité confirme par son lien', async () => {
+    const id = await hunt();
+    const d = (await as(P, 'POST', `/api/hunts/${id}/guests`, { name: 'Invité Max' })).body;
+    const guest = d.participants.find((p: any) => p.name === 'Invité Max');
+    await as(P, 'PUT', `/api/hunts/${id}/posts`, { post_ids: posts });
+    await as(P, 'PUT', `/api/hunts/${id}/assignments`, { participant_id: guest.id, post_id: posts[2] });
+    const pub = await as(P, 'POST', `/api/hunts/${id}/publish-assignments`);
+    const token = pub.body.guest_links[0].url.split('/').pop();
+    const r = await api('x', 'PUT', `/api/guest/${token}/in-place`, { body: { in_place: true } });
+    expect(r.status).toBe(200);
+    const g = (await api('x', 'GET', `/api/guest/${token}`, {})).body.sheet;
+    expect(g.me.in_place).toBe(true);
+    const list = (await as(P, 'GET', `/api/hunts/${id}/positions`)).body.participants;
+    expect(list.find((p: any) => p.name === 'Invité Max').status).toBe('confirme');
+    expect((await api('x', 'PUT', '/api/guest/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/in-place', { body: { in_place: true } })).status).toBe(410);
+  });
+});
+
+describe('sécurité des fiches', () => {
+  it('la fiche brute n’est pas appelable par le rôle applicatif (pas de contrôle d’association)', async () => {
+    const rows = await asOwner(`SELECT has_function_privilege('app_rls', 'app.hunt_view(uuid, uuid)', 'EXECUTE') AS a,
+                                       has_function_privilege('app_rls', 'app.hunt_view_base(uuid, uuid)', 'EXECUTE') AS b,
+                                       has_function_privilege('app_rls', 'app.hunt_sheet(uuid)', 'EXECUTE') AS c,
+                                       has_function_privilege('app_rls', 'app.view_hunt(uuid)', 'EXECUTE') AS d`);
+    expect(rows[0]).toEqual({ a: false, b: false, c: false, d: true });
   });
 });
