@@ -175,7 +175,11 @@ export function createDaySheet(container, opts = {}) {
       h('h2', `Votre poste : ${post.number}${post.name ? ` · ${post.name}` : ''}`),
       post.shared_with?.length ? h('p', `Poste partagé avec ${post.shared_with.join(', ')}.`) : null,
       post.instructions ? h('p.alert.warn', post.instructions) : null,
-      post.parking ? navButtons(`Parking « ${post.parking.name} »`, post.parking.geom.coordinates) : null,
+      // Sans parking défini : itinéraire jusqu'au poste lui-même (au plus près en voiture).
+      post.parking
+        ? navButtons(`Parking « ${post.parking.name} »`, post.parking.geom.coordinates)
+        : [navButtons('Pas de parking défini : jusqu’au poste', post.geom.coordinates),
+           h('p.small.muted', 'Arrêtez-vous au plus près, puis suivez le guidage à pied.')],
       post.access_path ? h('p.small', `Puis ${post.access_path_length_m} m à pied (pointillés).`) : null);
   }
 
@@ -237,7 +241,7 @@ export function createDaySheet(container, opts = {}) {
         top = [harvestBox(cur, false), panel.el];
         break;
       case 'regroupement':
-        top = [day.regroup?.point ? navButtons(`Regroupement${day.regroup.place ? ` : ${day.regroup.place}` : ''}`, day.regroup.point.coordinates) : null, panel.el];
+        top = [day.regroup?.point ? navButtons('Itinéraire', day.regroup.point.coordinates) : null, panel.el];
         break;
       default:
         top = [];
@@ -319,7 +323,8 @@ export function createDaySheet(container, opts = {}) {
       tolerance: view.gps_tolerance_m ?? 30,
       reserves: cur?.reserves ?? [],
       exclusion: cur?.exclusion ?? null,
-      compact: step.phase === 'traque' || !!cur?.me?.in_place,
+      // Écran réduit seulement pour le poste de la battue en cours (pas au regroupement).
+      compact: step.phase === 'traque' || (step.phase === 'rejoindre' && !!cur?.me?.in_place),
       target,
     };
   }

@@ -391,7 +391,7 @@ export function positionPanel(map, { dayId, guestToken, canSeeAll = false, onCha
     const isPost = t.kind === 'post';
     const title = isPost ? `Poste n° ${t.number}${t.name ? ` · ${t.name}` : ''}` : t.title;
     const confirm = confirmBlock();
-    if (!guiding && ctx.compact && ctx.me?.in_place) {
+    if (!guiding && isPost && ctx.compact && ctx.me?.in_place) {
       return { top: [h('h3', `Poste n° ${t.number}`), confirm], bottom: null };
     }
     if (!guiding) {

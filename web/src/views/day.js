@@ -491,7 +491,8 @@ async function dayConsole(main, dayId) {
       editable ? h('p.small.muted', picked ? `Touchez le poste où placer ${picked.name}.` : 'Touchez un nom puis un poste pour le placer. Postes : ajout et retrait sur la carte.') : null,
       dayPosts.length || unassigned.length
         ? h('ul.plain.assign-list',
-            dayPosts.map((post) => row(post, participants.filter((p) => p.post_id === post.id), String(post.number), post.difficulty ? ` accès ${post.difficulty}` : '')),
+            dayPosts.map((post) => row(post, participants.filter((p) => p.post_id === post.id), String(post.number),
+              `${post.difficulty ? ` accès ${post.difficulty}` : ''}${post.parking_id ? '' : ' · sans parking'}`)),
             unassigned.length || picked ? row(null, unassigned, 'Sans poste', '') : null)
         : h('p.muted', 'Choisissez les postes sur la carte.'),
       editable && dayPosts.length
