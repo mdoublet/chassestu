@@ -354,3 +354,45 @@ describe('vue chasseur : une fois en place', () => {
     expect(step).toMatchObject({ phase: 'rejoindre', title: 'En place au poste n° 2' });
   });
 });
+
+import { assemblePath, moveEnd, pathStart, updatedPath, bestPathToPost, pathLength, RECOMPUTE_M } from '../src/lib/routing.js';
+describe('chemins d’accès', () => {
+  const m = 1 / 111195;
+  const k = 1 / Math.cos((45 * Math.PI) / 180);
+  const P = (e, n) => [4 + e * m * k, 45 + n * m];
+  const parking = P(0, 0);
+  const post = P(300, 0);
+  it('assemble parking → réseau → poste, avec les raccords à vol d’oiseau', () => {
+    const c = assemblePath(parking, [P(5, 20), P(150, 40), P(290, 20)], post);
+    expect(c[0]).toEqual(parking);
+    expect(c[c.length - 1]).toEqual(post);
+    expect(pathLength(c)).toBeGreaterThan(300);
+  });
+  it('petit déplacement : seule l’extrémité bouge, dans le bon sens du chemin', () => {
+    const path = [parking, P(150, 30), post];
+    expect(moveEnd(path, 'post', P(310, 5), post)).toEqual([parking, P(150, 30), P(310, 5)]);
+    const reversed = [post, P(150, 30), parking]; // tracé du poste vers le parking
+    expect(moveEnd(reversed, 'parking', P(-5, 3), post)).toEqual([post, P(150, 30), P(-5, 3)]);
+    expect(pathStart(reversed, post)).toEqual(parking);
+  });
+  it('grand déplacement : itinéraire recalculé ; service indisponible : on ajuste', async () => {
+    const path = [parking, P(150, 30), post];
+    const route = async (a, b) => [a, P(200, 100), b];
+    const small = await updatedPath(path, { which: 'post', from: post, to: P(300 + RECOMPUTE_M - 10, 0), post, route });
+    expect(small.recomputed).toBe(false);
+    const big = await updatedPath(path, { which: 'post', from: post, to: P(300, 200), post, route });
+    expect(big.recomputed).toBe(true);
+    expect(big.coords[0]).toEqual(parking);
+    expect(big.coords.at(-1)).toEqual(P(300, 200));
+    const down = await updatedPath(path, { which: 'parking', from: parking, to: P(-200, 0), post, route: async () => null });
+    expect(down).toMatchObject({ recomputed: false });
+    expect(down.coords[0]).toEqual(P(-200, 0));
+  });
+  it('meilleur chemin : le plus court à pied parmi les parkings proches', async () => {
+    const pkA = { name: 'A', geom: { coordinates: P(0, 0) } };      // plus proche à vol d'oiseau…
+    const pkB = { name: 'B', geom: { coordinates: P(0, 100) } };
+    const route = async (from) => (from === pkA.geom.coordinates ? [from, P(0, -800), P(300, -800), post] : [from, post]); // …mais long détour
+    const best = await bestPathToPost(post, [pkA, pkB], route);
+    expect(best.parking.name).toBe('B');
+  });
+});

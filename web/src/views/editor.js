@@ -16,6 +16,7 @@ import booleanPointInPolygon from '@turf/boolean-point-in-polygon';
 import { simplifyMeters, lineLengthMeters, distanceMeters } from '../lib/simplify.js';
 import { parseGeoFile } from '../lib/importer.js';
 import { DIFFICULTY_LABELS } from '../lib/hunts.js';
+import { updatedPath, bestPathToPost } from '../lib/routing.js';
 
 /** Champs nécessaires pour recréer un objet supprimé (annulation). */
 const FIELDS = {
@@ -391,6 +392,11 @@ export async function editorView(main, start) {
       groups.dwellings.addLayer(layer);
     }
 
+    // Chemin proposé (pas encore enregistré)
+    if (ed.proposal?.coords && isSelected('posts', ed.proposal.postId)) {
+      groups.paths.addLayer(L.polyline(ed.proposal.coords.map(toLatLng), { color: '#e8590c', weight: 4, dashArray: '6 8', interactive: false }));
+    }
+
     // Chemins d'accès (pointillés)
     for (const p of posts) {
       if (!p.access_path) continue;
@@ -409,12 +415,24 @@ export async function editorView(main, start) {
 
     // Parkings
     for (const pk of parkings) {
-      const m = L.marker(toLatLng(pk.geom.coordinates), { icon: parkingIcon(isSelected('parkings', pk.id) ? 'selected' : ''), draggable: canEdit, title: pk.name, bubblingMouseEvents: true });
+      // Au-dessus des poignées du chemin (son départ est sur le parking) : glisser déplace le parking.
+      const m = L.marker(toLatLng(pk.geom.coordinates), { icon: parkingIcon(isSelected('parkings', pk.id) ? 'selected' : ''), draggable: canEdit, title: pk.name, bubblingMouseEvents: true, zIndexOffset: 1000 });
       m.bindTooltip(escapeHtml(pk.name), { direction: 'top', offset: [0, -12] });
       m.on('click', onPick('parkings', pk.id));
       m.on('dragend', () => {
         const { lat, lng } = m.getLatLng();
-        run(() => updateItem('parkings', pk, { geom: { type: 'Point', coordinates: [lng, lat] } }));
+        run(async () => {
+          await updateItem('parkings', pk, { geom: { type: 'Point', coordinates: [lng, lat] } });
+          // Les chemins qui partent de ce parking suivent (ou sont recalculés si le parking a beaucoup bougé).
+          const linked = ed.data.posts.filter((p) => p.parking_id === pk.id && p.access_path);
+          let recomputed = 0;
+          for (const p of linked) {
+            const r = await updatedPath(p.access_path.coordinates, { which: 'parking', from: pk.geom.coordinates, to: [lng, lat], post: p.geom.coordinates });
+            if (r.recomputed) recomputed += 1;
+            await updateItem('posts', p, { access_path: { type: 'LineString', coordinates: r.coords } });
+          }
+          if (linked.length) toast(`${linked.length} chemin(s) mis à jour${recomputed ? `, dont ${recomputed} recalculé(s)` : ''}.`);
+        });
       });
       groups.parkings.addLayer(m);
     }
@@ -428,7 +446,8 @@ export async function editorView(main, start) {
         p.active ? '' : 'inactive',
         p.invalid_reason ? 'invalid-static' : p.nearest_dwelling_m != null ? 'warning' : '',
       ].join(' ');
-      const m = L.marker(toLatLng(p.geom.coordinates), { icon: postIcon(p.number, cls), draggable: canEdit, title: `Poste ${p.number}`, bubblingMouseEvents: true });
+      // Au-dessus des poignées du chemin (sa fin est sur le poste) : glisser déplace le poste, le chemin suit.
+      const m = L.marker(toLatLng(p.geom.coordinates), { icon: postIcon(p.number, cls), draggable: canEdit, title: `Poste ${p.number}`, bubblingMouseEvents: true, zIndexOffset: 1000 });
       m.bindTooltip(escapeHtml(postTooltip(p, zones.bufferM) + (isOutside(p) ? ' — hors du territoire' : '')), { direction: 'top', offset: [0, -14] });
       let origin;
       m.on('click', onPick('posts', p.id));
@@ -453,7 +472,17 @@ export async function editorView(main, start) {
           return;
         }
         if (check.warning) toast(`Poste ${p.number} : ${check.warning}.`, 'warn');
-        run(() => updateItem('posts', p, { geom: { type: 'Point', coordinates: [lng, lat] } }));
+        run(async () => {
+          const patch = { geom: { type: 'Point', coordinates: [lng, lat] } };
+          let note = null;
+          if (p.access_path) {
+            const r = await updatedPath(p.access_path.coordinates, { which: 'post', from: p.geom.coordinates, to: [lng, lat], post: p.geom.coordinates });
+            patch.access_path = { type: 'LineString', coordinates: r.coords };
+            note = r.recomputed ? `Poste ${p.number} déplacé : chemin recalculé depuis le parking.` : `Poste ${p.number} déplacé : fin du chemin ajustée.`;
+          }
+          await updateItem('posts', p, patch);
+          if (note) toast(note);
+        });
       });
       groups.posts.addLayer(m);
     }
@@ -462,6 +491,24 @@ export async function editorView(main, start) {
       ed.fitted = true;
       map.fitBounds(tLayer.getBounds(), { padding: [30, 30] });
     }
+  }
+
+  /**
+   * Propose le meilleur chemin à pied vers un poste, depuis le parking le plus
+   * favorable (itinéraire IGN sur routes, pistes et sentiers). Affiché en
+   * pointillés orange ; le président l'accepte ou l'ignore.
+   */
+  async function proposePath(post) {
+    if (!ed.data?.parkings.length) {
+      ed.proposal = { postId: post.id, noParking: true };
+      return renderPanel();
+    }
+    ed.proposal = { postId: post.id, loading: true };
+    renderPanel();
+    const best = await bestPathToPost(post.geom.coordinates, ed.data.parkings);
+    if (ed.proposal?.postId !== post.id) return undefined; // entre-temps : autre sélection
+    ed.proposal = { postId: post.id, ...best };
+    return render();
   }
 
   function saveShape(kind, item, geom) {
@@ -588,6 +635,7 @@ export async function editorView(main, start) {
       return run(async () => {
         const item = await createItem('posts', { geom });
         ed.selected = { kind: 'posts', id: item.id };
+        proposePath(item);
       });
     }
     if (mode === 'path') {
@@ -874,9 +922,11 @@ export async function editorView(main, start) {
       field('Consignes', bound(kind, item, 'instructions', { rows: 3, maxlength: 2000 }, 'textarea')),
       h('label.check', bound(kind, item, 'active', { type: 'checkbox' }), 'Poste actif'),
       h('p.small', item.access_path ? `Chemin d’accès : ${item.access_path_length_m} m. Déplacez ses sommets pour l’ajuster.` : 'Pas encore de chemin d’accès.'),
+      canEdit ? pathProposal(item) : null,
       canEdit
         ? h(
             'div.buttons',
+            !item.access_path && ed.proposal?.postId !== item.id ? h('button', { onclick: () => proposePath(item) }, 'Proposer un chemin') : null,
             h('button', { onclick: () => startDraw('path') }, item.access_path ? 'Retracer le chemin' : 'Tracer le chemin'),
             h('button', { onclick: () => startRecording(item) }, 'Enregistrer en marchant'),
             item.access_path ? h('button', { onclick: () => run(() => updateItem('posts', item, { access_path: null })) }, 'Effacer le chemin') : null,
@@ -884,6 +934,23 @@ export async function editorView(main, start) {
         : null,
       del,
     );
+  }
+
+  function pathProposal(item) {
+    const pr = ed.proposal;
+    if (!pr || pr.postId !== item.id) return null;
+    if (pr.noParking) return h('p.small.alert.muted', 'Ajoutez un parking pour qu’un chemin soit proposé.');
+    if (pr.loading) return h('p.small.muted', 'Calcul du meilleur chemin depuis les parkings…');
+    return h('div.hint.proposal',
+      h('p', h('strong', `Chemin proposé : ${Math.round(pr.length)} m`), ` depuis le parking « ${pr.parking.name} »${pr.routed ? ', par les routes et sentiers IGN' : ' (à vol d’oiseau : itinéraire IGN indisponible)'}.`),
+      h('div.buttons',
+        h('button.primary', { onclick: () => {
+          const coords = pr.coords;
+          ed.proposal = null;
+          run(() => updateItem('posts', item, { access_path: { type: 'LineString', coordinates: coords }, parking_id: pr.parking.id }));
+        } }, 'Utiliser ce chemin'),
+        h('button.link', { onclick: () => { ed.proposal = null; render(); } }, 'Ignorer')),
+      h('p.small.muted', 'Vérifiez-le sur le terrain : le dernier tronçon jusqu’au poste est à vol d’oiseau.'));
   }
 
   /** 1 très facile … 5 escarpé ; vide : estimée d'après la longueur du chemin. */
