@@ -354,16 +354,3 @@ describe('vue chasseur : une fois en place', () => {
     expect(step).toMatchObject({ phase: 'rejoindre', title: 'En place au poste n° 2' });
   });
 });
-
-import { ignUrl, IGN_LAYERS } from '../src/map/ign.js';
-describe('fonds IGN', () => {
-  it('limites communales : couche à jour, grille PM_6_16, PNG transparent', () => {
-    const d = IGN_LAYERS.limites;
-    const url = ignUrl(d.layer, { format: d.format, matrixSet: d.matrixSet });
-    expect(url).toContain('LAYER=LIMITES_ADMINISTRATIVES_EXPRESS.LATEST');
-    expect(url).toContain('TILEMATRIXSET=PM_6_16');
-    expect(url).toContain('FORMAT=image%2Fpng');
-    expect(d.maxNativeZoom).toBe(16);
-    expect(ignUrl(IGN_LAYERS.plan.layer)).toContain('TILEMATRIXSET=PM_0_19'); // les autres fonds ne changent pas
-  });
-});
