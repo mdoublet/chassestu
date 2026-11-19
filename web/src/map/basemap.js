@@ -3,33 +3,32 @@
 // GetCapabilities de https://data.geopf.fr/wmts (novembre 2026).
 import L from './leaflet.js';
 
-const WMTS = 'https://data.geopf.fr/wmts';
-const ATTRIBUTION = '© <a href="https://www.ign.fr/" target="_blank" rel="noopener">IGN</a> — Géoplateforme';
+import { ATTRIBUTION, ignUrl, IGN_LAYERS } from './ign.js';
 
-export function ignUrl(layer, { style = 'normal', format = 'image/png' } = {}) {
-  const params = new URLSearchParams({
-    SERVICE: 'WMTS',
-    REQUEST: 'GetTile',
-    VERSION: '1.0.0',
-    LAYER: layer,
-    STYLE: style,
-    TILEMATRIXSET: 'PM_0_19',
-    FORMAT: format,
-  });
-  return `${WMTS}?${params}&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}`;
+export { ignUrl, IGN_LAYERS };
+
+const LIMITS_KEY = 'chassestu.limitesCommunales';
+function limitsWanted() {
+  try {
+    return localStorage.getItem(LIMITS_KEY) !== 'off'; // affichées par défaut
+  } catch {
+    return true;
+  }
+}
+function rememberLimits(on) {
+  try {
+    localStorage.setItem(LIMITS_KEY, on ? 'on' : 'off');
+  } catch {
+    /* rien */
+  }
 }
 
-export const IGN_LAYERS = {
-  plan: { name: 'Plan IGN', layer: 'GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2', format: 'image/png' },
-  ortho: { name: 'Photographies aériennes', layer: 'ORTHOIMAGERY.ORTHOPHOTOS', format: 'image/jpeg' },
-  cadastre: { name: 'Cadastre', layer: 'CADASTRALPARCELS.PARCELLAIRE_EXPRESS', format: 'image/png', style: 'PCI vecteur' },
-};
-
 function tileLayer(def, extra = {}) {
-  return L.tileLayer(ignUrl(def.layer, { style: def.style, format: def.format }), {
+  return L.tileLayer(ignUrl(def.layer, { style: def.style, format: def.format, matrixSet: def.matrixSet }), {
     attribution: ATTRIBUTION,
     maxZoom: 19,
-    maxNativeZoom: 19,
+    maxNativeZoom: def.maxNativeZoom ?? 19,
+    minZoom: def.minZoom ?? 0,
     ...extra,
   });
 }
@@ -39,14 +38,18 @@ export function addBasemaps(map) {
   const plan = tileLayer(IGN_LAYERS.plan);
   const ortho = tileLayer(IGN_LAYERS.ortho);
   const cadastre = tileLayer(IGN_LAYERS.cadastre, { opacity: 0.8 });
+  const limites = tileLayer(IGN_LAYERS.limites, { opacity: 0.9 });
   plan.addTo(map);
+  if (limitsWanted()) limites.addTo(map);
+  map.on('overlayadd', (e) => e.layer === limites && rememberLimits(true));
+  map.on('overlayremove', (e) => e.layer === limites && rememberLimits(false));
   L.control
     .layers(
       { [IGN_LAYERS.plan.name]: plan, [IGN_LAYERS.ortho.name]: ortho },
-      { [IGN_LAYERS.cadastre.name]: cadastre },
+      { [IGN_LAYERS.limites.name]: limites, [IGN_LAYERS.cadastre.name]: cadastre },
       { position: 'topright', collapsed: true },
     )
     .addTo(map);
   L.control.scale({ imperial: false }).addTo(map);
-  return { plan, ortho, cadastre };
+  return { plan, ortho, cadastre, limites };
 }
