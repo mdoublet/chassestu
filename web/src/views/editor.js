@@ -265,6 +265,13 @@ export async function editorView(main, start) {
   async function updateItem(kind, item, patch) {
     const before = pick(item, Object.keys(patch));
     const res = await api.patch(itemPath(kind, item.id), patch);
+    // Chemin enregistré : le parking de départ est rattaché automatiquement (base de données).
+    const updated = res.item;
+    if (kind === 'posts' && 'access_path' in patch && updated?.parking_id && updated.parking_id !== item.parking_id) {
+      before.parking_id = item.parking_id ?? null; // l'annulation remet aussi l'ancien parking
+      const pk = ed.data?.parkings.find((x) => x.id === updated.parking_id);
+      toast(`Parking « ${pk?.name ?? '?'} » rattaché au poste ${updated.number} : le chemin en part.`);
+    }
     history.push({
       label: `Modification ${LABEL[kind]}`,
       undo: async (hh) => {

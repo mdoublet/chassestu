@@ -173,3 +173,28 @@ describe('vue d’ensemble de tous les territoires', () => {
     expect(theirs.body.posts).toEqual([]);
   });
 });
+
+describe('parking déduit du chemin', () => {
+  it('le chemin part du parking : le parking le plus proche du départ est rattaché ; un choix explicite est respecté', async () => {
+    const tenant = await createTenant('pres_chemin', 'ACCA des chemins');
+    const as = (method: string, path: string, body?: unknown) => api('pres_chemin', method, path, { tenant, body });
+    const t = (await as('POST', '/api/territories', { name: 'Bois', geom: square(4.0, 45, 0.02) })).body.territory.id;
+    const near = (await as('POST', `/api/territories/${t}/parkings`, { name: 'Près du départ', geom: point(3.9905, 45) })).body.item;
+    const far = (await as('POST', `/api/territories/${t}/parkings`, { name: 'Loin', geom: point(4.0, 45.009) })).body.item;
+    const created = await as('POST', `/api/territories/${t}/posts`, { geom: point(4.0, 45) });
+    const post = created.body.item;
+    expect(post.parking_id).toBeNull();
+    // Chemin tracé du poste vers le parking (sens inverse) : le départ reste l'extrémité loin du poste.
+    const path = { type: 'LineString', coordinates: [[4.0, 45], [3.995, 45.0005], [3.9906, 45]] };
+    const res = await as('PATCH', `/api/posts/${post.id}`, { access_path: path });
+    expect(res.body).toHaveProperty('item');
+    const withPath = res.body.item;
+    expect(withPath.parking_id).toBe(near.id);
+    // Choix explicite d'un autre parking : respecté.
+    expect((await as('PATCH', `/api/posts/${post.id}`, { parking_id: far.id })).body.item.parking_id).toBe(far.id);
+    // Chemin dont le départ est loin de tout parking : rien n'est changé.
+    const lonely = (await as('POST', `/api/territories/${t}/posts`, { geom: point(4.005, 45.005) })).body.item;
+    const p2 = (await as('PATCH', `/api/posts/${lonely.id}`, { access_path: { type: 'LineString', coordinates: [[4.005, 45.005], [4.007, 45.0065]] } })).body.item;
+    expect(p2.parking_id).toBeNull();
+  });
+});
