@@ -406,3 +406,10 @@ details.more-tools > summary { cursor: pointer; font-weight: 600; }
 /* Calque des bâtiments (éditeur) : seul un bâtiment capte le clic, pas le fond du calque. */
 .leaflet-dwellings-pane > svg { pointer-events: none; }
 .leaflet-dwellings-pane > svg path.leaflet-interactive { pointer-events: auto; }
+
+/* Photographies aériennes : contours et chemins clairs, lisibles sur la forêt.
+   (Leaflet écrit la couleur dans l'attribut « stroke » : le CSS la remplace.) */
+.basemap-ortho path[stroke="#1f5130"] { stroke: #ffe066; filter: drop-shadow(0 0 1.5px rgba(0, 0, 0, 0.9)); }
+.basemap-ortho path[stroke="#5c3d1e"] { stroke: #ffffff; filter: drop-shadow(0 0 1.5px rgba(0, 0, 0, 0.9)); }
+.basemap-ortho path[stroke="#5f6b63"] { stroke: #e9ecef; }
+.basemap-ortho .territory-label { background: rgba(0, 0, 0, 0.55); color: #ffe066; }
