@@ -64,21 +64,6 @@ const DRAW_HINTS = {
 
 const pick = (obj, keys) => Object.fromEntries(keys.map((k) => [k, obj[k] ?? null]));
 
-const SHOW_ALL_KEY = 'chassestu.showAllTerritories';
-function readShowAll() {
-  try {
-    return localStorage.getItem(SHOW_ALL_KEY) !== '0'; // activé par défaut
-  } catch {
-    return true;
-  }
-}
-function saveShowAll(value) {
-  try {
-    localStorage.setItem(SHOW_ALL_KEY, value ? '1' : '0');
-  } catch {
-    /* stockage indisponible : préférence non mémorisée */
-  }
-}
 
 function importSummary(report) {
   if (!report) return 'Bâtiments déjà à jour.';
@@ -107,7 +92,7 @@ export async function editorView(main, start) {
     mode: null,
     recording: null,
     fitted: false,
-    showAll: readShowAll(), // afficher aussi les autres territoires (préférence de l'appareil)
+    showAll: false, // les autres territoires : vue globale de la page Territoires
     overview: null, // { territories, reserves, posts, exclusions } de tout le tenant
   };
 
@@ -122,7 +107,11 @@ export async function editorView(main, start) {
   map.pm.setLang('fr');
   map.pm.setGlobalOptions({ snappable: true, snapDistance: 20, allowSelfIntersection: false });
 
-  const dwellingRenderer = L.canvas({ padding: 0.5 });
+  // Bâtiments au-dessus du territoire et des zones (sinon le territoire prend le
+  // clic), sous les postes. SVG : seuls les bâtiments captent le clic.
+  map.createPane('dwellings');
+  map.getPane('dwellings').style.zIndex = 450;
+  const dwellingRenderer = L.svg({ pane: 'dwellings', padding: 0.5 });
   const groups = {
     others: L.featureGroup().addTo(map), // autres territoires, sous le territoire actif
     territory: L.featureGroup().addTo(map),
@@ -504,8 +493,11 @@ export async function editorView(main, start) {
   /** Nouveau territoire : le nom d'abord, puis le contour à dessiner (carte vidée). */
   async function newTerritory() {
     const name = (await promptDialog('Nouveau territoire', 'Nom du territoire'))?.trim();
-    if (!name) return;
-    ed.pendingTerritory = { name, previousId: ed.territoryId };
+    if (!name) {
+      location.hash = '#/territoires';
+      return;
+    }
+    ed.pendingTerritory = { name };
     ed.territoryId = null;
     ed.selected = null;
     ed.data = null;
@@ -517,9 +509,9 @@ export async function editorView(main, start) {
   function cancelDraw() {
     stopDraw();
     if (ed.pendingTerritory) {
-      ed.territoryId = ed.pendingTerritory.previousId;
       ed.pendingTerritory = null;
-      return reload();
+      location.hash = '#/territoires';
+      return undefined;
     }
     render();
   }
@@ -536,11 +528,10 @@ export async function editorView(main, start) {
   async function handleDrawn(mode, geom) {
     if (mode === 'territory') {
       const name = ed.pendingTerritory?.name ?? await promptDialog('Nouveau territoire', 'Nom du territoire');
-      const previousId = ed.pendingTerritory?.previousId;
       ed.pendingTerritory = null;
       if (!name) {
-        if (previousId !== undefined) ed.territoryId = previousId;
-        return reload();
+        location.hash = '#/territoires';
+        return undefined;
       }
       try {
         toast('Territoire en cours de création, import des bâtiments IGN…');
@@ -550,6 +541,7 @@ export async function editorView(main, start) {
         ed.territoryId = territory.id;
         ed.selected = null;
         ed.fitted = false;
+        window.history.replaceState(null, '', `#/carte/${territory.id}`);
         await loadTerritories();
       } catch (err) {
         toast(errorMessage(err), 'error');
@@ -824,14 +816,11 @@ export async function editorView(main, start) {
                 try {
                   await api.del(itemPath('territories', t.id));
                   history.clear();
-                  ed.selected = null;
-                  ed.territoryId = null;
-                  ed.fitted = false;
-                  await loadTerritories();
+                  toast('Territoire supprimé.');
+                  location.hash = '#/territoires';
                 } catch (err) {
                   toast(errorMessage(err), 'error');
                 }
-                reload();
               },
             }, 'Supprimer le territoire')
           : null,
@@ -899,44 +888,48 @@ export async function editorView(main, start) {
     return el;
   }
 
+  /**
+   * Fiche d'un bâtiment cliqué sur la carte : de quel bâtiment il s'agit, et
+   * le supprimer si ce n'est pas une habitation. Un bâtiment IGN supprimé est
+   * gardé comme « ignoré » (avec la raison) pour ne pas revenir à la prochaine
+   * actualisation ; une habitation ajoutée à la main est vraiment supprimée.
+   */
   function dwellingPanel(d) {
-    const title = d.source === 'manuel' ? 'Habitation ajoutée à la main' : 'Bâtiment (BD TOPO IGN)';
+    const ign = d.source !== 'manuel';
+    const buffer = ed.data?.exclusion?.buffer_distance_m ?? 150;
     const facts = [
-      d.usage ? `Usage : ${d.usage}` : null,
+      ign ? `Bâtiment IGN (BD TOPO)${d.source_id ? ` · ${d.source_id}` : ''}` : 'Habitation ajoutée à la main',
+      d.usage ? `Usage : ${d.usage}` : ign ? 'Usage non renseigné par l’IGN' : null,
       d.comment ? `Note : ${d.comment}` : null,
-      d.missing_since ? `Absent de la BD TOPO depuis le ${new Date(d.missing_since).toLocaleDateString('fr-FR')} (démoli ?) : toujours compté par prudence.` : null,
+      d.missing_since ? `Absent de la BD TOPO depuis le ${new Date(d.missing_since).toLocaleDateString('fr-FR')} (démoli ?).` : null,
       d.likely_non_residential && !d.ignored ? 'Probablement pas une habitation d’après l’IGN : à vérifier sur place.' : null,
     ].filter(Boolean);
-    const reason = h('input', { maxlength: 500, placeholder: 'ex. hangar sans logement, ruine' });
-    return h(
-      'section.props',
-      h('h3', title),
+    const reason = h('input', { maxlength: 500, placeholder: 'Pourquoi ? ex. ruine, hangar sans logement' });
+    const remove = () => {
+      if (!ign) return run(async () => { await deleteItem('dwellings', d); ed.selected = null; });
+      if (reason.value.trim().length < 3) {
+        toast('Indiquez pourquoi ce bâtiment n’est pas une habitation.', 'error');
+        reason.focus();
+        return undefined;
+      }
+      return run(() => updateItem('dwellings', d, { ignored: true, ignored_reason: reason.value.trim() }));
+    };
+    return h('section.props',
+      h('h3', d.ignored ? 'Bâtiment supprimé' : 'Bâtiment'),
       facts.map((f) => h('p.small', f)),
       d.ignored
         ? [
-            h('p.alert.muted', `Ignoré (${d.ignored_reason}) le ${new Date(d.ignored_at).toLocaleDateString('fr-FR')} : il ne crée pas de zone non chassable.`),
-            canEdit ? h('button', { onclick: () => run(() => updateItem('dwellings', d, { ignored: false })) }, 'Compter de nouveau comme habitation') : null,
+            h('p.small.alert.muted', `Supprimé le ${new Date(d.ignored_at).toLocaleDateString('fr-FR')} (${d.ignored_reason}) : il ne compte plus dans la zone non chassable.`),
+            canEdit ? h('button', { onclick: () => run(() => updateItem('dwellings', d, { ignored: false })) }, 'Rétablir comme habitation') : null,
           ]
-        : canEdit
-          ? [
-              h('p.small', 'Par prudence, tout bâtiment compte comme habitation. Ne l’ignorez que si vous êtes sûr qu’il n’est pas habité.'),
-              field('Raison (obligatoire pour ignorer)', reason),
-              h('button', {
-                onclick: () => {
-                  if (reason.value.trim().length < 3) {
-                    toast('Indiquez pourquoi ce bâtiment n’est pas une habitation.', 'error');
-                    reason.focus();
-                    return;
-                  }
-                  run(() => updateItem('dwellings', d, { ignored: true, ignored_reason: reason.value.trim() }));
-                },
-              }, 'Ignorer ce bâtiment'),
-            ]
-          : null,
-      canEdit && d.source === 'manuel'
-        ? h('button.danger', { onclick: () => run(async () => { await deleteItem('dwellings', d); ed.selected = null; }) }, 'Supprimer cette habitation')
-        : null,
-    );
+        : [
+            h('p.small', `Compté comme habitation : pas de poste ni de tir à moins de ${buffer} m.`),
+            canEdit ? [
+              ign ? reason : null,
+              h('button.danger', { onclick: remove }, 'Supprimer ce bâtiment'),
+              ign ? h('p.small.muted', 'À faire seulement si vous êtes sûr qu’il n’est pas habité. Il reste mémorisé pour ne pas revenir à la prochaine actualisation IGN, et peut être rétabli.') : null,
+            ] : null,
+          ]);
   }
 
   async function refreshDwellings() {
@@ -972,96 +965,63 @@ export async function editorView(main, start) {
         ex.dwellings_refreshed_at ? ` Bâtiments IGN du ${new Date(ex.dwellings_refreshed_at).toLocaleDateString('fr-FR')}.` : ''),
       ex.needs_refresh ? h('p.alert.warn', 'Bâtiments à actualiser : jamais importés, ou territoire / distance modifiés depuis le dernier import.') : null,
       invalid ? h('p.alert.danger', `${invalid} poste(s) invalide(s) : trop près d’une habitation, à déplacer.`) : null,
-      canEdit && !ed.mode && !ed.recording ? h('button', { onclick: refreshDwellings }, 'Actualiser les bâtiments (IGN)') : null,
+      ex.needs_refresh && canEdit ? h('p.small.muted', 'Actualisation : section « Données et bâtiments » en bas.') : null,
     );
   }
 
   function renderPanel() {
-    const territorySelect = h(
-      'select',
-      {
-        'aria-label': 'Territoire',
-        onchange: (e) => switchTerritory(e.target.value),
-        disabled: !!ed.pendingTerritory,
-      },
-      ed.pendingTerritory ? h('option', { selected: true }, `Nouveau : ${ed.pendingTerritory.name}`) : null,
-      ed.territories.map((t) => {
-        const count = t.id === ed.data?.territory.id ? ed.data.posts.length : t.posts_count;
-        return h('option', { value: t.id, selected: !ed.pendingTerritory && t.id === ed.territoryId }, `${t.name} (${count} poste${count > 1 ? 's' : ''})`);
-      }),
-    );
-
-    const tools = canEdit && ed.data && !ed.mode && !ed.recording
-      ? h(
-          'div.buttons',
+    const busy = ed.mode || ed.recording;
+    const tools = canEdit && ed.data && !busy
+      ? h('div.buttons',
           h('button', { onclick: () => startDraw('reserves') }, '+ Réserve'),
           h('button', { onclick: () => startDraw('parkings') }, '+ Parking'),
           h('button', { onclick: () => startDraw('posts') }, '+ Poste'),
           h('button', { onclick: () => startDraw('dwellings'), title: 'Habitation absente de la BD TOPO' }, '+ Habitation'),
-        )
+          h('button', { onclick: undo, disabled: !history.peekLabel(), title: history.peekLabel() ? `Annuler : ${history.peekLabel()}` : 'Rien à annuler' }, '↶'))
       : null;
-
-    const undoLabel = history.peekLabel();
     const rec = ed.recording;
+    const t = ed.data?.territory;
+    const dwellings = ed.data?.dwellings ?? [];
+    const toCheck = dwellings.filter((d) => !d.ignored && (d.likely_non_residential || d.missing_since));
+    const manual = dwellings.filter((d) => d.source === 'manuel');
 
-    fill(panel, 
-      h('a.small', { href: '#/territoires' }, '← Liste des territoires'),
-      h('p.disclaimer', 'Aide au placement uniquement : la responsabilité du placement des postes reste celle du président.'),
-      h(
-        'section',
-        h('div.row', ed.territories.length ? territorySelect : h('p.muted', 'Aucun territoire.'), canEdit && !ed.mode && !ed.recording ? h('button', { onclick: newTerritory }, '+ Territoire') : null),
-        ed.territories.length > 1
-          ? h(
-              'div.row.show-all',
-              h('label.check', h('input', {
-                type: 'checkbox',
-                checked: ed.showAll,
-                onchange: async (e) => {
-                  ed.showAll = e.target.checked;
-                  saveShowAll(ed.showAll);
-                  await loadOverview();
-                  render();
-                },
-              }), 'Afficher tous les territoires'),
-              h('button.link', { onclick: fitAll }, 'Vue d’ensemble'),
-            )
-          : null,
-        ed.data
-          ? h('p.small', h('button.link', { onclick: () => select('territories', ed.data.territory.id, { zoom: true }) }, ed.data.territory.name), ` · ${ed.data.territory.area_ha.toLocaleString('fr-FR')} ha`)
-          : null,
-      ),
+    fill(panel,
+      h('a.small', { href: '#/territoires' }, '← Territoires'),
+      ed.pendingTerritory
+        ? h('h2.editor-title', `Nouveau territoire « ${ed.pendingTerritory.name} »`)
+        : t
+          ? h('h2.editor-title', h('button.link', { onclick: () => select('territories', t.id, { zoom: true }), title: 'Renommer, notes, supprimer' }, t.name),
+              h('span.small.muted', ` ${t.area_ha.toLocaleString('fr-FR')} ha`))
+          : h('p.muted', 'Territoire introuvable.'),
       ed.data ? exclusionSummary() : null,
       ed.mode
-        ? h('div.hint',
-            ed.mode === 'territory' && ed.pendingTerritory ? h('strong', `Nouveau territoire « ${ed.pendingTerritory.name} »`) : null,
-            h('p', DRAW_HINTS[ed.mode]), h('button', { onclick: cancelDraw }, 'Annuler (Échap)'))
+        ? h('div.hint', h('p', DRAW_HINTS[ed.mode]), h('button', { onclick: cancelDraw }, 'Annuler (Échap)'))
         : null,
       rec
-        ? h(
-            'div.hint.recording',
+        ? h('div.hint.recording',
             h('p', h('strong', `Enregistrement du trajet vers le poste ${rec.post.number}`)),
             h('p', `${rec.coords.length} points · ${Math.round(lineLengthMeters(rec.coords))} m · précision ${rec.accuracy ?? '…'} m`),
             h('p.small', 'Gardez l’écran allumé et cette page ouverte pendant la marche.'),
-            h('div.buttons', h('button.primary', { onclick: () => stopRecording(true) }, 'Arrivé au poste'), h('button', { onclick: () => stopRecording(false) }, 'Abandonner')),
-          )
+            h('div.buttons', h('button.primary', { onclick: () => stopRecording(true) }, 'Arrivé au poste'), h('button', { onclick: () => stopRecording(false) }, 'Abandonner')))
         : null,
       tools,
-      canEdit && !ed.mode && !ed.recording
-        ? h(
-            'div.buttons',
-            h('button', { onclick: pickFile }, 'Importer (GeoJSON, KML, GPX)'),
-            ed.data ? h('button', { onclick: exportGeoJSON }, 'Exporter GeoJSON') : null,
-            h('button', { onclick: undo, disabled: !undoLabel, title: undoLabel ? `Annuler : ${undoLabel}` : 'Rien à annuler' }, '↶ Annuler'),
-          )
-        : !canEdit && ed.data
-          ? h('div.buttons', h('button', { onclick: exportGeoJSON }, 'Exporter GeoJSON'))
-          : null,
       propertiesPanel(),
       ed.data ? listSection('Postes', 'posts', ed.data.posts, (p) => `${p.invalid_reason ? '⛔ ' : p.nearest_dwelling_m != null ? '⚠ ' : ''}${p.number}${p.name ? ` · ${p.name}` : ''}${isOutside(p) ? ' (hors territoire)' : ''}${p.access_path ? '' : ' (sans chemin)'}${p.active ? '' : ' (inactif)'}`) : null,
-      ed.data ? listSection('Bâtiments à vérifier', 'dwellings', (ed.data.dwellings ?? []).filter((d) => !d.ignored && (d.likely_non_residential || d.missing_since)), (d) => d.missing_since ? `Disparu de la BD TOPO · ${d.usage || 'bâtiment'}` : d.usage || 'Bâtiment') : null,
-      ed.data ? listSection('Habitations ajoutées', 'dwellings', (ed.data.dwellings ?? []).filter((d) => d.source === 'manuel'), (d) => d.comment || 'Habitation') : null,
       ed.data ? listSection('Parkings', 'parkings', ed.data.parkings, (p) => p.name) : null,
       ed.data ? listSection('Réserves', 'reserves', ed.data.reserves, (r) => r.name || 'Réserve') : null,
+      // Rarement utile : fermé au départ.
+      ed.data && !busy
+        ? h('details.more-tools',
+            h('summary', `Données et bâtiments${toCheck.length ? ` · ${toCheck.length} à vérifier` : ''}`),
+            h('div.buttons',
+              canEdit ? h('button', { onclick: pickFile }, 'Importer (GeoJSON, KML, GPX)') : null,
+              h('button', { onclick: exportGeoJSON }, 'Exporter GeoJSON'),
+              canEdit ? h('button', { onclick: refreshDwellings }, 'Actualiser les bâtiments (IGN)') : null),
+            listSection('Bâtiments à vérifier', 'dwellings', toCheck, (d) => d.missing_since ? `Disparu de la BD TOPO · ${d.usage || 'bâtiment'}` : d.usage || 'Bâtiment'),
+            listSection('Habitations ajoutées', 'dwellings', manual, (d) => d.comment || 'Habitation'),
+            h('p.small.muted', 'Astuce : cliquez un bâtiment sur la carte pour l’identifier et, si besoin, ne plus le compter.'))
+        : null,
+      h('p.disclaimer', 'Aide au placement uniquement : la responsabilité du placement des postes reste celle du président.'),
     );
   }
 
@@ -1082,12 +1042,18 @@ export async function editorView(main, start) {
   const unsubscribe = history.onChange(() => renderPanel());
 
   try {
-    if (start && start !== 'nouveau') ed.territoryId = start;
-    await loadTerritories();
-    await reload();
-    if (start === 'nouveau' && canEdit) {
-      window.history.replaceState(null, '', '#/carte'); // un rechargement ne relance pas la création
-      setTimeout(newTerritory, 300);
+    if (!start) {
+      location.hash = '#/territoires'; // l'éditeur s'ouvre toujours sur un territoire précis
+      return () => map.remove();
+    }
+    if (start === 'nouveau') {
+      // Création : carte vide (pas de territoire en dessous), le nom puis le contour.
+      render();
+      if (canEdit) setTimeout(newTerritory, 300);
+    } else {
+      ed.territoryId = start;
+      await loadTerritories();
+      await reload();
     }
   } catch (err) {
     toast(errorMessage(err), 'error');

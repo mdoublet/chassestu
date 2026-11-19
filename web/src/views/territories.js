@@ -3,27 +3,37 @@
 // carte du territoire (« Ouvrir la carte »).
 import L from '../map/leaflet.js';
 import { addBasemaps } from '../map/basemap.js';
-import { toLatLng, escapeHtml } from '../map/shapes.js';
+import { toLatLng, escapeHtml, postIcon, ensureHatchPattern } from '../map/shapes.js';
 import { api } from '../api.js';
 import { state } from '../state.js';
 import { h, fill, toast, errorMessage, confirmDialog } from '../ui.js';
 
 export async function territoriesView(main) {
   const canEdit = state.role === 'president';
+  ensureHatchPattern();
   const list = h('div.territory-list');
   const mapEl = h('div.territories-map');
+  const shown = h('div.territory-toggles');
   main.append(
     h('div.page-head', h('h1', 'Territoires'),
       canEdit ? h('a.button.primary', { href: '#/carte/nouveau' }, '+ Nouveau territoire') : null),
-    mapEl, list);
+    h('h2.small-title', 'Vue globale'), shown, mapEl, list);
   const map = L.map(mapEl, { zoomControl: true }).setView([46.6, 2.4], 6);
   addBasemaps(map);
   const layer = L.featureGroup().addTo(map);
   let territories = [];
+  let overview = null;
   let highlighted = null;
+  // Territoires masqués sur la vue globale (préférence de l'appareil).
+  const HIDDEN_KEY = 'chassestu.hiddenTerritories';
+  let hidden = new Set();
+  try { hidden = new Set(JSON.parse(localStorage.getItem(HIDDEN_KEY) ?? '[]')); } catch { /* rien */ }
+  const saveHidden = () => { try { localStorage.setItem(HIDDEN_KEY, JSON.stringify([...hidden])); } catch { /* rien */ } };
 
   async function load() {
-    territories = (await api.get('/territories')).territories;
+    const [list, ov] = await Promise.all([api.get('/territories'), api.get('/territories/overview')]);
+    territories = list.territories;
+    overview = ov;
     render();
   }
 
@@ -39,7 +49,19 @@ export async function territoriesView(main) {
 
   function drawMap() {
     layer.clearLayers();
-    for (const t of territories) {
+    const visible = (id) => !hidden.has(id);
+    for (const z of (overview?.exclusions ?? []).filter((x) => visible(x.territory_id))) {
+      layer.addLayer(L.geoJSON(z.geom, { style: { color: '#d9480f', weight: 0.5, fillOpacity: 0.45, className: 'exclusion-shape' }, interactive: false }));
+    }
+    for (const r of (overview?.reserves ?? []).filter((x) => visible(x.territory_id))) {
+      layer.addLayer(L.geoJSON(r.geom, { style: { color: '#c92a2a', weight: 1, fillOpacity: 0.6, className: 'reserve-shape' }, interactive: false }));
+    }
+    for (const p of (overview?.posts ?? []).filter((x) => visible(x.territory_id))) {
+      const t = territories.find((x) => x.id === p.territory_id);
+      layer.addLayer(L.marker(toLatLng(p.geom.coordinates), { icon: postIcon(p.number, p.invalid_reason ? 'invalid-static' : '') })
+        .bindTooltip(escapeHtml(`${t?.name ?? ''} · poste ${p.number}${p.name ? ` · ${p.name}` : ''}`), { direction: 'top', offset: [0, -12] }));
+    }
+    for (const t of territories.filter((x) => visible(x.id))) {
       const poly = L.polygon(t.geom.coordinates.map((r) => r.map(toLatLng)), {
         color: t.id === highlighted ? '#e8590c' : '#1f5130', weight: t.id === highlighted ? 4 : 2, fillOpacity: 0.08,
       }).bindTooltip(escapeHtml(t.name), { permanent: true, direction: 'center', className: 'territory-label' });
@@ -82,14 +104,33 @@ export async function territoriesView(main) {
         } }, 'Supprimer') : null));
   }
 
+  function renderToggles() {
+    fill(shown, territories.length > 1
+      ? [h('span.small.muted', 'Afficher : '),
+         territories.map((t) => h('label.check', h('input', { type: 'checkbox', checked: !hidden.has(t.id), onchange: (e) => {
+           if (e.target.checked) hidden.delete(t.id); else hidden.add(t.id);
+           saveHidden();
+           drawMap();
+           fitVisible();
+         } }), t.name)),
+         h('button.link', { onclick: () => { hidden.clear(); saveHidden(); render(); fitVisible(); } }, 'Tous')]
+      : null);
+  }
+
+  function fitVisible() {
+    const polys = territories.filter((t) => !hidden.has(t.id)).map((t) => L.polygon(t.geom.coordinates.map((r) => r.map(toLatLng))));
+    if (polys.length) map.fitBounds(L.featureGroup(polys).getBounds().pad(0.1));
+  }
+
   let fitted = false;
   function render() {
+    renderToggles();
     fill(list, territories.length ? territories.map(card)
       : h('div.card', h('p', 'Aucun territoire pour l’instant.'), canEdit ? h('a.button.primary', { href: '#/carte/nouveau' }, 'Créer le premier territoire') : null));
     drawMap();
-    if (!fitted && layer.getLayers().length) {
+    if (!fitted && territories.length) {
       fitted = true;
-      map.fitBounds(layer.getBounds().pad(0.1));
+      fitVisible();
     }
   }
 
