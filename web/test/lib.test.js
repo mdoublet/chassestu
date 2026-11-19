@@ -396,3 +396,18 @@ describe('chemins d’accès', () => {
     expect(best.parking.name).toBe('B');
   });
 });
+
+import { startCenter } from '../src/lib/start-center.js';
+describe('création d’un territoire : centre de la carte', () => {
+  const pt = (lon, lat) => ({ type: 'Point', coordinates: [lon, lat] });
+  const terr = { geom: { coordinates: [[[2, 43], [2.02, 43], [2.02, 43.02], [2, 43.02], [2, 43]]] } };
+  it('la cabane de chasse d’abord, puis un lieu, un parking, un territoire', () => {
+    const places = [{ kind: 'restaurant', geom: pt(1, 1) }, { kind: 'cabane', geom: pt(2.2, 43.4) }];
+    expect(startCenter({ places, parkings: [{ geom: pt(3, 3) }], territories: [terr] })).toEqual([43.4, 2.2]);
+    expect(startCenter({ places: [places[0]], parkings: [{ geom: pt(3, 3) }] })).toEqual([1, 1]);
+    expect(startCenter({ parkings: [{ geom: pt(3, 3) }], territories: [terr] })).toEqual([3, 3]);
+    const c = startCenter({ territories: [terr] });
+    expect(c[0]).toBeCloseTo(43.008, 2);
+    expect(startCenter({})).toBeNull();
+  });
+});

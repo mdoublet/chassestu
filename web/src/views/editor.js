@@ -17,6 +17,7 @@ import { simplifyMeters, lineLengthMeters, distanceMeters } from '../lib/simplif
 import { parseGeoFile } from '../lib/importer.js';
 import { DIFFICULTY_LABELS } from '../lib/hunts.js';
 import { updatedPath, bestPathToPost } from '../lib/routing.js';
+import { startCenter } from '../lib/start-center.js';
 
 /** Champs nécessaires pour recréer un objet supprimé (annulation). */
 const FIELDS = {
@@ -62,6 +63,9 @@ const DRAW_HINTS = {
   dwellings: 'Cliquez à l’emplacement de l’habitation manquante (construction récente, caravane habitée…).',
   path: 'Tracez le chemin à pied du parking jusqu’au poste ; cliquez sur le dernier point pour terminer.',
 };
+
+/** Zoom de création : 6 à 7 km de large sur ordinateur, 2 à 3 km sur téléphone. */
+const CREATE_ZOOM = 14;
 
 const pick = (obj, keys) => Object.fromEntries(keys.map((k) => [k, obj[k] ?? null]));
 
@@ -1144,13 +1148,14 @@ export async function editorView(main, start) {
       return () => map.remove();
     }
     if (start === 'nouveau') {
-      // Création : carte vide (pas de territoire en dessous), cadrée sur les
-      // territoires existants pour ne pas dessiner à l'échelle de la France.
+      // Création : carte vide (pas de territoire en dessous), centrée à
+      // quelques kilomètres autour de la cabane de chasse si elle est définie,
+      // sinon d'un lieu, d'un parking ou d'un territoire existant.
       render();
       try {
-        const { territories } = await api.get('/territories');
-        const polys = territories.map((t) => L.polygon(t.geom.coordinates.map((r) => r.map(toLatLng))));
-        if (polys.length) map.fitBounds(L.featureGroup(polys).getBounds().pad(0.3), { animate: false });
+        const [{ places, parkings }, { territories }] = await Promise.all([api.get('/places'), api.get('/territories')]);
+        const center = startCenter({ places, parkings, territories });
+        if (center) map.setView(center, CREATE_ZOOM, { animate: false });
       } catch { /* cadrage par défaut */ }
       if (canEdit) setTimeout(newTerritory, 300);
     } else {
