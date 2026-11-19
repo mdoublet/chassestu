@@ -22,7 +22,11 @@ async function territoryWithHouse(lon: number, extra: unknown[] = []) {
   bdtopo.pages = [wfsPage([building(`MAISON_${lon}`, lon, LAT), ...extra])];
   const res = await call('POST', '/api/territories', { name: `Bois ${lon}`, geom: square(lon, LAT, 0.01) });
   expect(res.status).toBe(201);
-  return res.body;
+  expect(res.body.import_needed).toBe(true);
+  // Import des bâtiments : requête séparée (lancée par l'éditeur juste après la création).
+  const imported = await call('POST', `/api/territories/${res.body.territory.id}/dwellings/refresh`);
+  expect(imported.status).toBe(200);
+  return { ...res.body, dwellings_import: imported.body.report };
 }
 
 // Distance au bord de la maison = décalage depuis le centre − 5 m.
@@ -34,7 +38,6 @@ describe('import des bâtiments BD TOPO', () => {
     const outsideNear = building('DEHORS_PROCHE', east(lon, LAT, 1000), LAT); // 1000 m du centre : ~200 m hors du bord
     const farAway = building('TRES_LOIN', east(lon, LAT, 3000), LAT);
     const created = await territoryWithHouse(lon, [outsideNear, farAway]);
-    expect(created.import_error).toBeNull();
     expect(created.dwellings_import).toMatchObject({ total: 2, added: 2, missing: 0 });
 
     const detail = await call('GET', `/api/territories/${created.territory.id}`);
@@ -59,7 +62,10 @@ describe('import des bâtiments BD TOPO', () => {
     bdtopo.fail = true;
     const res = await call('POST', '/api/territories', { name: 'Hors ligne', geom: square(2.4, LAT, 0.01) });
     expect(res.status).toBe(201);
-    expect(res.body.import_error).toMatch(/IGN/);
+    // L'import (séparé) échoue avec un message clair ; le territoire reste enregistré.
+    const imported = await call('POST', `/api/territories/${res.body.territory.id}/dwellings/refresh`);
+    expect(imported.status).toBe(502);
+    expect(imported.body.message).toMatch(/IGN/);
     const detail = await call('GET', `/api/territories/${res.body.territory.id}`);
     expect(detail.body.exclusion.needs_refresh).toBe(true);
   });
@@ -228,6 +234,7 @@ describe('postes hors du territoire', () => {
     const outsideHouse = building('MAISON_DEHORS', east(lon2 + 0.01, LAT, 250), LAT);
     bdtopo.pages = [wfsPage([outsideHouse])];
     const { territory } = (await call('POST', '/api/territories', { name: 'Bord', geom: square(lon2, LAT, 0.01) })).body;
+    await call('POST', `/api/territories/${territory.id}/dwellings/refresh`);
     const tooClose = await call('POST', `/api/territories/${territory.id}/posts`, { geom: point(east(lon2 + 0.01, LAT, 150), LAT) });
     expect(tooClose.status).toBe(422);
     expect(tooClose.body.code).toBe('POST_IN_EXCLUSION');
@@ -271,5 +278,14 @@ describe('postes hors du territoire', () => {
     expect(res.body.code).toBe('POST_OUTSIDE_TERRITORY');
     expect((await call('PATCH', '/api/tenant', { post_max_outside_m: 200 })).status).toBe(200);
     expect((await call('POST', `/api/territories/${territory.id}/posts`, { geom: point(east(lon4 + 0.01, LAT, 50), LAT) })).status).toBe(201);
+  });
+});
+
+describe('garde-fou de surface', () => {
+  it('un territoire démesuré (tracé sans zoomer) est refusé avec un message clair', async () => {
+    const res = await call('POST', '/api/territories', { name: 'France entière', geom: square(2.5, 46.5, 2) });
+    expect(res.status).toBe(422);
+    expect(res.body.code).toBe('TERRITORY_TOO_LARGE');
+    expect(res.body.message).toMatch(/zoomez/);
   });
 });

@@ -19,9 +19,10 @@ describe.skipIf(!process.env.IGN)('BD TOPO réelle (data.geopf.fr)', () => {
     const geom = { type: 'Polygon', coordinates: [[[2.34, 43.19], [2.36, 43.19], [2.362, 43.205], [2.35, 43.212], [2.338, 43.205], [2.34, 43.19]]] };
     const created = await call('POST', '/api/territories', { name: 'Carcassonne sud', geom });
     expect(created.status).toBe(201);
-    console.log('import :', created.body.dwellings_import, created.body.import_error);
-    expect(created.body.import_error).toBeNull();
-    expect(created.body.dwellings_import.total).toBeGreaterThan(50);
+    const imported = await call('POST', `/api/territories/${created.body.territory.id}/dwellings/refresh`);
+    console.log('import :', imported.status, imported.body.report);
+    expect(imported.status).toBe(200);
+    expect(imported.body.report.total).toBeGreaterThan(50);
 
     const detail = await call('GET', `/api/territories/${created.body.territory.id}`);
     const pct = (100 * detail.body.exclusion.area_ha) / detail.body.territory.area_ha;

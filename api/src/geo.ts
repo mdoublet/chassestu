@@ -56,3 +56,17 @@ export async function assertValidGeometry(tx: Tx, geojson: unknown, label: strin
     );
   }
 }
+
+/** Surface maximale d'un territoire : au-delà, c'est presque toujours un contour tracé sans zoomer. */
+export const MAX_TERRITORY_HA = 50_000;
+
+export async function assertTerritorySize(tx: Tx, geojson: unknown): Promise<void> {
+  const { ha } = await tx.one<{ ha: number }>(
+    `SELECT ST_Area(${geomParam(1)}::geography) / 10000 AS ha`,
+    [JSON.stringify(geojson)],
+  );
+  if (ha > MAX_TERRITORY_HA) {
+    throw new AppError(422, 'TERRITORY_TOO_LARGE',
+      `Territoire trop grand (${Math.round(ha).toLocaleString('fr-FR')} ha, maximum ${MAX_TERRITORY_HA.toLocaleString('fr-FR')} ha) : zoomez sur la carte avant de dessiner le contour.`);
+  }
+}

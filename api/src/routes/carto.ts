@@ -4,7 +4,7 @@ import type { AppEnv } from '../env';
 import type { Tx } from '../db';
 import { notFoundIfNull, parseId, tenantTx } from '../context';
 import { AppError } from '../errors';
-import { assertValidGeometry, geomOut, geomParam, lineSchema, pointSchema, polygonSchema } from '../geo';
+import { assertTerritorySize, assertValidGeometry, geomOut, geomParam, lineSchema, pointSchema, polygonSchema } from '../geo';
 import { DWELLING_SELECT, importDwellings, type ImportReport } from './dwellings';
 
 export const cartoRoutes = new Hono<AppEnv>();
@@ -203,26 +203,22 @@ async function loadTerritory(tx: Tx, id: string) {
 }
 
 /** Importe les bâtiments si besoin, sans faire échouer l'action en cours (service IGN capricieux). */
-async function autoImport(c: Parameters<typeof importDwellings>[0], territoryId: string, force: boolean) {
-  try {
-    if (!force) {
-      const needs = await tenantTx(c, null, (tx) =>
-        tx.one<{ needs: boolean }>(
-          `SELECT (z.dwellings_extent IS NULL OR NOT ST_Covers(z.dwellings_extent,
-                    ST_Buffer(t.geom::geography, tn.post_max_outside_m + z.buffer_distance_m + app.warning_margin_m())::geometry)) AS needs
-             FROM exclusion_zones z JOIN territories t ON t.id = z.territory_id JOIN tenants tn ON tn.id = t.tenant_id
-            WHERE z.territory_id = $1`,
-          [territoryId],
-        ),
-      );
-      if (!needs.needs) return { report: null as ImportReport | null, import_error: null as string | null };
-    }
-    return { report: await importDwellings(c, territoryId), import_error: null };
-  } catch (err) {
-    if (err instanceof AppError) return { report: null, import_error: err.message };
-    console.error('Import BD TOPO :', err);
-    return { report: null, import_error: 'Import des bâtiments impossible pour le moment : utilisez « Actualiser les bâtiments ».' };
-  }
+/**
+ * Les bâtiments couvrent-ils l'emprise utile du territoire ? L'import lui-même
+ * se fait dans une requête séparée (POST …/dwellings/refresh, lancée par
+ * l'éditeur) : s'il échoue ou dure, le territoire est déjà enregistré.
+ */
+async function needsImport(c: Parameters<typeof tenantTx>[0], territoryId: string) {
+  const row = await tenantTx(c, null, (tx) =>
+    tx.maybeOne<{ needs: boolean }>(
+      `SELECT (z.dwellings_extent IS NULL OR NOT ST_Covers(z.dwellings_extent,
+                ST_Buffer(t.geom::geography, tn.post_max_outside_m + z.buffer_distance_m + app.warning_margin_m())::geometry)) AS needs
+         FROM exclusion_zones z JOIN territories t ON t.id = z.territory_id JOIN tenants tn ON tn.id = t.tenant_id
+        WHERE z.territory_id = $1`,
+      [territoryId],
+    ),
+  );
+  return row?.needs ?? true;
 }
 
 cartoRoutes.get('/territories/:id', (c) => {
@@ -234,24 +230,26 @@ cartoRoutes.post('/territories', async (c) => {
   const body = territoryFields.partial({ notes: true }).strict().parse(await c.req.json());
   return tenantTx(c, ['president'], async (tx) => {
     await assertValidGeometry(tx, body.geom, 'Territoire');
+    await assertTerritorySize(tx, body.geom);
     const { cols, exprs, params } = sqlValues(body, { geom: 'Polygon' }, 0);
     const territory = await tx.one(
       `INSERT INTO territories (${cols.join(', ')}) VALUES (${exprs.join(', ')}) RETURNING ${TERRITORY_SELECT}`,
       params,
     );
     return territory;
-  }).then(async (territory) => {
-    // Import automatique des bâtiments BD TOPO autour du nouveau territoire.
-    const imported = await autoImport(c, territory.id, true);
-    return c.json({ territory, dwellings_import: imported.report, import_error: imported.import_error }, 201);
-  });
+  }).then((territory) =>
+    // Bâtiments : importés ensuite par l'éditeur (requête séparée).
+    c.json({ territory, import_needed: true }, 201));
 });
 
 cartoRoutes.patch('/territories/:id', async (c) => {
   const id = parseId(c.req.param('id'));
   const body = territoryFields.partial().strict().parse(await c.req.json());
   return tenantTx(c, ['president'], async (tx) => {
-    if (body.geom) await assertValidGeometry(tx, body.geom, 'Territoire');
+    if (body.geom) {
+      await assertValidGeometry(tx, body.geom, 'Territoire');
+      await assertTerritorySize(tx, body.geom);
+    }
     const { cols, exprs, params } = sqlValues(body, { geom: 'Polygon' }, 1);
     if (cols.length === 0) throw new AppError(400, 'VALIDATION', 'Aucune modification.');
     const territory = notFoundIfNull(
@@ -263,11 +261,9 @@ cartoRoutes.patch('/territories/:id', async (c) => {
       'Territoire',
     );
     return territory;
-  }).then(async (territory) => {
-    // Contour agrandi au-delà de la zone importée : on complète les bâtiments.
-    const imported = body.geom ? await autoImport(c, id, false) : { report: null, import_error: null };
-    return c.json({ territory, dwellings_import: imported.report, import_error: imported.import_error });
-  });
+  }).then(async (territory) =>
+    // Contour agrandi au-delà de la zone importée : l'éditeur relance l'import.
+    c.json({ territory, import_needed: body.geom ? await needsImport(c, id) : false }));
 });
 
 cartoRoutes.delete('/territories/:id', (c) => {

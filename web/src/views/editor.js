@@ -55,7 +55,7 @@ function dwellingStyle(d, selected) {
 }
 
 const DRAW_HINTS = {
-  territory: 'Cliquez pour placer les sommets du territoire ; cliquez sur le premier sommet pour fermer.',
+  territory: 'Zoomez sur le secteur, puis cliquez pour placer les sommets du territoire ; cliquez sur le premier sommet pour fermer.',
   reserves: 'Dessinez la zone de réserve ; cliquez sur le premier sommet pour fermer.',
   parkings: 'Cliquez sur la carte pour placer le parking.',
   posts: 'Cliquez sur la carte pour placer le poste : dans le territoire ou à sa lisière (pointillés verts), hors réserve et hors zone non chassable.',
@@ -516,7 +516,31 @@ export async function editorView(main, start) {
       toast('Le contour se recoupe lui-même : modification refusée.', 'error');
       return reload();
     }
-    return run(() => updateItem(kind, item, { geom }));
+    return run(async () => {
+      await updateItem(kind, item, { geom });
+      // Contour agrandi au-delà des bâtiments connus : on complète l'import.
+      if (kind === 'territories') {
+        const fresh = await api.get(`/territories/${item.id}`);
+        if (fresh.exclusion?.needs_refresh) await importBuildings(item.id, 'Contour enregistré');
+      }
+    });
+  }
+
+  /**
+   * Import des bâtiments IGN autour d'un territoire, dans une requête à part :
+   * si le service de l'IGN est lent ou indisponible, le territoire, lui, est
+   * déjà enregistré. Renvoie true si l'import a réussi.
+   */
+  async function importBuildings(territoryId, done) {
+    toast(`${done}. Import des bâtiments IGN en cours…`);
+    try {
+      const { report } = await api.post(`/territories/${territoryId}/dwellings/refresh`, {});
+      toast(importSummary(report));
+      return true;
+    } catch (err) {
+      toast(`${done}, mais les bâtiments IGN n’ont pas pu être importés (${errorMessage(err).replace(/\.$/, '')}). Réessayez avec « Actualiser les bâtiments » (section « Données et bâtiments »).`, 'warn');
+      return false;
+    }
   }
 
   map.on('click', (e) => {
@@ -588,9 +612,8 @@ export async function editorView(main, start) {
         return undefined;
       }
       try {
-        toast('Territoire en cours de création, import des bâtiments IGN…');
-        const { territory, dwellings_import, import_error } = await api.post('/territories', { name, geom });
-        toast(import_error ? `Territoire créé, mais ${import_error.charAt(0).toLowerCase()}${import_error.slice(1)}` : importSummary(dwellings_import), import_error ? 'warn' : 'info');
+        const { territory } = await api.post('/territories', { name, geom });
+        await importBuildings(territory.id, 'Territoire créé');
         history.push({ label: 'Création du territoire', undo: async (hh) => api.del(itemPath('territories', hh.resolve(territory.id))) });
         ed.territoryId = territory.id;
         ed.selected = null;
@@ -771,8 +794,8 @@ export async function editorView(main, start) {
         if (choice === 'territory') {
           if (ed.data) await updateItem('territories', ed.data.territory, { geom: item.geometry });
           else {
-            const { territory, import_error } = await api.post('/territories', { name: item.label || filename.replace(/\.\w+$/, ''), geom: item.geometry });
-            if (import_error) errors.push(`Bâtiments IGN : ${import_error}`);
+            const { territory } = await api.post('/territories', { name: item.label || filename.replace(/\.\w+$/, ''), geom: item.geometry });
+            if (!(await importBuildings(territory.id, 'Territoire importé'))) errors.push('Bâtiments IGN : import à refaire (« Données et bâtiments »)');
             history.push({ label: 'Création du territoire', undo: async (hh) => api.del(itemPath('territories', hh.resolve(territory.id))) });
             ed.territoryId = territory.id;
             ed.fitted = false;
@@ -1121,8 +1144,14 @@ export async function editorView(main, start) {
       return () => map.remove();
     }
     if (start === 'nouveau') {
-      // Création : carte vide (pas de territoire en dessous), le nom puis le contour.
+      // Création : carte vide (pas de territoire en dessous), cadrée sur les
+      // territoires existants pour ne pas dessiner à l'échelle de la France.
       render();
+      try {
+        const { territories } = await api.get('/territories');
+        const polys = territories.map((t) => L.polygon(t.geom.coordinates.map((r) => r.map(toLatLng))));
+        if (polys.length) map.fitBounds(L.featureGroup(polys).getBounds().pad(0.3), { animate: false });
+      } catch { /* cadrage par défaut */ }
       if (canEdit) setTimeout(newTerritory, 300);
     } else {
       ed.territoryId = start;

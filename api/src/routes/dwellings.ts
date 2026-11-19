@@ -49,8 +49,10 @@ export async function importDwellings(c: Context<AppEnv>, territoryId: string): 
   });
 
   return tenantTx(c, ['president'], async (tx, { tenantId }) => {
-    const report = await tx.one<{ total: number; added: number }>(
-      `WITH src AS (
+    // Une seule requête : les pages ne sont envoyées qu'une fois à la base, puis
+    // servent à l'ajout / mise à jour et au repérage des bâtiments disparus.
+    const report = await tx.one<{ total: number; added: number; missing: number }>(
+      `WITH src AS MATERIALIZED (
          SELECT DISTINCT ON (f->'properties'->>'cleabs')
                 f->'properties'->>'cleabs' AS source_id,
                 ST_Multi(ST_CollectionExtract(ST_MakeValid(
@@ -81,18 +83,20 @@ export async function importDwellings(c: Context<AppEnv>, territoryId: string): 
             SET geom = EXCLUDED.geom, usage = EXCLUDED.usage,
                 likely_non_residential = EXCLUDED.likely_non_residential, missing_since = NULL
          RETURNING (xmax = 0) AS inserted, source_id
+       ),
+       -- Disparus de la BD TOPO (ensemble disjoint de celui mis à jour ci-dessus).
+       miss AS (
+         UPDATE dwellings d SET missing_since = now()
+          WHERE d.territory_id = $1 AND d.source = 'bdtopo' AND d.missing_since IS NULL
+            AND NOT EXISTS (SELECT 1 FROM src WHERE src.source_id = d.source_id)
+         RETURNING 1
        )
-       SELECT count(*)::int AS total, count(*) FILTER (WHERE inserted)::int AS added FROM up`,
+       SELECT (SELECT count(*)::int FROM up) AS total,
+              (SELECT count(*) FILTER (WHERE inserted)::int FROM up) AS added,
+              (SELECT count(*)::int FROM miss) AS missing`,
       [territoryId, `[${pages.join(',')}]`, box.radius],
     );
-    const missing = await tx.execute(
-      `UPDATE dwellings d SET missing_since = now()
-        WHERE d.territory_id = $1 AND d.source = 'bdtopo' AND d.missing_since IS NULL
-          AND NOT EXISTS (
-            SELECT 1 FROM jsonb_array_elements($2::jsonb) page, jsonb_array_elements(page->'features') f
-             WHERE f->'properties'->>'cleabs' = d.source_id)`,
-      [territoryId, `[${pages.join(',')}]`],
-    );
+    const missing = report.missing;
     await tx.query('SELECT app.mark_dwellings_imported($1, $2)', [territoryId, box.radius]);
     const result = { total: report.total, added: report.added, missing, refreshed_at: new Date().toISOString() };
     await tx.query(

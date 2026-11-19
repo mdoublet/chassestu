@@ -23,7 +23,7 @@ async function request(method, path, body, { tenant = true, raw = false } = {}) 
   try {
     res = await fetch(`${BASE}/api${path}`, { method, headers, body: body !== undefined ? JSON.stringify(body) : undefined });
   } catch {
-    throw new ApiError(0, 'NETWORK', 'Pas de réseau : réessayez quand la connexion revient.');
+    throw new ApiError(0, 'NETWORK', 'Pas de réponse du serveur (connexion coupée ou serveur momentanément indisponible) : réessayez dans un instant.');
   }
   if (raw && res.ok) return res;
   if (res.status === 204) return null;
