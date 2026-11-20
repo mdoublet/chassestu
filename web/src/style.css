@@ -443,3 +443,4 @@ details.fold.hunt-plan[open] { padding-bottom: 0.75rem; }
 .plans-panel .traque-card { box-shadow: none; padding: 0.5rem 0; border: 0; }
 .new-hunt-plan { margin-top: 0.5rem; align-self: flex-start; }
 .add-row select { max-width: 100%; }
+.guest-links li { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; padding: 0.2rem 0; }

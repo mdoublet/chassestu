@@ -237,6 +237,17 @@ describe('invités, vue chasseur, regroupement', () => {
     expect((await app.request(`/api/guest/${g.url.split('/').pop()}`, {}, env)).status).toBe(410);
     expect((await app.request(`/api/guest/${second}`, {}, env)).status).toBe(200);
   });
+
+  it('invité ajouté sans lien : aucun lien tant qu’on ne l’envoie pas', async () => {
+    const { dayId } = await runningDay(as, R, ['ch1']);
+    const res = await as(R, 'POST', `/api/days/${dayId}/guests`, { name: 'Lucie', link: false });
+    expect(res.status).toBe(201);
+    expect(res.body.guest_link).toBeNull();
+    const lucie = res.body.participants.find((p: any) => p.name === 'Lucie');
+    expect(lucie).toMatchObject({ guest: true, has_guest_link: false, present: true });
+    const link = (await as(R, 'POST', `/api/days/${dayId}/participants/${lucie.id}/guest-link`)).body;
+    expect((await app.request(`/api/guest/${link.url.split('/').pop()}`, {}, env)).status).toBe(200);
+  });
 });
 
 describe('attribution simplifiée', () => {

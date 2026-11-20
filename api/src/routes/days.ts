@@ -248,7 +248,10 @@ async function newGuestLink(tx: Tx, dpId: string, env: Env) {
   return guestUrl(env, token);
 }
 
-/** Invité du jour : présent d'office ; son lien personnel n'est renvoyé qu'une fois. */
+/**
+ * Invité du jour : présent d'office. Son lien personnel n'est renvoyé qu'une
+ * fois ; `link: false` : pas de lien à la création (envoyé plus tard).
+ */
 dayRoutes.post('/days/:id/guests', async (c) => {
   const id = parseId(c.req.param('id'));
   const body = z.object({
@@ -256,6 +259,7 @@ dayRoutes.post('/days/:id/guests', async (c) => {
     walking_ability: overrides.walking_ability.optional(),
     has_car: overrides.has_car.optional(),
     car_seats: overrides.car_seats.optional(),
+    link: z.boolean().optional(),
   }).strict().parse(await c.req.json());
   return tenantTx(c, MANAGERS, async (tx) => {
     requireStatus(await loadDay(tx, id), ['convoquee', 'en_cours'], 'Ajout d’un invité');
@@ -264,8 +268,8 @@ dayRoutes.post('/days/:id/guests', async (c) => {
        VALUES ($1, $2, true, 'present', $3, $4, $5) RETURNING id`,
       [id, body.name, body.walking_ability ?? null, body.has_car ?? null, body.car_seats ?? null],
     );
-    const url = await newGuestLink(tx, dpId, c.env);
-    return c.json({ ...(await dayDetail(tx, id)), guest_link: { participant_id: dpId, name: body.name, url } }, 201);
+    const url = body.link === false ? null : await newGuestLink(tx, dpId, c.env);
+    return c.json({ ...(await dayDetail(tx, id)), guest_link: url ? { participant_id: dpId, name: body.name, url } : null }, 201);
   });
 });
 

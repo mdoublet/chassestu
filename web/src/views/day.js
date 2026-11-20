@@ -323,37 +323,58 @@ async function dayConsole(main, dayId) {
       h('form.row', { onsubmit: async (e) => {
         e.preventDefault();
         if (!guestName.value.trim()) return;
-        const res = await act(() => api.post(`/days/${dayId}/guests`, {
+        // Pas de lien à la création : on l'envoie ensuite (📨 dans « Invités »).
+        await act(() => api.post(`/days/${dayId}/guests`, {
           name: guestName.value.trim(),
           walking_ability: guestWalk.value ? Number(guestWalk.value) : null,
           has_car: guestCar.checked,
           car_seats: guestSeats.value === '' ? null : Number(guestSeats.value),
-        }), 'Invité ajouté.');
-        if (res?.guest_link) showGuestLink(res.guest_link);
+          link: false,
+        }), 'Invité ajouté : envoyez-lui son lien avec 📨 quand vous voulez.');
       } }, guestName, guestWalk, h('label.check', guestCar, 'voiture'), guestSeats, h('button', { type: 'submit' }, 'Ajouter un invité')),
       guestLinks());
   }
 
-  function showGuestLink(link) {
+  /** Lien affiché une seule fois : partage du téléphone, sinon copie / SMS / WhatsApp. */
+  async function shareGuestLink(link) {
     const text = `${link.name}, voici votre accès à la journée de chasse (votre poste, l’itinéraire et les consignes) : ${link.url}`;
-    modal('Lien de l’invité', h('div',
-      h('p', `Envoyez ce lien à ${link.name} (SMS, WhatsApp…). Il ne sera plus affiché : vous pourrez en créer un nouveau.`),
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: 'Journée de chasse', text });
+        toast(`Lien de ${link.name} partagé.`);
+        return;
+      } catch (err) {
+        if (err?.name === 'AbortError') { /* partage annulé : on propose les autres moyens */ }
+      }
+    }
+    modal(`Envoyer le lien à ${link.name}`, h('div',
+      h('p', `Envoyez ce lien à ${link.name}. Il ne sera plus affiché ensuite (vous pourrez en créer un nouveau).`),
       h('p.small', h('code', link.url)),
-      h('button.primary', { onclick: () => copyText(text) }, 'Copier le message')));
+      h('div.buttons',
+        h('button.primary', { onclick: async () => { await copyText(text); toast('Message copié.'); } }, 'Copier le message'),
+        h('a.button', { href: `sms:?&body=${encodeURIComponent(text)}` }, 'SMS'),
+        h('a.button', { href: `https://wa.me/?text=${encodeURIComponent(text)}`, target: '_blank', rel: 'noopener' }, 'WhatsApp'))));
+  }
+
+  async function sendGuestLink(g) {
+    if (g.has_guest_link && !(await confirmDialog('Nouveau lien', `Un lien a déjà été créé pour ${g.name}. En envoyer un nouveau ? L’ancien cessera de fonctionner.`, 'Nouveau lien'))) return;
+    try {
+      const link = await api.post(`/days/${dayId}/participants/${g.id}/guest-link`);
+      await load();
+      await shareGuestLink(link);
+    } catch (err) {
+      toast(errorMessage(err), 'error');
+    }
   }
 
   function guestLinks() {
     const guests = dv.detail.participants.filter((p) => p.guest);
     if (!guests.length) return null;
-    return h('div',
-      h('h3', 'Liens invités'),
-      h('ul.plain', guests.map((g) => h('li', `${g.name} : ${g.has_guest_link ? 'lien envoyé' : 'pas de lien'} `,
-        h('button.link', { onclick: async () => {
-          try {
-            showGuestLink(await api.post(`/days/${dayId}/participants/${g.id}/guest-link`));
-            await load();
-          } catch (err) { toast(errorMessage(err), 'error'); }
-        } }, g.has_guest_link ? 'Nouveau lien' : 'Créer un lien'),
+    return h('div.guest-links',
+      h('h3', 'Invités'),
+      h('ul.plain', guests.map((g) => h('li',
+        h('span', g.name), h('span.small.muted', g.has_guest_link ? ' · lien créé' : ' · lien pas encore envoyé'), ' ',
+        h('button.small', { onclick: () => sendGuestLink(g), title: 'Envoyer à l’invité son lien (poste, itinéraire, consignes)' }, g.has_guest_link ? '📨 Renvoyer un lien' : '📨 Envoyer le lien'),
         h('button.link.danger', { onclick: async () => {
           if (await confirmDialog('Retirer', `Retirer ${g.name} de la journée ?`, 'Retirer', true)) act(() => api.del(`/days/${dayId}/participants/${g.id}`));
         } }, ' Retirer')))));
