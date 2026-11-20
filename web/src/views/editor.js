@@ -915,11 +915,11 @@ export async function editorView(main, start) {
     el.addEventListener('change', async () => {
       let value = attrs.type === 'checkbox' ? el.checked : attrs.type === 'number' ? Number(el.value) : el.value;
       if (tag === 'select' && value === '') value = null;
-      const plans = kind === 'posts' ? item.plan_counts ?? [] : [];
+      const plans = kind === 'posts' ? item.plan_uses ?? [] : [];
       if (plans.length && (key === 'number' || (key === 'active' && value === false))) {
         const what = key === 'number'
-          ? `Le poste ${item.number} devient le poste ${value} : son numéro change aussi dans les plans à ${plans.join(', ')} chasseurs (listes papier à refaire).`
-          : `Désactiver le poste ${item.number} rend invalides les plans à ${plans.join(', ')} chasseurs.`;
+          ? `Le poste ${item.number} devient le poste ${value} : son numéro change aussi dans les plans de chasse ${plans.join(', ')} chasseurs (listes papier à refaire).`
+          : `Désactiver le poste ${item.number} rend invalides les plans de chasse ${plans.join(', ')} chasseurs.`;
         if (!(await confirmDialog('Poste utilisé dans des plans de couverture', what, 'Continuer'))) {
           if (attrs.type === 'checkbox') el.checked = Boolean(item[key]);
           else el.value = item[key] ?? '';
@@ -982,8 +982,8 @@ export async function editorView(main, start) {
         : item.nearest_dwelling_m != null
           ? h('p.small.muted', `Habitation à ${item.nearest_dwelling_m} m : rappeler l’interdiction de tirer en direction de l’habitation.`)
           : null,
-      (item.plan_counts ?? []).length
-        ? h('p.small', `Utilisé dans les plans à ${item.plan_counts.join(', ')} chasseurs. `, h('a', { href: `#/plans/${ed.territoryId}` }, 'Voir les plans'))
+      (item.plan_uses ?? []).length
+        ? h('p.small', `Utilisé dans les plans de chasse : ${item.plan_uses.join(', ')} chasseurs. `, h('a', { href: `#/plans/${ed.territoryId}` }, 'Voir les plans de chasse'))
         : null,
       isOutside(item) ? h('p.alert.warn', 'Poste hors du territoire : il faut le droit de chasse à cet endroit (ou l’accord du propriétaire).') : null,
       h('div.row', field('Numéro', bound(kind, item, 'number', { type: 'number', min: 1, max: 999, required: true })), field('Nom', bound(kind, item, 'name', { maxlength: 200 }))),
@@ -1128,8 +1128,8 @@ export async function editorView(main, start) {
   /** Suppression confirmée d'un poste, parking ou réserve (liste ou fiche). */
   function askDelete(kind, item) {
     if (kind === 'posts') {
-      const plans = item.plan_counts ?? [];
-      return confirmDelete('posts', item, 'Supprimer le poste', `Supprimer le poste ${postLabel(item)}${item.access_path ? ' et son chemin d’accès' : ''} ?${plans.length ? ` Il est utilisé dans les plans à ${plans.join(', ')} chasseurs : ces plans deviendront incomplets.` : ''} (Annulable avec ↶.)`);
+      const plans = item.plan_uses ?? [];
+      return confirmDelete('posts', item, 'Supprimer le poste', `Supprimer le poste ${postLabel(item)}${item.access_path ? ' et son chemin d’accès' : ''} ?${plans.length ? ` Il est utilisé dans les plans de chasse ${plans.join(', ')} chasseurs : ces grilles deviendront incomplètes.` : ''} (Annulable avec ↶.)`);
     }
     if (kind === 'parkings') {
       const linked = ed.data.posts.filter((p) => p.parking_id === item.id);

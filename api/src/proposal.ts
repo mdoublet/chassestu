@@ -82,7 +82,7 @@ export function proposePosts(hunters: number, plans: ProposalPlan[], available: 
     missing: hunters,
     message: plans.length
       ? `Moins de chasseurs que le plus petit plan : choisissez ${hunters} poste(s) sur la carte.`
-      : `Aucun plan de couverture : choisissez ${hunters} poste(s) sur la carte.`,
+      : `Pas de plan de chasse, ou grille vide : choisissez ${hunters} poste(s) sur la carte.`,
   };
 }
 

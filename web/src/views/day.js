@@ -7,7 +7,7 @@
 //    regroupement.
 import L from '../map/leaflet.js';
 import { addBasemaps } from '../map/basemap.js';
-import { escapeHtml, toLatLng, ensureHatchPattern, postIcon } from '../map/shapes.js';
+import { escapeHtml, toLatLng, ensureHatchPattern, postIcon, traqueLayers } from '../map/shapes.js';
 import { api } from '../api.js';
 import { state } from '../state.js';
 import { h, fill, toast, errorMessage, confirmDialog, copyText, modal } from '../ui.js';
@@ -63,7 +63,8 @@ async function dayConsole(main, dayId) {
   const dv = {
     detail: null, hunt: null, territory: null, territoryId: null, carpool: null,
     members: [], territories: [], allowDouble: false, placing: null,
-    picked: null, places: { places: [], parkings: [] }, regroup: { choice: null, place: '', time: '', point: null, when: 'now' }, newBattue: { territory_id: null, excluded: new Set() },
+    picked: null, places: { places: [], parkings: [] }, regroup: { choice: null, place: '', time: '', point: null, when: 'now' }, newBattue: { territory_id: null, hunt_plan_id: undefined, excluded: new Set() },
+    huntPlans: new Map(), // territoire → plans de chasse
   };
   const box = h('div.hunt-console');
   const mapEl = h('div.hunt-map');
@@ -92,6 +93,42 @@ async function dayConsole(main, dayId) {
     dv.carpool = dv.hunt.hunt.status === 'en_cours' && dv.hunt.hunt.assignments_published_at
       ? await api.get(`/hunts/${b.id}/carpool`) : null;
   }
+
+  /** Plans de chasse d'un territoire (chargés une fois, puis re-rendu). */
+  function huntPlansOf(territoryId) {
+    if (!territoryId) return [];
+    if (!dv.huntPlans.has(territoryId)) {
+      dv.huntPlans.set(territoryId, null);
+      api.get(`/territories/${territoryId}/hunt-plans`)
+        .then((r) => { dv.huntPlans.set(territoryId, r.hunt_plans); render(); })
+        .catch(() => dv.huntPlans.delete(territoryId));
+    }
+    return dv.huntPlans.get(territoryId) ?? null; // null : en cours de chargement
+  }
+
+  /** Choix du plan de chasse : '' = sans plan (postes choisis à la main). */
+  function huntPlanSelect(territoryId, value, onchange, disabled = false) {
+    const plans = huntPlansOf(territoryId);
+    if (plans === null) return h('select', { disabled: true }, h('option', 'Chargement…'));
+    return h('select', { disabled, 'aria-label': 'Plan de chasse', onchange: (e) => onchange(e.target.value || null) },
+      plans.map((hp) => h('option', { value: hp.id, selected: hp.id === value },
+        `${hp.name}${hp.coverage.length ? ` · effectifs ${hp.coverage.map((c) => c.hunter_count).join(', ')}` : ' · grille vide'}`)),
+      h('option', { value: '', selected: !value }, '— sans plan : postes choisis à la main —'));
+  }
+
+  /**
+   * Postes du plan de chasse repris d'office si aucun poste n'est encore choisi
+   * (ou s'ils sont ceux de la proposition précédente, non retouchés).
+   */
+  async function takePlanPosts(previous = null) {
+    const { hunt, proposal, day_post_ids } = dv.hunt ?? {};
+    if (!hunt || hunt.started_at || !proposal?.post_ids.length || !proposal.plan_count) return;
+    const untouched = !day_post_ids.length || (previous && sameIds(previous, day_post_ids));
+    if (!untouched || sameIds(proposal.post_ids, day_post_ids)) return;
+    await act(() => api.put(`/hunts/${hunt.id}/posts`, { post_ids: proposal.post_ids }),
+      `Postes du plan « ${hunt.hunt_plan_name} » à ${proposal.plan_count} chasseurs repris (modifiables sur la carte).`);
+  }
+  const sameIds = (a, b) => a.length === b.length && a.every((id) => b.includes(id));
 
   async function load() {
     dv.detail = await api.get(`/days/${dayId}`);
@@ -144,6 +181,7 @@ async function dayConsole(main, dayId) {
         layers.posts.addLayer(m);
       }
     }
+    if (dv.hunt?.hunt_plan) for (const l of traqueLayers(dv.hunt.hunt_plan)) layers.base.addLayer(l);
     if (day.meeting_point) layers.base.addLayer(L.circleMarker(toLatLng(day.meeting_point.coordinates), { radius: 8, color: '#0b6bcb', fillOpacity: 0.9 }).bindTooltip('Rendez-vous'));
     const rg = (dv.regroup.choice === 'other' ? dv.regroup.point : dv.regroup.choice?.point) ?? day.regroup_point;
     if (rg) layers.base.addLayer(L.marker(toLatLng(rg.coordinates), { icon: L.divIcon({ className: 'regroup-icon', html: '<span>⚑</span>', iconSize: [30, 30], iconAnchor: [15, 28] }) }).bindTooltip('Regroupement'));
@@ -329,7 +367,7 @@ async function dayConsole(main, dayId) {
     const { battues } = dv.detail;
     if (!battues.length) return null;
     return h('ul.plain.battues', battues.map((b) => h('li', { class: b.status === 'en_cours' ? 'running' : '' },
-      h('strong', `Battue n° ${b.number}`), ` · ${b.territory_name} · ${b.participant_count} participant(s) · `,
+      h('strong', `Battue n° ${b.number}`), ` · ${b.territory_name}${b.hunt_plan_name ? ` (${b.hunt_plan_name})` : ''} · ${b.participant_count} participant(s) · `,
       b.status === 'terminee' ? `terminée${b.ended_at ? ` à ${timeOf(b.ended_at)}` : ''}` : b.started_at ? `traque depuis ${timeOf(b.started_at)}` : b.assignments_published_at ? 'postes publiés' : 'en préparation')));
   }
 
@@ -344,15 +382,26 @@ async function dayConsole(main, dayId) {
     }), p.name, p.guest ? h('span.badge', 'invité') : null));
     return h('section.card',
       h('h2', `Battue n° ${dv.detail.battues.length + 1}`),
-      h('label', 'Territoire', h('select', { onchange: (e) => { nb.territory_id = e.target.value; } },
+      h('label', 'Territoire', h('select', { onchange: (e) => { nb.territory_id = e.target.value; nb.hunt_plan_id = undefined; render(); } },
         dv.territories.map((t) => h('option', { value: t.id, selected: t.id === nb.territory_id }, t.name)))),
+      (() => {
+        const plans = huntPlansOf(nb.territory_id);
+        if (plans && nb.hunt_plan_id === undefined) nb.hunt_plan_id = plans[0]?.id ?? null;
+        return [
+          h('label', 'Plan de chasse', huntPlanSelect(nb.territory_id, nb.hunt_plan_id, (v) => { nb.hunt_plan_id = v; })),
+          plans && !plans.length
+            ? h('p.small.muted', 'Aucun plan de chasse pour ce territoire : les postes seront choisis à la main. ',
+                state.role === 'president' ? h('a', { href: `#/plans/${nb.territory_id}` }, 'Créer un plan de chasse') : null)
+            : h('p.small.muted', 'Le plan de chasse (sens de la traque) donne les postes à pourvoir en priorité.'),
+        ];
+      })(),
       h('fieldset.members', h('legend', `Volontaires (${present.length - nb.excluded.size} sur ${present.length} présents)`), checks),
       h('p.small.muted', 'Décochez les présents qui ne font pas cette battue.'),
       h('button.primary', { onclick: async () => {
         const ids = present.filter((p) => !nb.excluded.has(p.id)).map((p) => p.id);
         if (!ids.length) return toast('Choisissez au moins un volontaire.', 'error');
-        const res = await act(() => api.post(`/days/${dayId}/battues`, { territory_id: nb.territory_id, participant_ids: ids }), 'Battue créée : choisissez les postes.');
-        if (res) { nb.excluded.clear(); dv.regroup = { choice: null, place: '', time: '', point: null, when: 'now' }; }
+        const res = await act(() => api.post(`/days/${dayId}/battues`, { territory_id: nb.territory_id, hunt_plan_id: nb.hunt_plan_id ?? null, participant_ids: ids }), 'Battue créée.');
+        if (res) { await takePlanPosts(); nb.excluded.clear(); nb.hunt_plan_id = undefined; dv.regroup = { choice: null, place: '', time: '', point: null, when: 'now' }; }
       } }, 'Créer la battue'));
   }
 
@@ -406,6 +455,14 @@ async function dayConsole(main, dayId) {
     };
     return h('div.battue-head',
       h('h2', `Battue n° ${hunt.number} · ${hunt.territory_name}`),
+      h('label.hunt-plan-choice', 'Plan de chasse ',
+        hunt.started_at
+          ? h('strong', hunt.hunt_plan_name ?? 'aucun (postes à la main)')
+          : huntPlanSelect(hunt.territory_id, hunt.hunt_plan_id, async (v) => {
+              const previous = dv.hunt.proposal?.post_ids ?? null;
+              if (await act(() => api.patch(`/hunts/${hunt.id}`, { hunt_plan_id: v }), v ? 'Plan de chasse changé.' : 'Battue sans plan de chasse : choisissez les postes sur la carte.')) await takePlanPosts(previous);
+            })),
+      dv.hunt.hunt_plan?.notes ? h('p.small', `Traque : ${dv.hunt.hunt_plan.notes}`) : null,
       h('div.buttons',
         !hunt.started_at
           ? [h('button.primary', { onclick: go('debut', 'Début de battue : les chasseurs sont prévenus.'), disabled: !hunt.assignments_published_at, title: hunt.assignments_published_at ? '' : 'Publiez d’abord les postes' }, 'Lancer la battue'),
@@ -486,7 +543,7 @@ async function dayConsole(main, dayId) {
       h('h3', `2. Postes · ${dayPosts.length} pour ${posted.length} posté(s)`),
       editable && proposal?.post_ids.length && !sameAsProposal
         ? h('button', { onclick: () => act(() => api.put(`/hunts/${hunt.id}/posts`, { post_ids: proposal.post_ids }), 'Postes du plan choisis.') },
-            proposal.plan_count ? `Prendre le plan à ${proposal.plan_count} chasseurs (${proposal.post_ids.length} postes)` : `Prendre la proposition (${proposal.post_ids.length} postes)`)
+            proposal.plan_count ? `Prendre les postes du plan « ${hunt.hunt_plan_name} » à ${proposal.plan_count} chasseurs (${proposal.post_ids.length})` : `Prendre la proposition (${proposal.post_ids.length} postes)`)
         : null,
       editable ? h('p.small.muted', picked ? `Touchez le poste où placer ${picked.name}.` : 'Touchez un nom puis un poste pour le placer. Postes : ajout et retrait sur la carte.') : null,
       dayPosts.length || unassigned.length

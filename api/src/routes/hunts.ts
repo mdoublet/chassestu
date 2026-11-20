@@ -11,7 +11,7 @@ import { withTx } from '../db';
 import { notFoundIfNull, parseId, tenantTx, type Role } from '../context';
 import { AppError } from '../errors';
 import { sha256Hex } from '../auth';
-import { loadPlans } from './plans';
+import { loadHuntPlan, loadPlans } from './plans';
 import { drawAssignments, proposePosts } from '../proposal';
 import { planCarpool, type CarpoolPlan } from '../carpool';
 import { notifyUsers } from './notifications';
@@ -20,7 +20,8 @@ export const huntRoutes = new Hono<AppEnv>();
 
 export const MANAGERS: Role[] = ['president', 'responsable'];
 
-const HUNT_SELECT = `h.id, h.day_id, h.number, h.territory_id, t.name AS territory_name, to_char(h.date, 'YYYY-MM-DD') AS date,
+const HUNT_SELECT = `h.id, h.day_id, h.number, h.territory_id, t.name AS territory_name, h.hunt_plan_id,
+  (SELECT name FROM hunt_plans WHERE id = h.hunt_plan_id) AS hunt_plan_name, to_char(h.date, 'YYYY-MM-DD') AS date,
   h.briefing, h.leader_user_id, lu.display_name AS leader_name, h.status, h.assignments_published_at,
   h.started_at, h.ended_at, h.created_at, h.revision::int AS revision`;
 const HUNT_FROM = `hunts h JOIN territories t ON t.id = h.territory_id LEFT JOIN users lu ON lu.id = h.leader_user_id`;
@@ -33,6 +34,14 @@ export async function loadHunt(tx: Tx, id: string) {
 function requireOpen(hunt: Record<string, any>, action: string, notStarted = false) {
   if (hunt.status !== 'en_cours') throw new AppError(409, 'HUNT_BAD_STATUS', `${action} impossible : la battue est terminée.`);
   if (notStarted && hunt.started_at) throw new AppError(409, 'HUNT_STARTED', `${action} impossible : la battue a commencé.`);
+}
+
+/** Plan de chasse d'une battue : forcément un plan du territoire de la battue. */
+export async function setHuntPlan(tx: Tx, huntId: string, territoryId: string, huntPlanId: string | null) {
+  if (huntPlanId && !(await tx.maybeOne('SELECT 1 FROM hunt_plans WHERE id = $1 AND territory_id = $2', [huntPlanId, territoryId]))) {
+    throw new AppError(422, 'HUNT_PLAN_OTHER_TERRITORY', 'Ce plan de chasse n’appartient pas au territoire de la battue.');
+  }
+  await tx.execute('UPDATE hunts SET hunt_plan_id = $2 WHERE id = $1', [huntId, huntPlanId]);
 }
 
 /** Postes disponibles du territoire (actifs, hors zone d'habitation). */
@@ -71,10 +80,12 @@ export async function huntDetail(tx: Tx, id: string) {
   let proposal = null;
   if (hunt.status === 'en_cours') {
     const hunters = participants.filter((p: any) => p.present && p.role === 'poste').length;
-    const plans = await loadPlans(tx, hunt.territory_id);
+    const plans = await loadPlans(tx, hunt.hunt_plan_id);
     proposal = proposePosts(hunters, plans, await availablePostIds(tx, hunt.territory_id));
   }
-  return { hunt, participants, day_post_ids: dayPosts, proposal, species, harvests };
+  // Traque du plan de chasse (affichée sur la carte de gestion).
+  const huntPlan = hunt.hunt_plan_id ? await loadHuntPlan(tx, hunt.hunt_plan_id) : null;
+  return { hunt, participants, day_post_ids: dayPosts, proposal, species, harvests, hunt_plan: huntPlan };
 }
 
 // ---------------------------------------------------------------------------
@@ -120,13 +131,19 @@ huntRoutes.get('/hunts/:id', (c) => {
 
 huntRoutes.patch('/hunts/:id', async (c) => {
   const id = parseId(c.req.param('id'));
-  const body = z.object({ briefing: z.string().max(5000), leader_user_id: z.string().min(1).max(64) }).partial().strict().parse(await c.req.json());
+  const body = z.object({ briefing: z.string().max(5000), leader_user_id: z.string().min(1).max(64), hunt_plan_id: z.uuid().nullable() })
+    .partial().strict().parse(await c.req.json());
   return tenantTx(c, MANAGERS, async (tx) => {
-    requireOpen(await loadHunt(tx, id), 'Modification');
+    const hunt = await loadHunt(tx, id);
+    requireOpen(hunt, 'Modification');
     await tx.execute(
       'UPDATE hunts SET briefing = coalesce($2, briefing), leader_user_id = coalesce($3, leader_user_id) WHERE id = $1',
       [id, body.briefing ?? null, body.leader_user_id ?? null],
     );
+    if (body.hunt_plan_id !== undefined) {
+      if (hunt.started_at) throw new AppError(409, 'HUNT_STARTED', 'Changement de plan de chasse impossible : la battue a commencé.');
+      await setHuntPlan(tx, id, hunt.territory_id, body.hunt_plan_id);
+    }
     return c.json(await huntDetail(tx, id));
   });
 });

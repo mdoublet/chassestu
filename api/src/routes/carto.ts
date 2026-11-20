@@ -90,7 +90,11 @@ const KINDS: Record<string, FeatureKind> = {
         (SELECT buffer_distance_m + app.warning_margin_m() FROM tenants WHERE id = posts.tenant_id)))::int AS nearest_dwelling_m,
       coalesce((SELECT array_agg(cp.hunter_count ORDER BY cp.hunter_count)
                   FROM coverage_plan_posts cpp JOIN coverage_plans cp ON cp.id = cpp.plan_id
-                 WHERE cpp.post_id = posts.id), '{}') AS plan_counts`,
+                 WHERE cpp.post_id = posts.id), '{}') AS plan_counts,
+      coalesce((SELECT array_agg(hp.name || ' à ' || cp.hunter_count ORDER BY lower(hp.name), cp.hunter_count)
+                  FROM coverage_plan_posts cpp JOIN coverage_plans cp ON cp.id = cpp.plan_id
+                  JOIN hunt_plans hp ON hp.id = cp.hunt_plan_id
+                 WHERE cpp.post_id = posts.id), '{}') AS plan_uses`,
     create: postFields.partial({ number: true, name: true, parking_id: true, access_path: true, instructions: true, special_instructions: true, active: true, access_difficulty: true }).strict(),
     patch: postFields.partial().strict(),
   },
@@ -146,7 +150,7 @@ cartoRoutes.get('/territories', (c) =>
               (SELECT count(*)::int FROM posts p WHERE p.territory_id = t.id AND p.invalid_reason IS NOT NULL) AS invalid_posts,
               (SELECT count(*)::int FROM parkings x WHERE x.territory_id = t.id) AS parkings_count,
               (SELECT count(*)::int FROM reserve_zones x WHERE x.territory_id = t.id) AS reserves_count,
-              (SELECT count(*)::int FROM coverage_plans x WHERE x.territory_id = t.id) AS plans_count
+              (SELECT count(*)::int FROM hunt_plans x WHERE x.territory_id = t.id) AS plans_count
          FROM territories t ORDER BY name`,
     );
     return c.json({ territories });

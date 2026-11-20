@@ -220,7 +220,18 @@ aucune réserve de l'association ne peut contenir un poste.
 
 **Lot 3 — Plans de couverture**
 
-Accès : Territoires → « 📋 Plans de couverture » sur la carte du territoire (`#/plans/<id>`) ; plus d'entrée dans le menu du haut.
+Accès : Territoires → « 📋 Plans de chasse » sur la carte du territoire (`#/plans/<id>[/<plan>]`) ; plus d'entrée dans le menu du haut.
+
+**Plans de chasse** (migration 0017) : un territoire peut avoir plusieurs plans
+de chasse. Chacun décrit une traque — départ (D), tracé, sortie (S), consignes —
+et possède sa propre grille par effectif (les postes à pourvoir changent selon
+le sens de la traque). En créant une battue, on choisit le territoire puis le
+plan de chasse (ou « sans plan » : postes à la main) ; les postes de la grille
+pour l'effectif posté sont repris d'office tant qu'on n'a pas retouché les
+postes, et la traque s'affiche sur la carte de gestion. Les grilles d'avant la
+migration sont rattachées à un « Plan principal ». Les anciennes routes
+`/territories/:id/coverage-plans` restent en compatibilité (premier plan de
+chasse du territoire).
 
 - [x] Les plans de l'exemple (5 et 6 chasseurs) se saisissent dans la grille et s'affichent sur la carte.
 - [x] Une ligne dont le nombre de postes cochés diffère de l'effectif ne peut pas être enregistrée (client et base).

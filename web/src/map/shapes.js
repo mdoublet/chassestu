@@ -27,3 +27,32 @@ export function postIcon(number, cls = '') {
   return L.divIcon({ className: `post-icon ${cls}`, html: `<span>${Number(number) || '+'}</span>`, iconSize: [30, 30], iconAnchor: [15, 15] });
 }
 export const parkingIcon = (cls = '') => L.divIcon({ className: `parking-icon ${cls}`, html: '<span>P</span>', iconSize: [26, 26], iconAnchor: [13, 13] });
+
+/** Icônes de départ (D) et de sortie (S) d'une traque. */
+export const traqueIcon = (kind, cls = '') => L.divIcon({
+  className: `traque-icon traque-${kind} ${cls}`, html: `<span>${kind === 'start' ? 'D' : 'S'}</span>`, iconSize: [26, 26], iconAnchor: [13, 13],
+});
+
+/**
+ * Couches d'une traque (plan de chasse) : tracé orange en tirets, départ et
+ * sortie. `draggable` : marqueurs déplaçables (callback onMove(kind, [lon, lat])).
+ */
+export function traqueLayers(hp, { draggable = false, onMove = null } = {}) {
+  if (!hp) return [];
+  const out = [];
+  const label = escapeHtml(hp.name);
+  if (hp.drive_path) {
+    out.push(L.polyline(hp.drive_path.coordinates.map(toLatLng), { color: '#fff', weight: 7, opacity: 0.7, interactive: false }));
+    out.push(L.polyline(hp.drive_path.coordinates.map(toLatLng), { color: '#e8590c', weight: 4, dashArray: '10 7', className: 'traque-line' })
+      .bindTooltip(`Traque · ${label}${hp.drive_length_m ? ` · ${hp.drive_length_m} m` : ''}`, { sticky: true }));
+  }
+  for (const kind of ['start', 'exit']) {
+    const g = hp[`${kind}_point`];
+    if (!g) continue;
+    const m = L.marker(toLatLng(g.coordinates), { icon: traqueIcon(kind), draggable, zIndexOffset: 900 })
+      .bindTooltip(`${kind === 'start' ? 'Départ' : 'Sortie'} de la traque · ${label}`, { direction: 'top', offset: [0, -12] });
+    if (draggable && onMove) m.on('dragend', () => { const ll = m.getLatLng(); onMove(kind, [ll.lng, ll.lat]); });
+    out.push(m);
+  }
+  return out;
+}

@@ -10,7 +10,8 @@ import { AppError } from '../errors';
 import { randomToken, sha256Hex } from '../auth';
 import { geomOut, geomParam, pointSchema } from '../geo';
 import { notifyUsers } from './notifications';
-import { MANAGERS, carpoolFor, setSelection } from './hunts';
+import { MANAGERS, carpoolFor, setHuntPlan, setSelection } from './hunts';
+import { defaultHuntPlanId } from './plans';
 
 export const dayRoutes = new Hono<AppEnv>();
 
@@ -55,7 +56,8 @@ async function dayDetail(tx: Tx, id: string) {
     [id],
   );
   const battues = await tx.query(
-    `SELECT h.id, h.number, h.territory_id, t.name AS territory_name, h.status, h.started_at, h.ended_at,
+    `SELECT h.id, h.number, h.territory_id, t.name AS territory_name, h.hunt_plan_id,
+            (SELECT name FROM hunt_plans WHERE id = h.hunt_plan_id) AS hunt_plan_name, h.status, h.started_at, h.ended_at,
             h.assignments_published_at,
             (SELECT count(*)::int FROM hunt_participants x WHERE x.hunt_id = h.id) AS participant_count
        FROM hunts h JOIN territories t ON t.id = h.territory_id
@@ -355,7 +357,7 @@ dayRoutes.post('/days/:id/actions/:action{convoquer|brouillon|demarrer|terminer|
  */
 dayRoutes.post('/days/:id/battues', async (c) => {
   const id = parseId(c.req.param('id'));
-  const body = z.object({ territory_id: z.uuid(), participant_ids: z.array(z.uuid()).max(500).optional() }).strict().parse(await c.req.json());
+  const body = z.object({ territory_id: z.uuid(), hunt_plan_id: z.uuid().nullable().optional(), participant_ids: z.array(z.uuid()).max(500).optional() }).strict().parse(await c.req.json());
   return tenantTx(c, MANAGERS, async (tx) => {
     const day = await loadDay(tx, id);
     requireStatus(day, ['en_cours'], 'Nouvelle battue');
@@ -371,6 +373,8 @@ dayRoutes.post('/days/:id/battues', async (c) => {
        RETURNING id`,
       [id, body.territory_id],
     );
+    // Plan de chasse : celui choisi, sinon le seul (ou le premier) du territoire.
+    await setHuntPlan(tx, huntId, body.territory_id, body.hunt_plan_id !== undefined ? body.hunt_plan_id : await defaultHuntPlanId(tx, body.territory_id));
     const ids = body.participant_ids
       ?? (await tx.query<{ id: string }>('SELECT id FROM day_participants WHERE day_id = $1 AND present', [id])).map((r) => r.id);
     await setSelection(tx, huntId, ids);

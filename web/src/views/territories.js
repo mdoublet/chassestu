@@ -91,7 +91,7 @@ export async function territoriesView(main) {
         onchange: (e) => patch(t, { notes: e.target.value }, 'Notes enregistrées.') }, t.notes ?? '')),
       h('div.buttons',
         h('a.button', { href: `#/carte/${t.id}` }, canEdit ? '🗺 Ouvrir la carte (postes, parkings, réserves…)' : '🗺 Voir la carte'),
-        state.role === 'president' || state.role === 'responsable' ? h('a.button', { href: `#/plans/${t.id}` }, `📋 Plans de couverture (${t.plans_count})`) : null,
+        state.role === 'president' || state.role === 'responsable' ? h('a.button', { href: `#/plans/${t.id}` }, `📋 Plans de chasse (${t.plans_count})`) : null,
         canEdit ? h('button.link.danger', { onclick: async () => {
           if (!(await confirmDialog('Supprimer le territoire', `Supprimer « ${t.name} » avec ses réserves, parkings, postes, chemins et plans ? Cette suppression ne peut pas être annulée.`, 'Supprimer', true))) return;
           try {
