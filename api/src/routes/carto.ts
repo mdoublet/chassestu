@@ -55,6 +55,7 @@ const postFields = z.object({
   instructions: z.string().max(2000),
   special_instructions: z.boolean(),
   active: z.boolean(),
+  line_id: z.uuid().nullable(),
   // Difficulté d'accès saisie par le président (1 facile … 5 escarpé) ; NULL : estimée.
   access_difficulty: z.number().int().min(1).max(5).nullable(),
 });
@@ -81,7 +82,7 @@ const KINDS: Record<string, FeatureKind> = {
     table: 'posts',
     label: 'Poste',
     geoms: { geom: 'Point', access_path: 'LineString' },
-    columns: ['id', 'territory_id', 'number', 'name', 'parking_id', 'instructions', 'special_instructions', 'active', 'invalid_reason', 'access_difficulty', 'updated_at'],
+    columns: ['id', 'territory_id', 'number', 'name', 'parking_id', 'line_id', 'instructions', 'special_instructions', 'active', 'invalid_reason', 'access_difficulty', 'updated_at'],
     // nearest_dwelling_m : renseigné si une habitation est à moins de distance + 50 m
     // (bande d'avertissement : tir interdit en direction de l'habitation).
     extraSelect: `round(ST_Length(access_path::geography))::int AS access_path_length_m,
@@ -95,7 +96,7 @@ const KINDS: Record<string, FeatureKind> = {
                   FROM coverage_plan_posts cpp JOIN coverage_plans cp ON cp.id = cpp.plan_id
                   JOIN hunt_plans hp ON hp.id = cp.hunt_plan_id
                  WHERE cpp.post_id = posts.id), '{}') AS plan_uses`,
-    create: postFields.partial({ number: true, name: true, parking_id: true, access_path: true, instructions: true, special_instructions: true, active: true, access_difficulty: true }).strict(),
+    create: postFields.partial({ number: true, name: true, parking_id: true, access_path: true, instructions: true, special_instructions: true, active: true, access_difficulty: true, line_id: true }).strict(),
     patch: postFields.partial().strict(),
   },
 };
@@ -204,7 +205,8 @@ async function loadTerritory(tx: Tx, id: string) {
       WHERE z.territory_id = $1`,
     [id],
   );
-  return { territory, reserves, parkings, posts, dwellings, exclusion };
+  const lines = await tx.query('SELECT id, name FROM post_lines WHERE territory_id = $1 ORDER BY lower(name)', [id]);
+  return { territory, reserves, parkings, posts, dwellings, exclusion, lines };
 }
 
 /** Importe les bâtiments si besoin, sans faire échouer l'action en cours (service IGN capricieux). */
@@ -311,6 +313,44 @@ cartoRoutes.get('/territories/:id/export', (c) => {
 // ---------------------------------------------------------------------------
 // Réserves, parkings, postes (et chemins d'accès, portés par le poste)
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Lignes de postes (groupes nommés de postes)
+// ---------------------------------------------------------------------------
+
+const lineName = z.object({ name: z.string().trim().min(1, 'Nom de la ligne obligatoire.').max(100) }).strict();
+const lineTaken = (err: unknown): never => {
+  if ((err as any)?.code === '23505') throw new AppError(409, 'LINE_NAME_TAKEN', 'Une ligne porte déjà ce nom sur ce territoire.');
+  throw err;
+};
+
+cartoRoutes.post('/territories/:id/lines', async (c) => {
+  const id = parseId(c.req.param('id'));
+  const { name } = lineName.parse(await c.req.json());
+  return tenantTx(c, ['president'], async (tx) => {
+    notFoundIfNull(await tx.maybeOne('SELECT id FROM territories WHERE id = $1', [id]), 'Territoire');
+    const line = await tx.one('INSERT INTO post_lines (territory_id, name) VALUES ($1, $2) RETURNING id, name', [id, name]).catch(lineTaken);
+    return c.json({ line }, 201);
+  });
+});
+
+cartoRoutes.patch('/lines/:id', async (c) => {
+  const id = parseId(c.req.param('id'));
+  const { name } = lineName.parse(await c.req.json());
+  return tenantTx(c, ['president'], async (tx) => {
+    const line = notFoundIfNull(await tx.maybeOne('UPDATE post_lines SET name = $2 WHERE id = $1 RETURNING id, name', [id, name]).catch(lineTaken), 'Ligne');
+    return c.json({ line });
+  });
+});
+
+/** Supprimer une ligne : ses postes restent, sans ligne. */
+cartoRoutes.delete('/lines/:id', (c) => {
+  const id = parseId(c.req.param('id'));
+  return tenantTx(c, ['president'], async (tx) => {
+    notFoundIfNull(await tx.maybeOne('DELETE FROM post_lines WHERE id = $1 RETURNING id', [id]), 'Ligne');
+    return c.body(null, 204);
+  });
+});
 
 cartoRoutes.post('/territories/:id/:kind{reserves|parkings|posts}', async (c) => {
   const territoryId = parseId(c.req.param('id'));

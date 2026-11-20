@@ -118,3 +118,34 @@ describe('rotation : la battue précédente prime', () => {
     }
   });
 });
+
+describe('chefs de ligne', () => {
+  it('chaque chef sur un poste d’une ligne différente ; les autres complètent', () => {
+    const lineOf = new Map<string, string | null>([['a1', 'A'], ['a2', 'A'], ['b1', 'B'], ['x', null]]);
+    for (let run = 0; run < 30; run++) {
+      const { assignments, unplaced } = drawAssignments(['a1', 'a2', 'b1', 'x'], ['c1', 'c2', 'h1', 'h2'], [], false, undefined, undefined, undefined,
+        { lineOf, chiefs: new Set(['c1', 'c2']) });
+      expect(unplaced).toEqual([]);
+      const at = Object.fromEntries(assignments.map((x) => [x.participant_id, x.post_id]));
+      expect(new Set([lineOf.get(at.c1), lineOf.get(at.c2)])).toEqual(new Set(['A', 'B']));
+    }
+  });
+});
+
+describe('chefs de ligne et marche', () => {
+  it('le chef ne prend jamais le seul poste accessible à un chasseur qui marche peu', () => {
+    const lineOf = new Map<string, string | null>([['facile', 'A'], ['dur', 'A'], ['hors', null]]);
+    const mobility = {
+      difficulty: new Map<string, number | null>([['facile', 1], ['dur', 4], ['hors', 3]]),
+      ability: new Map<string, number | null>([['chef', 5], ['lent', 2], ['marc', 4]]),
+    };
+    for (let run = 0; run < 30; run++) {
+      const { assignments, unplaced } = drawAssignments(['facile', 'dur', 'hors'], ['chef', 'lent', 'marc'], [], false, undefined, mobility, undefined,
+        { lineOf, chiefs: new Set(['chef']) });
+      expect(unplaced).toEqual([]);
+      const at = Object.fromEntries(assignments.map((x) => [x.participant_id, x.post_id]));
+      expect(at.lent).toBe('facile');
+      expect(at.chef).toBe('dur'); // sur sa ligne, sans priver « lent »
+    }
+  });
+});

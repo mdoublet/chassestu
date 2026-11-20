@@ -186,6 +186,7 @@ export function drawAssignments(
   random?: () => number,
   mobility?: Mobility,
   history?: PlacementHistory,
+  lines?: { lineOf: Map<string, string | null>; chiefs: Set<string> },
 ): { assignments: { post_id: string; participant_id: string }[]; unplaced: string[] } {
   const rnd = random ?? cryptoRandom;
   const lockedHunters = new Set(locked.map((l) => l.participant_id));
@@ -194,11 +195,12 @@ export function drawAssignments(
   const diff = (p: string) => mobility?.difficulty.get(p) ?? null;
   const ab = (h: string) => mobility?.ability.get(h) ?? null;
 
+  let chiefCost = (_h: string, _p: string) => 0;
   const cost = (h: string, p: string) => {
     if (!canReach(diff(p), ab(h))) return INFEASIBLE;
     const a = ab(h);
     const ease = a !== null && a <= 2 ? 0.05 * (diff(p) ?? 6) : 0; // marche difficile : postes faciles d'abord
-    return (history?.get(h)?.get(p) ?? 0) + ease + 0.01 * rnd(); // hasard pour départager
+    return (history?.get(h)?.get(p) ?? 0) + ease + chiefCost(h, p) + 0.01 * rnd(); // hasard pour départager
   };
 
   /** Une passe : chaque chasseur sur au plus un des postes candidats. */
@@ -218,8 +220,33 @@ export function drawAssignments(
     return { placed, left };
   };
 
+  // Chefs de ligne : un poste d'une ligne (pénalité sinon), une ligne par chef si possible
+  // (pénalités bien inférieures à UNPLACED : elles ne privent jamais personne de poste).
+  const chiefs = new Set([...(lines?.chiefs ?? [])].filter((h) => hunters.includes(h)));
+  const led = new Map<string, Set<string>>(); // chef → lignes déjà tenues par un autre chef
+  const lockedLines = new Set(locked.filter((l) => chiefs.has(l.participant_id)).map((l) => lines?.lineOf.get(l.post_id)).filter(Boolean) as string[]);
+  chiefCost = (h: string, p: string) => {
+    if (!chiefs.has(h)) return 0;
+    const line = lines?.lineOf.get(p) ?? null;
+    if (!line) return 100;
+    return lockedLines.has(line) || led.get(h)?.has(line) ? 50 : 0;
+  };
+
   const toPlace = shuffle(hunters.filter((h) => !lockedHunters.has(h)), random);
-  const first = pass(toPlace, shuffle(postIds.filter((id) => (load.get(id) ?? 0) === 0), random));
+  const freePosts = shuffle(postIds.filter((id) => (load.get(id) ?? 0) === 0), random);
+  let first = pass(toPlace, freePosts);
+  // Deux nouveaux chefs sur la même ligne : on pénalise ce doublon et on recommence (quelques essais).
+  for (let round = 0; round < 3 && chiefs.size > 1; round++) {
+    const byLine = new Map<string, string[]>();
+    for (const a of first.placed) {
+      const line = lines?.lineOf.get(a.post_id);
+      if (chiefs.has(a.participant_id) && line) byLine.set(line, [...(byLine.get(line) ?? []), a.participant_id]);
+    }
+    const dup = [...byLine].filter(([, hs]) => hs.length > 1);
+    if (!dup.length) break;
+    for (const [line, hs] of dup) for (const h of hs.slice(1)) led.set(h, new Set([...(led.get(h) ?? []), line]));
+    first = pass(toPlace, freePosts);
+  }
   for (const a of first.placed) load.set(a.post_id, 1);
   const second = allowDouble ? pass(first.left, shuffle(postIds.filter((id) => (load.get(id) ?? 0) === 1), random)) : { placed: [], left: first.left };
   return { assignments: [...first.placed, ...second.placed], unplaced: second.left };

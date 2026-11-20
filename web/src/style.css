@@ -225,7 +225,11 @@ fieldset.members { border: 1px solid var(--border); border-radius: 8px; display:
 fieldset.members legend { color: var(--muted); font-size: 0.9rem; }
 ul.plain.members { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 0.2rem 0.75rem; margin: 0.5rem 0 0; }
 ul.plain.members li { border: 0; padding: 0.1rem 0; }
-.hunt-layout { display: grid; grid-template-columns: minmax(340px, 520px) 1fr; width: 100%; min-height: calc(100vh - 52px); }
+.hunt-layout { display: flex; width: 100%; min-height: calc(100vh - 52px); }
+.hunt-layout > .hunt-console { flex: none; width: 460px; }
+.hunt-layout > .hunt-map { flex: 1; min-width: 0; }
+.hunt-layout > .resizer { flex: none; width: 7px; cursor: col-resize; background: var(--border); touch-action: none; }
+.hunt-layout > .resizer:hover, .hunt-layout > .resizer.dragging { background: color-mix(in srgb, var(--primary) 35%, var(--border)); }
 .hunt-console { padding: 0.75rem 1rem; overflow-y: auto; max-height: calc(100vh - 52px); }
 .hunt-console h1 { font-size: 1.25rem; margin: 0.25rem 0; }
 .hunt-console h2 { font-size: 1.05rem; margin: 0 0 0.25rem; }
@@ -237,7 +241,9 @@ table.list.compact select { min-height: 36px; padding: 0.2rem 0.4rem; }
 p.pre { white-space: pre-wrap; margin: 0; }
 .post-icon.mine span { background: #0b6bcb; color: #fff; transform: scale(1.25); }
 @media (max-width: 860px) {
-  .hunt-layout { grid-template-columns: 1fr; }
+  .hunt-layout { flex-direction: column; }
+  .hunt-layout > .hunt-console { width: 100% !important; }
+  .hunt-layout > .resizer { display: none; }
   .hunt-console { max-height: none; }
   .hunt-map { position: static; height: 50vh; order: -1; }
 }
@@ -448,3 +454,10 @@ details.fold.hunt-plan[open] { padding-bottom: 0.75rem; }
 .battue-actions { position: sticky; bottom: 0; z-index: 2; }
 .badge.deputy { background: #fff3bf; color: #7a5b00; }
 .lead-card { border: 2px solid var(--primary); }
+
+.assign-list li.line-head { padding: 0.5rem 0 0.15rem; border-bottom: 1px solid var(--border); font-size: 0.9rem; }
+.assign-list .post-name { font-size: 0.78rem; color: var(--muted); font-weight: 400; }
+.assign-list .chip .chef { color: #b8860b; }
+.warn-text { color: var(--warn); }
+.line-card { border-left: 4px solid #b8860b; }
+.line-info { margin: 0.25rem 0 0.5rem; padding: 0.4rem 0.75rem; background: color-mix(in srgb, #b8860b 10%, var(--surface)); border-radius: 8px; }

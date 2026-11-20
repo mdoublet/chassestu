@@ -19,6 +19,8 @@ import { notifyUsers } from './notifications';
 export const huntRoutes = new Hono<AppEnv>();
 
 export const MANAGERS: Role[] = ['president', 'responsable'];
+/** Rôles qui reçoivent un poste : le chef de ligne est un chasseur posté. */
+export const POSTED = ['poste', 'chef_de_ligne'];
 
 const HUNT_SELECT = `h.id, h.day_id, h.number, h.territory_id, t.name AS territory_name, h.hunt_plan_id,
   (SELECT name FROM hunt_plans WHERE id = h.hunt_plan_id) AS hunt_plan_name, to_char(h.date, 'YYYY-MM-DD') AS date,
@@ -79,7 +81,7 @@ export async function huntDetail(tx: Tx, id: string) {
   );
   let proposal = null;
   if (hunt.status === 'en_cours') {
-    const hunters = participants.filter((p: any) => p.present && p.role === 'poste').length;
+    const hunters = participants.filter((p: any) => p.present && POSTED.includes(p.role)).length;
     const plans = await loadPlans(tx, hunt.hunt_plan_id);
     proposal = proposePosts(hunters, plans, await availablePostIds(tx, hunt.territory_id));
   }
@@ -376,16 +378,16 @@ huntRoutes.post('/hunts/:id/draw', async (c) => {
     .strict().parse(await c.req.json().catch(() => ({})));
   return tenantTx(c, MANAGERS, async (tx) => {
     requireOpen(await loadHunt(tx, id), 'Tirage au sort');
-    const posts = await tx.query<{ post_id: string; difficulty: number | null }>(
-      `SELECT hp.post_id, app.post_difficulty(p.access_difficulty, p.access_path) AS difficulty
+    const posts = await tx.query<{ post_id: string; difficulty: number | null; line_id: string | null }>(
+      `SELECT hp.post_id, app.post_difficulty(p.access_difficulty, p.access_path) AS difficulty, p.line_id
          FROM hunt_posts hp JOIN posts p ON p.id = hp.post_id WHERE hp.hunt_id = $1`, [id]);
     if (!posts.length) throw new AppError(422, 'NO_DAY_POSTS', 'Choisissez d’abord les postes de la battue.');
-    const hunters = await tx.query<{ id: string; ability: number | null; who: string }>(
-      `SELECT hp.id, coalesce(dp.walking_ability, u.walking_ability) AS ability,
+    const hunters = await tx.query<{ id: string; ability: number | null; who: string; role: string }>(
+      `SELECT hp.id, coalesce(dp.walking_ability, u.walking_ability) AS ability, hp.role,
               coalesce(hp.user_id, 'dp:' || hp.day_participant_id) AS who
          FROM hunt_participants hp JOIN day_participants dp ON dp.id = hp.day_participant_id
          LEFT JOIN users u ON u.id = hp.user_id
-        WHERE hp.hunt_id = $1 AND hp.present AND hp.role = 'poste'`, [id]);
+        WHERE hp.hunt_id = $1 AND hp.present AND hp.role IN ('poste', 'chef_de_ligne')`, [id]);
     const locked = await tx.query<{ post_id: string; participant_id: string }>(
       // keep_existing : les placements déjà faits (à la main) sont gardés ; on ne place que les autres.
       `SELECT post_id, participant_id FROM hunt_assignments WHERE hunt_id = $1 AND (locked OR $2)`, [id, keep_existing],
@@ -395,6 +397,7 @@ huntRoutes.post('/hunts/:id/draw', async (c) => {
       posts.map((p) => p.post_id), hunters.map((h) => h.id), locked, allow_double, undefined,
       { difficulty: new Map(posts.map((p) => [p.post_id, p.difficulty])), ability: new Map(hunters.map((h) => [h.id, h.ability])) },
       await placementHistory(tx, id, hunters, posts.map((p) => p.post_id)),
+      { lineOf: new Map(posts.map((p) => [p.post_id, p.line_id])), chiefs: new Set(hunters.filter((h) => h.role === 'chef_de_ligne').map((h) => h.id)) },
     );
     for (const a of assignments) {
       await tx.execute('INSERT INTO hunt_assignments (hunt_id, post_id, participant_id) VALUES ($1, $2, $3)', [id, a.post_id, a.participant_id]);
@@ -608,8 +611,9 @@ huntRoutes.get('/guest/:token', async (c: Context<AppEnv>) => {
   if (!TOKEN_RE.test(token)) throw new AppError(404, 'GUEST_LINK_UNKNOWN', 'Lien inconnu.');
   const hash = await sha256Hex(token);
   return withTx(c.get('pool'), { userId: null, tenantId: null }, async (tx) => {
-    const { v } = await tx.one<{ v: unknown }>('SELECT app.guest_day_view($1) AS v', [hash]);
+    const { v } = await tx.one<{ v: any }>('SELECT app.guest_day_view($1) AS v', [hash]);
     if (!v) throw expired();
+    if (v.current?.hunt?.id) v.current.line = (await tx.one<{ l: unknown }>('SELECT app.guest_line($1, $2) AS l', [hash, v.current.hunt.id])).l;
     return c.json({ view: v });
   });
 });

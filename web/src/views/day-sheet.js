@@ -193,6 +193,31 @@ export function createDaySheet(container, opts = {}) {
       me ? h('p.small.muted', 'Ne tirez jamais vers vos voisins.') : null);
   }
 
+  /**
+   * Ligne de postes : le posté voit son chef de ligne ; le chef de ligne voit
+   * les chasseurs de sa ligne (lui compris) et leur mise en place.
+   */
+  function lineCard(cur) {
+    const line = cur?.line;
+    if (!line) return null;
+    const hm = (iso) => new Date(iso).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+    if (line.chief) {
+      if (!line.name) return h('section.card.line-card', h('h3', '★ Chef de ligne'), h('p.small.muted', 'Votre poste ne fait partie d’aucune ligne : voyez le responsable de la battue.'));
+      const ready = line.members.filter((m) => m.in_place_at).length;
+      return h('section.card.line-card',
+        h('h3', `★ Chef de ligne · ${line.name}`),
+        h('p.small', `${ready}/${line.members.length} chasseur(s) en place. Vous êtes responsable de leur placement.`),
+        h('ul.plain.readiness', line.members.map((m) => h('li', { class: m.in_place_at ? 'ok' : '' },
+          h('span.light', m.in_place_at ? '●' : '○'),
+          h('strong', `Poste ${m.post_number}${m.post_name ? ` · ${m.post_name}` : ''}`),
+          h('span', `${m.name}${m.me ? ' (vous)' : ''} ${m.in_place_at ? `✅ ${hm(m.in_place_at)}` : '⏳'}`)))));
+    }
+    const chiefs = line.chiefs.filter((c) => !c.me);
+    return h('p.line-info',
+      h('strong', `Ligne : ${line.name}`), ' · ',
+      chiefs.length ? `chef de ligne : ${chiefs.map((c) => `${c.name} (poste ${c.post_number})`).join(', ')}` : h('span.muted', 'pas de chef de ligne désigné'));
+  }
+
   function briefing(view) {
     const text = [view.day.briefing, view.current?.hunt?.briefing].filter(Boolean).join('\n\n');
     if (!text) return null;
@@ -256,6 +281,7 @@ export function createDaySheet(container, opts = {}) {
         ` ${formatHuntDate(day.date)}`,
         lastBattue && day.status === 'en_cours' ? ` · battue n° ${lastBattue.number} (${lastBattue.territory_name})` : '',
         cur?.me ? ` · ${ROLE_LABELS[cur.me.role].toLowerCase()}` : ''),
+      ['rejoindre', 'traque'].includes(phase) ? lineCard(cur) : null,
       top,
     );
     fill(

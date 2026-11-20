@@ -19,6 +19,7 @@ import { canReach } from '../lib/mobility.js';
 import { watchRevision } from '../lib/live.js';
 import { memberDayView } from './day-sheet.js';
 import { placeSelect } from './place-picker.js';
+import { panelResizer } from '../map/resizer.js';
 
 const MANAGERS = ['president', 'responsable'];
 const TAB_KEY = 'chassestu.huntTab';
@@ -58,6 +59,9 @@ export async function dayView(main, dayId) {
 const WALK_SHORT = { 1: '1', 2: '2', 3: '3', 4: '4', 5: '5' };
 const timeOf = (iso) => new Date(iso).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
 
+const NAMES_KEY = 'chassestu.showPostNames';
+const POSTED_ROLES = ['poste', 'chef_de_ligne']; // le chef de ligne est un chasseur posté
+
 async function dayConsole(main, dayId) {
   ensureHatchPattern();
   const dv = {
@@ -65,10 +69,12 @@ async function dayConsole(main, dayId) {
     members: [], territories: [], allowDouble: false, placing: null,
     picked: null, places: { places: [], parkings: [] }, regroup: { choice: null, place: '', time: '', point: null, when: 'now' }, newBattue: { territory_id: null, hunt_plan_id: undefined, excluded: new Set() },
     huntPlans: new Map(), // territoire → plans de chasse
+    showPostNames: (() => { try { return localStorage.getItem(NAMES_KEY) !== '0'; } catch { return true; } })(),
   };
   const box = h('div.hunt-console');
   const mapEl = h('div.hunt-map');
-  main.append(h('div.hunt-layout', box, mapEl));
+  const resizer = panelResizer(box, { key: 'chassestu.dayPanelWidth', side: 'left', onResize: () => map.invalidateSize() });
+  main.append(h('div.hunt-layout', box, resizer, mapEl));
   let watcher = null;
   const map = L.map(mapEl, { zoomControl: true }).setView([46.6, 2.4], 6);
   addBasemaps(map);
@@ -136,7 +142,7 @@ async function dayConsole(main, dayId) {
   async function autoPlace(all = false) {
     const { hunt, participants, day_post_ids } = dv.hunt ?? {};
     if (!hunt || hunt.started_at || !day_post_ids?.length) return;
-    if (!all && !participants.some((p) => p.present && p.role === 'poste' && !p.post_id)) return;
+    if (!all && !participants.some((p) => p.present && POSTED_ROLES.includes(p.role) && !p.post_id)) return;
     if (all) await api.del(`/hunts/${hunt.id}/assignments`).catch(() => {});
     const res = await act(() => api.post(`/hunts/${hunt.id}/draw`, { allow_double: dv.allowDouble, keep_existing: true }),
       'Chasseurs placés : chacun change de poste par rapport à ses battues précédentes (marche respectée). Ajustez à la main si besoin.');
@@ -213,7 +219,7 @@ async function dayConsole(main, dayId) {
     else if (available) chosen.add(p.id);
     else return toast(`Poste ${p.number} indisponible.`, 'error');
     // Placement initial automatique : personne n'est encore placé et il y a un poste pour chacun.
-    const posted = dv.hunt.participants.filter((x) => x.present && x.role === 'poste').length;
+    const posted = dv.hunt.participants.filter((x) => x.present && POSTED_ROLES.includes(x.role)).length;
     const auto = !dv.hunt.participants.some((x) => x.post_id) && chosen.size >= posted;
     act(() => api.put(`/hunts/${dv.hunt.hunt.id}/posts`, { post_ids: [...chosen] })).then((r) => r && auto && autoPlace());
   }
@@ -520,7 +526,8 @@ async function dayConsole(main, dayId) {
           ? [h('button.primary', { onclick: go('debut', 'Début de battue : les chasseurs sont prévenus.'), disabled: !hunt.assignments_published_at, title: hunt.assignments_published_at ? '' : 'Publiez d’abord les postes' }, 'Lancer la battue'),
              r ? h('span.small', { class: r.ready === r.rows.length ? 'all-ready' : 'muted' }, `${r.ready}/${r.rows.length} poste(s) confirmé(s)`) : h('span.small.muted', 'Publiez d’abord les postes.')]
           : null,
-        h('button.danger', { onclick: go('fin', 'Fin de battue : les chasseurs sont prévenus. Annoncez le regroupement.', 'Terminer la battue ? Les chasseurs seront prévenus.') }, 'Fin de battue'),
+        // Pas de « fin » avant le lancement : seulement annuler la battue (créée par erreur).
+        hunt.started_at ? h('button.danger', { onclick: go('fin', 'Fin de battue : les chasseurs sont prévenus. Annoncez le regroupement.', 'Terminer la battue ? Les chasseurs seront prévenus.') }, 'Fin de battue') : null,
         !hunt.started_at ? h('button.link.danger', { onclick: async () => {
           if (!(await confirmDialog('Supprimer', `Supprimer la battue n° ${hunt.number} (créée par erreur) ?`, 'Supprimer', true))) return;
           act(() => api.del(`/hunts/${hunt.id}`));
@@ -560,7 +567,7 @@ async function dayConsole(main, dayId) {
     const editable = !hunt.started_at;
     const postsById = new Map(dv.territory.posts.map((p) => [p.id, p]));
     const dayPosts = day_post_ids.map((id) => postsById.get(id)).filter(Boolean).sort((a, b) => a.number - b.number);
-    const posted = participants.filter((p) => p.present && p.role === 'poste');
+    const posted = participants.filter((p) => p.present && POSTED_ROLES.includes(p.role));
     const picked = posted.find((p) => p.id === dv.picked) ?? null;
     if (!picked) dv.picked = null;
     const sameAsProposal = proposal && proposal.post_ids.length === day_post_ids.length && proposal.post_ids.every((id) => day_post_ids.includes(id));
@@ -584,7 +591,7 @@ async function dayConsole(main, dayId) {
         if (dv.picked === p.id) { dv.picked = null; return render(); }
         moveTo(post);
       },
-    }, p.name, p.walking_ability ? h('span.walk', ` 🥾${p.walking_ability}`) : null, post && !canReach(post.difficulty, p.walking_ability) ? ' ⚠' : '');
+    }, p.role === 'chef_de_ligne' ? h('span.chef', { title: 'Chef de ligne' }, '★ ') : null, p.name, p.walking_ability ? h('span.walk', ` 🥾${p.walking_ability}`) : null, post && !canReach(post.difficulty, p.walking_ability) ? ' ⚠' : '');
     const row = (post, people, label, extra) => h('li.assign-row', {
       class: picked ? 'target' : '',
       onclick: () => picked && moveTo(post),
@@ -600,11 +607,20 @@ async function dayConsole(main, dayId) {
           } },
             proposal.plan_count ? `Prendre les postes du plan « ${hunt.hunt_plan_name} » à ${proposal.plan_count} chasseurs (${proposal.post_ids.length})` : `Prendre la proposition (${proposal.post_ids.length} postes)`)
         : null,
-      editable ? h('p.small.muted', picked ? `Touchez le poste où placer ${picked.name}.` : 'Touchez un nom puis un poste pour le placer. Postes : ajout et retrait sur la carte.') : null,
+      editable ? h('p.small.muted', picked ? `Touchez le poste où placer ${picked.name}.` : 'Touchez un nom puis un poste pour le placer. Postes : ajout et retrait sur la carte. ⛰ : difficulté d’accès, 🥾 : marche, ★ : chef de ligne.') : null,
+      h('label.check.small', h('input', { type: 'checkbox', checked: dv.showPostNames, onchange: (e) => {
+        dv.showPostNames = e.target.checked;
+        try { localStorage.setItem(NAMES_KEY, e.target.checked ? '1' : '0'); } catch { /* rien */ }
+        render();
+      } }), 'Noms des postes'),
       dayPosts.length || unassigned.length
         ? h('ul.plain.assign-list',
-            dayPosts.map((post) => row(post, participants.filter((p) => p.post_id === post.id), String(post.number),
-              `${post.difficulty ? ` accès ${post.difficulty}` : ''}${post.parking_id ? '' : ' · sans parking'}`)),
+            groupByLine(dayPosts).map(({ line, posts: lp }) => [
+              line || (dv.territory.lines ?? []).length ? h('li.line-head', lineHeader(line, lp, participants)) : null,
+              lp.map((post) => row(post, participants.filter((p) => p.post_id === post.id),
+                [String(post.number), dv.showPostNames && post.name ? h('span.post-name', ` ${post.name}`) : null],
+                `${post.difficulty ? ` ⛰${post.difficulty}` : ''}${post.parking_id ? '' : ' · sans P'}`)),
+            ]),
             unassigned.length || picked ? row(null, unassigned, 'Sans poste', '') : null)
         : h('p.muted', 'Choisissez les postes sur la carte.'),
       editable && dayPosts.length
@@ -619,6 +635,28 @@ async function dayConsole(main, dayId) {
       editable ? h('button.primary', { disabled: !dayPosts.length, onclick: () => act(() => api.post(`/hunts/${hunt.id}/publish-assignments`), 'Postes publiés.') },
         hunt.assignments_published_at ? 'Republier les postes' : 'Publier les postes') : null,
       hunt.assignments_published_at && editable ? h('span.small.muted', ` publiés à ${timeOf(hunt.assignments_published_at)}`) : null);
+  }
+
+  /** Postes du jour groupés par ligne (ordre des noms de ligne), puis hors ligne. */
+  function groupByLine(posts) {
+    const lines = new Map((dv.territory.lines ?? []).map((l) => [l.id, l]));
+    const groups = new Map();
+    for (const p of posts) {
+      const key = lines.has(p.line_id) ? p.line_id : '';
+      if (!groups.has(key)) groups.set(key, { line: lines.get(key) ?? null, posts: [] });
+      groups.get(key).posts.push(p);
+    }
+    return [...groups.values()].sort((a, b) => (a.line ? 0 : 1) - (b.line ? 0 : 1) || (a.line?.name ?? '').localeCompare(b.line?.name ?? '', 'fr'));
+  }
+
+  /** En-tête d'une ligne : nom et chef(s) de ligne (le chef de ligne est placé sur un poste de sa ligne). */
+  function lineHeader(line, posts, participants) {
+    if (!line) return h('span.muted', 'Hors ligne');
+    const ids = new Set(posts.map((p) => p.id));
+    const chiefs = participants.filter((p) => p.role === 'chef_de_ligne' && ids.has(p.post_id));
+    return [h('strong', line.name), ' · ',
+      chiefs.length ? h('span', `chef de ligne : ${chiefs.map((c) => c.name).join(', ')}`)
+        : h('span.warn-text', { title: 'Passez un participant en « Chef de ligne » (bloc 1) et placez-le sur un poste de cette ligne.' }, '⚠ pas de chef de ligne')];
   }
 
   /** Espèces tirables et quotas de cette battue (vides = sans limite fixée). */

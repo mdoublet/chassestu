@@ -23,6 +23,8 @@ async function seedCartography(user: string, tenant: string, lon: number) {
     body: { geom: point(lon - 0.01, 43), parking_id: p.body.item.id, access_path: { type: 'LineString', coordinates: [[lon - 0.015, 43], [lon - 0.01, 43]] } },
   });
   expect(post.status).toBe(201);
+  const line = await api(user, 'POST', `/api/territories/${id}/lines`, { tenant, body: { name: 'Ligne' } });
+  expect(line.status).toBe(201);
   const plan = await api(user, 'PUT', `/api/territories/${id}/coverage-plans/1`, { tenant, body: { post_ids: [post.body.item.id] } });
   expect(plan.status).toBe(200);
   // Journée en cours et battue avec le président posté sur le poste (lot 4).

@@ -2,7 +2,8 @@
 // panneau (largeur mémorisée sur l'appareil), double-clic : largeur par défaut.
 import { h } from '../ui.js';
 
-export function panelResizer(panel, { key, defaultWidth = null, onResize = () => {} }) {
+/** `side` : côté du panneau par rapport à la poignée ('right' : panneau à droite). */
+export function panelResizer(panel, { key, defaultWidth = null, onResize = () => {}, side = 'right' }) {
   const setWidth = (w) => { panel.style.width = `${Math.round(Math.min(Math.max(w, 280), window.innerWidth * 0.75))}px`; };
   const reset = () => { if (defaultWidth) setWidth(defaultWidth); else panel.style.width = ''; };
   let stored = 0;
@@ -13,8 +14,8 @@ export function panelResizer(panel, { key, defaultWidth = null, onResize = () =>
     e.preventDefault();
     el.setPointerCapture(e.pointerId);
     el.classList.add('dragging');
-    const right = panel.getBoundingClientRect().right;
-    const move = (ev) => setWidth(right - ev.clientX);
+    const box = panel.getBoundingClientRect();
+    const move = (ev) => setWidth(side === 'right' ? box.right - ev.clientX : ev.clientX - box.left);
     const up = () => {
       el.removeEventListener('pointermove', move);
       el.classList.remove('dragging');

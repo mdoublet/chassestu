@@ -24,7 +24,7 @@ import { panelResizer } from '../map/resizer.js';
 const FIELDS = {
   reserves: ['name', 'reason', 'geom'],
   parkings: ['name', 'geom'],
-  posts: ['number', 'name', 'geom', 'parking_id', 'access_path', 'instructions', 'special_instructions', 'active', 'access_difficulty'],
+  posts: ['number', 'name', 'geom', 'parking_id', 'line_id', 'access_path', 'instructions', 'special_instructions', 'active', 'access_difficulty'],
   dwellings: ['geom', 'comment'],
 };
 const LABEL = { territories: 'du territoire', reserves: 'de la réserve', parkings: 'du parking', posts: 'du poste', dwellings: 'de l’habitation' };
@@ -966,6 +966,7 @@ export async function editorView(main, start) {
       isOutside(item) ? h('p.alert.warn', 'Poste hors du territoire : il faut le droit de chasse à cet endroit (ou l’accord du propriétaire).') : null,
       h('div.row', field('Numéro', bound(kind, item, 'number', { type: 'number', min: 1, max: 999, required: true })), field('Nom', bound(kind, item, 'name', { maxlength: 200 }))),
       field('Parking', parkingSelect),
+      field('Ligne', lineSelect(item)),
       field('Difficulté d’accès (pour les chasseurs qui marchent peu)', difficultySelect(item)),
       field('Consignes', bound(kind, item, 'instructions', { rows: 3, maxlength: 2000 }, 'textarea')),
       h('label.check', bound(kind, item, 'special_instructions', { type: 'checkbox' }), 'Consignes particulières (signalé par ⚠)'),
@@ -1000,6 +1001,57 @@ export async function editorView(main, start) {
         } }, 'Utiliser ce chemin'),
         h('button.link', { onclick: () => { ed.proposal = null; render(); } }, 'Ignorer')),
       h('p.small.muted', 'Vérifiez-le sur le terrain : le dernier tronçon jusqu’au poste est à vol d’oiseau.'));
+  }
+
+  /** Ligne du poste (groupe nommé de postes) ; « Nouvelle ligne… » la crée et y met le poste. */
+  function lineSelect(item) {
+    const el = h('select', { disabled: !canEdit, onchange: async () => {
+      if (el.value === '__new') {
+        el.value = item.line_id ?? '';
+        const name = (await promptDialog('Nouvelle ligne', 'Nom de la ligne (ex. Ligne du ruisseau)'))?.trim();
+        if (!name) return;
+        run(async () => {
+          const { line } = await api.post(`/territories/${ed.territoryId}/lines`, { name });
+          await updateItem('posts', item, { line_id: line.id });
+          ed.open.add('lines');
+          toast(`Ligne « ${name} » créée.`);
+        });
+        return;
+      }
+      run(() => updateItem('posts', item, { line_id: el.value || null }));
+    } },
+      h('option', { value: '' }, '— aucune (poste isolé) —'),
+      (ed.data.lines ?? []).map((l) => h('option', { value: l.id, selected: l.id === item.line_id }, l.name)),
+      canEdit ? h('option', { value: '__new' }, '+ Nouvelle ligne…') : null);
+    el.value = item.line_id ?? '';
+    return el;
+  }
+
+  /** Lignes de postes : nom, nombre de postes ; renommer, supprimer (les postes restent, sans ligne). */
+  function linesSection() {
+    const lines = ed.data.lines ?? [];
+    const count = (l) => ed.data.posts.filter((p) => p.line_id === l.id);
+    const isolated = ed.data.posts.filter((p) => !p.line_id).length;
+    return foldSection('lines', `Lignes (${lines.length})`, lines.length && isolated ? `· ${isolated} poste(s) hors ligne` : '',
+      h('p.small.muted', 'Une ligne est un groupe de postes, avec un chef de ligne désigné à chaque battue. Rattachez un poste à une ligne depuis sa fiche.'),
+      h('ul.obj-list', lines.map((l) => {
+        const lp = count(l).sort((a, b) => a.number - b.number);
+        return h('li.obj-row',
+          h('span.obj-label', l.name, h('span.small.muted', ` · ${lp.length ? `postes ${lp.map((p) => p.number).join(', ')}` : 'aucun poste'}`)),
+          canEdit ? h('span.obj-actions',
+            h('button.icon', { title: 'Renommer', 'aria-label': 'Renommer', onclick: async () => {
+              const name = (await promptDialog('Renommer la ligne', 'Nom de la ligne', l.name))?.trim();
+              if (name && name !== l.name) run(async () => { await api.patch(`/lines/${l.id}`, { name }); });
+            } }, '✏️'),
+            h('button.icon.danger', { title: 'Supprimer', 'aria-label': 'Supprimer', onclick: async () => {
+              if (!(await confirmDialog('Supprimer la ligne', `Supprimer la ligne « ${l.name} » ? Ses ${lp.length} poste(s) restent, sans ligne.`, 'Supprimer', true))) return;
+              run(async () => { await api.del(`/lines/${l.id}`); });
+            } }, '🗑')) : null);
+      })),
+      canEdit ? h('button.link', { onclick: async () => {
+        const name = (await promptDialog('Nouvelle ligne', 'Nom de la ligne (ex. Ligne du ruisseau)'))?.trim();
+        if (name) run(async () => { await api.post(`/territories/${ed.territoryId}/lines`, { name }); toast(`Ligne « ${name} » créée : rattachez-y des postes depuis leur fiche.`); });
+      } }, '+ Nouvelle ligne') : null);
   }
 
   /** 1 très facile … 5 escarpé ; vide : estimée d'après la longueur du chemin. */
@@ -1135,6 +1187,7 @@ export async function editorView(main, start) {
           String(p.number),
           p.name ? h('span.post-name', ` (${p.name})`) : null,
         ],
+        note: (ed.data.lines ?? []).find((l) => l.id === p.line_id)?.name ? `· ${(ed.data.lines ?? []).find((l) => l.id === p.line_id).name}` : '',
         dim: !p.active,
         onDelete: () => askDelete('posts', p),
       }))));
@@ -1264,6 +1317,7 @@ export async function editorView(main, start) {
       tools,
       propertiesPanel(),
       ed.data ? postsSection() : null,
+      ed.data ? linesSection() : null,
       ed.data ? parkingsSection() : null,
       ed.data ? reservesSection() : null,
       ed.data ? dwellingsSection() : null,

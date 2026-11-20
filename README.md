@@ -222,6 +222,15 @@ aucune réserve de l'association ne peut contenir un poste.
 
 Accès : Territoires → « 📋 Plans de chasse » sur la carte du territoire (`#/plans/<id>[/<plan>]`) ; plus d'entrée dans le menu du haut.
 
+**Lignes et chefs de ligne** (migration 0019) : une ligne est un groupe nommé
+de postes d'un territoire (éditeur : section « Lignes », champ « Ligne » de la
+fiche poste) ; un poste peut n'appartenir à aucune ligne. Le chef de ligne est
+un chasseur posté : le placement automatique le met sur un poste d'une ligne
+(une ligne par chef si possible, sans jamais priver un autre chasseur de
+poste) ; sa ligne est celle de son poste. Postes publiés : chaque posté voit
+sa ligne et son chef, le chef voit les chasseurs de sa ligne et leur mise en
+place (app.my_line, app.guest_line).
+
 **Rotation des postes** : le placement des postés est automatique dès que les
 postes de la battue sont choisis (plan de chasse ou carte), puis ajustable à
 la main. Il minimise un coût par chasseur et par poste tiré de l'historique des

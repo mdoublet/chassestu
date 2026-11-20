@@ -419,6 +419,8 @@ dayRoutes.get('/days/:id/view', (c) => {
     const { v } = await tx.one<{ v: any }>('SELECT app.view_day($1) AS v', [id]);
     if (!v) throw new AppError(404, 'NOT_FOUND', 'Journée introuvable ou vous n’y êtes pas convoqué.');
     const cur = v.current?.hunt;
+    // Ligne de postes : chef de ligne du chasseur ; pour un chef, les chasseurs de sa ligne.
+    if (cur?.id && v.current) v.current.line = (await tx.one<{ l: unknown }>('SELECT app.my_line($1) AS l', [cur.id])).l;
     const carpool = cur && cur.status === 'en_cours' && cur.assignments_published && !cur.started_at
       ? await carpoolFor(tx, cur.id) : null;
     return c.json({ view: v, carpool });

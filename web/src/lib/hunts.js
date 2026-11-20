@@ -45,7 +45,7 @@ export function whatsappMessage(kind, hunt, link) {
 
 /** Participants postés présents, et ceux sans poste. */
 export function postedSummary(participants) {
-  const posted = participants.filter((p) => p.present && p.role === 'poste');
+  const posted = participants.filter((p) => p.present && (p.role === 'poste' || p.role === 'chef_de_ligne'));
   return { posted: posted.length, unassigned: posted.filter((p) => !p.post_id) };
 }
 
@@ -126,13 +126,14 @@ export function dayPhase(view) {
   }
   if (hunt.started_at) {
     if (role === 'traqueur') return { phase: 'traque', tone: 'go', title: 'Traque en cours', text: 'Gilet orange, restez en ligne avec les autres traqueurs, signalez-vous à la voix.' };
-    if (role === 'chef_de_ligne') return { phase: 'traque', tone: 'go', title: 'Battue en cours', text: 'Veillez à la ligne de postes et à la sécurité. La fin vous sera annoncée.' };
+    if (role === 'chef_de_ligne' && !post) return { phase: 'traque', tone: 'go', title: 'Battue en cours', text: 'Veillez à la ligne de postes et à la sécurité. La fin vous sera annoncée.' };
     return post
       ? { phase: 'traque', tone: 'go', title: `Battue en cours — poste ${post.number}`, text: 'Restez à votre poste. Tir uniquement dans les angles autorisés. La fin vous sera annoncée ici.' }
       : { phase: 'traque', tone: 'warn', title: 'Battue en cours', text: 'Vous n’avez pas de poste : voyez le responsable.' };
   }
   if (role === 'traqueur') return { phase: 'rejoindre', tone: 'warn', title: 'Vous êtes traqueur', text: 'Préparez-vous : la traque démarrera au signal du responsable.' };
-  if (role === 'chef_de_ligne') return { phase: 'rejoindre', tone: 'warn', title: 'Vous êtes chef de ligne', text: 'Vérifiez la mise en place des postés avant le début de battue.' };
+  // Le chef de ligne est un chasseur posté : il rejoint son poste ; sa ligne s'affiche en dessous.
+  if (role === 'chef_de_ligne' && !post) return { phase: 'rejoindre', tone: 'warn', title: 'Vous êtes chef de ligne', text: 'Vérifiez la mise en place des postés avant le début de battue.' };
   if (post && current.me.in_place) {
     return { phase: 'rejoindre', tone: 'go', title: `En place au poste n° ${post.number}`, text: 'Attendez le signal de début de battue.' };
   }
