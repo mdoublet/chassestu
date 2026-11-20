@@ -14,7 +14,6 @@ export async function placesView(main) {
   const list = h('div');
   const mapEl = h('div.places-map');
   main.append(h('h1', 'Lieux'),
-    h('p.muted.small', 'Points de rendez-vous et de regroupement (cabane, restaurant…). Les parkings des territoires sont aussi proposés.'),
     h('div.places-layout', list, mapEl));
   const map = L.map(mapEl).setView([46.6, 2.4], 6);
   addBasemaps(map);

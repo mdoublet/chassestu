@@ -10,7 +10,7 @@ import { addBasemaps } from '../map/basemap.js';
 import { escapeHtml, toLatLng, ensureHatchPattern, postIcon, traqueLayers } from '../map/shapes.js';
 import { api } from '../api.js';
 import { state } from '../state.js';
-import { h, fill, toast, errorMessage, confirmDialog, copyText, modal } from '../ui.js';
+import { h, fill, toast, errorMessage, confirmDialog, copyText, modal, fold } from '../ui.js';
 import {
   DAY_STATUS_LABELS, ROLE_LABELS, CATEGORY_LABELS, COMMON_SPECIES, DIFFICULTY_LABELS,
   formatHuntDate, formatTime, postedSummary,
@@ -407,12 +407,18 @@ async function dayConsole(main, dayId) {
   // Battues : nouvelle battue, regroupement
   // -------------------------------------------------------------------------
 
+  /** Bloc d'étape de la battue : carte dépliable, résumé à droite (état gardé pendant la session). */
+  function step(key, title, extra, open, ...content) {
+    return h(`section.card.step.step-${key}`, fold(title, { key: `battue.${key}`, extra, open }, ...content));
+  }
+
   function battuesList() {
-    const { battues } = dv.detail;
+    // La battue en cours a son propre bloc : seules les précédentes sont listées (repliées).
+    const battues = dv.detail.battues.filter((b) => b.status !== 'en_cours');
     if (!battues.length) return null;
-    return h('ul.plain.battues', battues.map((b) => h('li', { class: b.status === 'en_cours' ? 'running' : '' },
+    return fold('Battues précédentes', { key: 'day.battues', extra: String(battues.length) }, h('ul.plain.battues', battues.map((b) => h('li', { class: b.status === 'en_cours' ? 'running' : '' },
       h('strong', `Battue n° ${b.number}`), ` · ${b.territory_name}${b.hunt_plan_name ? ` (${b.hunt_plan_name})` : ''} · ${b.participant_count} participant(s) · `,
-      b.status === 'terminee' ? `terminée${b.ended_at ? ` à ${timeOf(b.ended_at)}` : ''}` : b.started_at ? `traque depuis ${timeOf(b.started_at)}` : b.assignments_published_at ? 'postes publiés' : 'en préparation')));
+      b.status === 'terminee' ? `terminée${b.ended_at ? ` à ${timeOf(b.ended_at)}` : ''}` : b.started_at ? `traque depuis ${timeOf(b.started_at)}` : b.assignments_published_at ? 'postes publiés' : 'en préparation'))));
   }
 
   function newBattueForm() {
@@ -540,8 +546,7 @@ async function dayConsole(main, dayId) {
     const present = dv.detail.participants.filter((p) => p.present);
     const editable = !hunt.started_at;
     const { posted } = postedSummary(participants);
-    return h('section.card',
-      h('h3', `1. Participants · ${participants.length} dont ${posted} posté(s)`),
+    return step('participants', '1. Participants', `${participants.length} · ${posted} posté(s)`, false,
       h('table.list.compact', h('tbody', present.map((dp) => {
         const p = selected.get(dp.id);
         return h('tr', { class: p ? '' : 'absent' },
@@ -598,8 +603,7 @@ async function dayConsole(main, dayId) {
     }, h('span.post-label', label, extra ? h('small', extra) : null), h('span.chips', people.map((p) => chip(p, post))));
 
     const unassigned = posted.filter((p) => !p.post_id);
-    return h('section.card.assign',
-      h('h3', `2. Postes · ${dayPosts.length} pour ${posted.length} posté(s)`),
+    return step('postes', '2. Postes', `${dayPosts.length} pour ${posted.length} posté(s)${hunt.assignments_published_at ? ' · publiés' : ''}`, true,
       editable && proposal?.post_ids.length && !sameAsProposal
         ? h('button', { onclick: async () => {
             const nobodyPlaced = !participants.some((x) => x.post_id);
@@ -607,7 +611,8 @@ async function dayConsole(main, dayId) {
           } },
             proposal.plan_count ? `Prendre les postes du plan « ${hunt.hunt_plan_name} » à ${proposal.plan_count} chasseurs (${proposal.post_ids.length})` : `Prendre la proposition (${proposal.post_ids.length} postes)`)
         : null,
-      editable ? h('p.small.muted', picked ? `Touchez le poste où placer ${picked.name}.` : 'Touchez un nom puis un poste pour le placer. Postes : ajout et retrait sur la carte. ⛰ : difficulté d’accès, 🥾 : marche, ★ : chef de ligne.') : null,
+      editable ? (picked ? h('p.small.alert.muted', `Touchez le poste où placer ${picked.name}.`)
+        : h('details.legend.small.muted', h('summary', 'ⓘ Aide'), 'Touchez un nom puis un poste pour le déplacer (échange si occupé). Postes : ajout et retrait sur la carte. ⛰ difficulté d’accès · 🥾 marche · ★ chef de ligne.')) : null,
       h('label.check.small', h('input', { type: 'checkbox', checked: dv.showPostNames, onchange: (e) => {
         dv.showPostNames = e.target.checked;
         try { localStorage.setItem(NAMES_KEY, e.target.checked ? '1' : '0'); } catch { /* rien */ }
@@ -667,8 +672,7 @@ async function dayConsole(main, dayId) {
     const save = () => act(() => api.put(`/hunts/${hunt.id}/species`, { species: rows.filter((r) => r.species.trim()) }), 'Espèces enregistrées.');
     const name = h('input', { list: 'species-list', placeholder: 'Espèce (ex. Sanglier)', maxlength: 60 });
     const quota = h('input', { type: 'number', min: 0, max: 999, placeholder: 'nombre' });
-    return h('section.card.species-editor',
-      h('h3', '3. Espèces tirables et nombre'),
+    return step('especes', '3. Espèces', rows.length ? rows.map((r) => `${r.species}${r.quota != null ? ` ${r.quota}` : ''}`).join(', ') : 'aucune précisée', false,
       rows.length
         ? h('table.list.compact', h('tbody', rows.map((r, i) => h('tr',
             h('td', r.species),
@@ -688,8 +692,7 @@ async function dayConsole(main, dayId) {
   function carpoolSection() {
     const c = dv.carpool;
     if (!c) return null;
-    return h('section.card.carpool',
-      h('h3', `4. 🚗 Covoiturage vers les parkings · ${c.cars.length} voiture(s)`),
+    return step('covoit', '4. Covoiturage', `${c.cars.length} voiture(s)${c.cars.length < c.carsAdvised ? ' · ⚠' : ''}`, false,
       c.cars.length < c.carsAdvised ? h('p.alert.warn', `${c.carsAdvised} voitures conseillées (${c.maxPerCar} chasseurs au plus par voiture) : il en manque ${c.carsAdvised - c.cars.length}.`) : null,
       h('ul.plain', c.cars.map((car) => h('li',
         h('strong', car.driver.name), ` → ${car.destinationName}`,
@@ -713,8 +716,7 @@ async function dayConsole(main, dayId) {
   function readinessSection() {
     const r = readiness();
     if (!r || dv.hunt.hunt.started_at) return null;
-    return h('section.card',
-      h('h3', `5. Mise en place · ${r.ready}/${r.rows.length} poste(s) occupé(s) et confirmé(s)`),
+    return step('place', '5. Mise en place', `${r.ready}/${r.rows.length} confirmé(s)`, true,
       h('ul.plain.readiness', r.rows.map(({ post, holders, ok }) => h('li', { class: ok ? 'ok' : '' },
         h('span.light', ok ? '●' : '○'),
         h('strong', `Poste ${post.number}${post.name ? ` · ${post.name}` : ''}`),
@@ -728,8 +730,7 @@ async function dayConsole(main, dayId) {
       participants.map((p) => h('option', { value: p.id }, p.name)));
     const sp = h('select', { 'aria-label': 'Espèce' }, [...new Set([...species.map((x) => x.species), ...COMMON_SPECIES])].map((x) => h('option', { value: x }, x)));
     const cat = h('select', { 'aria-label': 'Catégorie' }, Object.entries(CATEGORY_LABELS).map(([v, l]) => h('option', { value: v, selected: v === 'indetermine' }, l)));
-    return h('section.card',
-      h('h3', `Prélèvements de la battue n° ${hunt.number} (${harvests.length})`),
+    return step('prelev', `Prélèvements · battue ${hunt.number}`, String(harvests.length), true,
       harvests.length ? h('ul.plain', harvests.map((x) => h('li',
         `${x.species} ${CATEGORY_LABELS[x.category]}${x.shooter ? ` — ${x.shooter}` : ''} · ${timeOf(x.created_at)} `,
         h('button.link.danger', { onclick: () => act(() => api.del(`/hunts/${hunt.id}/harvests/${x.id}`)) }, 'Supprimer')))) : null,
@@ -750,7 +751,6 @@ async function dayConsole(main, dayId) {
     } else if (day.status === 'en_cours') {
       sections = [
         presentsSection(),
-        h('h2.section-title', 'Battues'),
         battuesList(),
         run && dv.hunt
           // Ordre des actions ; prélèvements seulement une fois la battue lancée.

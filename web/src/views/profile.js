@@ -1,7 +1,7 @@
 // Mon profil : nom, marche et voiture (servent aux postes accessibles et au covoiturage).
 import { api } from '../api.js';
 import { state } from '../state.js';
-import { h, toast, errorMessage, confirmDialog } from '../ui.js';
+import { h, toast, errorMessage, confirmDialog, fold } from '../ui.js';
 import { WALK_LABELS } from '../lib/hunts.js';
 import { signOut } from '../auth.js';
 
@@ -33,16 +33,11 @@ export function profileView(main, { refreshMe }) {
     },
   },
   h('label', 'Nom', name),
-  h('label', 'Combien pouvez-vous marcher pour rejoindre un poste ?', walk),
-  h('label.check', car, 'Je viens avec ma voiture'),
-  h('label', 'Places libres pour d’autres chasseurs', seats),
-  h('p.small.muted', 'Sert à vous proposer des postes accessibles et à organiser le covoiturage. L’organisateur peut l’ajuster pour une journée.'),
+  h('label', 'Marche jusqu’au poste', walk),
+  h('div.row', h('label.check', car, 'Ma voiture'), h('label', 'Places libres', seats)),
   h('button.primary', { type: 'submit' }, 'Enregistrer')),
-  h('section.card',
-    h('h2', 'Mon compte'),
-    u.email ? h('p.small', `Connecté avec ${u.email}.`) : null,
+  h('section.card', fold('Mon compte', { key: 'profile.account', extra: u.email ?? '' },
     h('button', { onclick: async () => { await signOut(); location.hash = '#/'; location.reload(); } }, 'Se déconnecter'),
-    h('p.small.muted', 'Supprimer votre compte retire votre accès à toutes vos associations. Cette action est définitive.'),
     h('button.danger', {
       onclick: async () => {
         if (!(await confirmDialog('Supprimer mon compte', 'Supprimer définitivement votre compte et votre accès à toutes vos associations ?', 'Supprimer', true))) return;
@@ -54,5 +49,5 @@ export function profileView(main, { refreshMe }) {
           toast(errorMessage(err), 'error');
         }
       },
-    }, 'Supprimer mon compte')));
+    }, 'Supprimer mon compte'))));
 }

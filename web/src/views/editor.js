@@ -9,7 +9,7 @@ import { addBasemaps } from '../map/basemap.js';
 import { escapeHtml, toLatLng, ensureHatchPattern, postIcon, parkingIcon } from '../map/shapes.js';
 import { api } from '../api.js';
 import { state } from '../state.js';
-import { h, fill, toast, errorMessage, confirmDialog, promptDialog, modal } from '../ui.js';
+import { h, fill, toast, errorMessage, confirmDialog, promptDialog, modal, fold } from '../ui.js';
 import { History } from '../lib/history.js';
 import { checkPost, selfIntersects } from '../lib/checks.js';
 import booleanPointInPolygon from '@turf/boolean-point-in-polygon';
@@ -952,35 +952,38 @@ export async function editorView(main, start) {
     const parkingSelect = bound(kind, item, 'parking_id', {}, 'select');
     parkingSelect.append(h('option', { value: '' }, '— aucun —'), ...ed.data.parkings.map((pk) => h('option', { value: pk.id, selected: pk.id === item.parking_id }, pk.name)));
     parkingSelect.value = item.parking_id ?? '';
+    // Essentiel d'abord ; consignes, chemin et plans de chasse dans des blocs repliables.
+    const plans = item.plan_uses ?? [];
+    const hasNotes = Boolean(item.instructions || item.special_instructions);
     return h(
       'section.props',
-      h('h3', `Poste ${item.number}`),
+      h('h3', `Poste ${item.number}${item.name ? ` · ${item.name}` : ''}`),
       item.invalid_reason
-        ? h('p.alert.danger', `Poste invalide : il est à moins de ${ed.data.exclusion?.buffer_distance_m ?? 150} m d’une habitation. Déplacez-le ; il ne sera pas proposé pour les battues tant qu’il est invalide.`)
-        : item.nearest_dwelling_m != null
-          ? h('p.small.muted', `Habitation à ${item.nearest_dwelling_m} m : rappeler l’interdiction de tirer en direction de l’habitation.`)
-          : null,
-      (item.plan_uses ?? []).length
-        ? h('p.small', `Utilisé dans les plans de chasse : ${item.plan_uses.join(', ')} chasseurs. `, h('a', { href: `#/plans/${ed.territoryId}` }, 'Voir les plans de chasse'))
+        ? h('p.alert.danger', `⛔ À moins de ${ed.data.exclusion?.buffer_distance_m ?? 150} m d’une habitation : à déplacer (non proposé en battue).`)
         : null,
-      isOutside(item) ? h('p.alert.warn', 'Poste hors du territoire : il faut le droit de chasse à cet endroit (ou l’accord du propriétaire).') : null,
+      isOutside(item) ? h('p.alert.warn', 'Hors du territoire : droit de chasse ou accord du propriétaire nécessaire.') : null,
       h('div.row', field('Numéro', bound(kind, item, 'number', { type: 'number', min: 1, max: 999, required: true })), field('Nom', bound(kind, item, 'name', { maxlength: 200 }))),
-      field('Parking', parkingSelect),
-      field('Ligne', lineSelect(item)),
-      field('Difficulté d’accès (pour les chasseurs qui marchent peu)', difficultySelect(item)),
-      field('Consignes', bound(kind, item, 'instructions', { rows: 3, maxlength: 2000 }, 'textarea')),
-      h('label.check', bound(kind, item, 'special_instructions', { type: 'checkbox' }), 'Consignes particulières (signalé par ⚠)'),
-      h('label.check', bound(kind, item, 'active', { type: 'checkbox' }), 'Poste actif'),
-      h('p.small', item.access_path ? `Chemin d’accès : ${item.access_path_length_m} m. Déplacez ses sommets pour l’ajuster.` : 'Pas encore de chemin d’accès.'),
-      canEdit ? pathProposal(item) : null,
-      canEdit
-        ? h(
-            'div.buttons',
-            !item.access_path && ed.proposal?.postId !== item.id ? h('button', { onclick: () => proposePath(item) }, 'Proposer un chemin') : null,
-            h('button', { onclick: () => startDraw('path') }, item.access_path ? 'Retracer le chemin' : 'Tracer le chemin'),
-            h('button', { onclick: () => startRecording(item) }, 'Enregistrer en marchant'),
-            item.access_path ? h('button', { onclick: () => run(() => updateItem('posts', item, { access_path: null })) }, 'Effacer le chemin') : null,
-          )
+      h('div.row', field('Ligne', lineSelect(item)), field('Parking', parkingSelect)),
+      h('div.row', field('Difficulté d’accès', difficultySelect(item)),
+        h('label.check', bound(kind, item, 'active', { type: 'checkbox' }), 'Actif')),
+      item.nearest_dwelling_m != null && !item.invalid_reason ? h('p.small.muted', `Habitation à ${item.nearest_dwelling_m} m : pas de tir dans sa direction.`) : null,
+      fold('Chemin d’accès', { key: 'post.path', open: !item.access_path || ed.proposal?.postId === item.id, extra: item.access_path ? `${item.access_path_length_m} m` : 'aucun' },
+        canEdit ? pathProposal(item) : null,
+        item.access_path && canEdit ? h('p.small.muted', 'Déplacez ses sommets sur la carte pour l’ajuster.') : null,
+        canEdit
+          ? h('div.buttons.compact',
+              !item.access_path && ed.proposal?.postId !== item.id ? h('button', { onclick: () => proposePath(item) }, 'Proposer') : null,
+              h('button', { onclick: () => startDraw('path') }, item.access_path ? 'Retracer' : 'Tracer'),
+              h('button', { onclick: () => startRecording(item), title: 'Enregistrer le trajet en marchant (GPS)' }, '🚶 En marchant'),
+              item.access_path ? h('button.link.danger', { onclick: () => run(() => updateItem('posts', item, { access_path: null })) }, 'Effacer') : null)
+          : null),
+      fold('Consignes', { key: 'post.notes', open: hasNotes, extra: item.special_instructions || /attention/i.test(item.instructions ?? '') ? '⚠' : hasNotes ? '✔' : '' },
+        bound(kind, item, 'instructions', { rows: 3, maxlength: 2000, placeholder: 'Angles de tir, repères…' }, 'textarea'),
+        h('label.check', bound(kind, item, 'special_instructions', { type: 'checkbox' }), 'Consignes particulières ⚠')),
+      plans.length
+        ? fold('Plans de chasse utilisant ce poste', { key: 'post.plans', extra: String(plans.length) },
+            h('ul.plain.small', plans.map((x) => h('li', `${x} chasseurs`))),
+            h('a.small', { href: `#/plans/${ed.territoryId}` }, 'Ouvrir les plans de chasse'))
         : null,
       del,
     );
@@ -1033,7 +1036,7 @@ export async function editorView(main, start) {
     const count = (l) => ed.data.posts.filter((p) => p.line_id === l.id);
     const isolated = ed.data.posts.filter((p) => !p.line_id).length;
     return foldSection('lines', `Lignes (${lines.length})`, lines.length && isolated ? `· ${isolated} poste(s) hors ligne` : '',
-      h('p.small.muted', 'Une ligne est un groupe de postes, avec un chef de ligne désigné à chaque battue. Rattachez un poste à une ligne depuis sa fiche.'),
+      lines.length ? null : h('p.small.muted', 'Groupe de postes, avec un chef de ligne à chaque battue. Rattachez un poste depuis sa fiche.'),
       h('ul.obj-list', lines.map((l) => {
         const lp = count(l).sort((a, b) => a.number - b.number);
         return h('li.obj-row',
@@ -1174,7 +1177,7 @@ export async function editorView(main, start) {
     const posts = [...ed.data.posts].sort((a, b) => a.number - b.number);
     const problems = posts.filter((p) => p.invalid_reason || !p.parking_id || !p.access_path || isOutside(p)).length;
     return foldSection('posts', `Postes (${posts.length})`, problems ? `· ${problems} à compléter` : '',
-      posts.length ? h('p.small.muted.legend', '🅿 parking · 🥾 chemin · ✅ actif · 🗺 dans le territoire (grisé : non) · ⚠ consignes particulières · ⛔ trop près d’une habitation') : h('p.small.muted', 'Aucun poste : « + Poste » pour en placer un.'),
+      posts.length ? h('details.legend.small.muted', h('summary', 'ⓘ Légende'), '🅿 parking · 🥾 chemin · ✅ actif · 🗺 dans le territoire (grisé : non) · ⚠ consignes particulières · ⛔ trop près d’une habitation') : h('p.small.muted', 'Aucun poste : « + Poste » pour en placer un.'),
       h('ul.obj-list', posts.map((p) => objectRow('posts', p, {
         symbols: [
           sym('🅿', !!p.parking_id, 'Parking associé', 'Pas de parking associé'),
@@ -1248,7 +1251,7 @@ export async function editorView(main, start) {
       return run(() => updateItem('dwellings', d, { ignored: true, ignored_reason: reason.trim() }));
     };
     return foldSection('dwellings', `Bâtiments (${all.filter((d) => !d.ignored).length})`, toCheck ? `· ⚠ ${toCheck} à vérifier` : '',
-      all.length ? h('p.small.muted.legend', '🏛 IGN · ✍ ajoutée à la main · ⚠ à vérifier · 🚫 supprimé (ne compte plus)') : h('p.small.muted', 'Aucun bâtiment : actualisez-les depuis la section « Données ».'),
+      all.length ? h('details.legend.small.muted', h('summary', 'ⓘ Légende'), '🏛 IGN · ✍ ajoutée à la main · ⚠ à vérifier · 🚫 supprimé (ne compte plus)') : h('p.small.muted', 'Aucun bâtiment : actualisez-les depuis la section « Données ».'),
       h('ul.obj-list', shown.map((d) => objectRow('dwellings', d, {
         symbols: [
           h('span.sym', { title: d.source === 'manuel' ? 'Ajoutée à la main' : 'Bâtiment IGN (BD TOPO)' }, d.source === 'manuel' ? '✍' : '🏛'),
@@ -1271,14 +1274,12 @@ export async function editorView(main, start) {
     const invalid = ed.data.posts.filter((p) => p.invalid_reason).length;
     if (!ex) return null;
     const pct = ed.data.territory.area_ha ? Math.round((100 * ex.area_ha) / ed.data.territory.area_ha) : 0;
-    return h(
-      'section.zone-summary',
-      h('p', h('span.swatch.exclusion'), h('strong', 'Non chassable'), ` (habitations à moins de ${ex.buffer_distance_m} m) : ${ex.area_ha.toLocaleString('fr-FR')} ha, soit ${pct} % du territoire.`),
-      h('p.small', `${ds.filter((d) => !d.ignored).length} habitation(s) prise(s) en compte, ${ds.filter((d) => d.ignored).length} ignorée(s).`,
-        ex.dwellings_refreshed_at ? ` Bâtiments IGN du ${new Date(ex.dwellings_refreshed_at).toLocaleDateString('fr-FR')}.` : ''),
-      ex.needs_refresh ? h('p.alert.warn', 'Bâtiments à actualiser : jamais importés, ou territoire / distance modifiés depuis le dernier import.') : null,
-      invalid ? h('p.alert.danger', `${invalid} poste(s) invalide(s) : trop près d’une habitation, à déplacer.`) : null,
-      ex.needs_refresh && canEdit ? h('p.small.muted', 'Actualisation : section « Données » en bas.') : null,
+    const kept = ds.filter((d) => !d.ignored).length;
+    return h('section.zone-summary',
+      h('p', { title: `Habitations à moins de ${ex.buffer_distance_m} m${ex.dwellings_refreshed_at ? ` · bâtiments IGN du ${new Date(ex.dwellings_refreshed_at).toLocaleDateString('fr-FR')}` : ''}` },
+        h('span.swatch.exclusion'), h('strong', 'Non chassable'), ` ${ex.area_ha.toLocaleString('fr-FR')} ha (${pct} %) · ${kept} habitation${kept > 1 ? 's' : ''} à ${ex.buffer_distance_m} m`),
+      ex.needs_refresh ? h('p.alert.warn', 'Bâtiments à actualiser ', canEdit ? h('button.link', { onclick: refreshDwellings }, 'Actualiser') : null) : null,
+      invalid ? h('p.alert.danger', `⛔ ${invalid} poste(s) trop près d’une habitation`) : null,
     );
   }
 

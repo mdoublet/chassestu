@@ -417,6 +417,13 @@ h2.editor-title { font-size: 1.2rem; margin: 0.25rem 0 0.5rem; }
 
 /* Éditeur : sections dépliables Postes / Parkings / Réserves / Bâtiments / Données */
 details.fold { border-top: 1px solid var(--border); padding: 0.35rem 0; }
+details.fold > summary { display: flex; align-items: baseline; gap: 0.4rem; flex-wrap: wrap; list-style: none; }
+details.fold > summary::-webkit-details-marker { display: none; }
+details.fold > summary::before { content: '▸'; color: var(--muted); width: 0.9rem; flex: none; }
+details.fold[open] > summary::before { content: '▾'; }
+.fold-extra { font-size: 0.85rem; font-weight: 400; color: var(--muted); }
+.fold-body { padding: 0.25rem 0 0.25rem 0.9rem; }
+.card > details.fold:first-child { border-top: 0; }
 details.fold > summary { cursor: pointer; font-weight: 600; padding: 0.25rem 0; }
 details.fold[open] > summary { margin-bottom: 0.25rem; }
 details.fold .legend { margin: 0 0 0.25rem; }
@@ -461,3 +468,46 @@ details.fold.hunt-plan[open] { padding-bottom: 0.75rem; }
 .warn-text { color: var(--warn); }
 .line-card { border-left: 4px solid #b8860b; }
 .line-info { margin: 0.25rem 0 0.5rem; padding: 0.4rem 0.75rem; background: color-mix(in srgb, #b8860b 10%, var(--surface)); border-radius: 8px; }
+
+/* Accueil : tuiles icône + libellé */
+.icon-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 0.5rem; margin: 0.75rem 0; }
+.icon-tile { display: flex; flex-direction: column; align-items: center; gap: 0.25rem; padding: 0.75rem 0.25rem; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; text-decoration: none; color: var(--text); font-weight: 600; font-size: 0.9rem; }
+.icon-tile .icon { font-size: 1.6rem; }
+.push-card .push-row { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; flex-wrap: wrap; }
+/* Journées : une ligne par journée */
+.day-list { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); overflow: hidden; margin: 0.5rem 0; }
+.day-row { display: flex; align-items: center; gap: 0.5rem; padding: 0.6rem 0.75rem; border-bottom: 1px solid var(--border); text-decoration: none; color: var(--text); flex-wrap: wrap; }
+.day-row:last-child { border-bottom: 0; }
+.day-row .day-date { font-weight: 600; min-width: 7.5rem; text-transform: capitalize; }
+
+/* Même modèle pour tous les blocs dépliables (cartes de la journée) */
+details.card > summary, .step details.fold > summary { display: flex; align-items: baseline; gap: 0.4rem; flex-wrap: wrap; list-style: none; cursor: pointer; font-weight: 600; }
+details.card > summary::-webkit-details-marker { display: none; }
+details.card > summary::before { content: '▸'; color: var(--muted); width: 0.9rem; flex: none; }
+details.card[open] > summary::before { content: '▾'; }
+.card.step { padding-top: 0.6rem; padding-bottom: 0.6rem; }
+.card.step > details.fold { border-top: 0; padding: 0; }
+.card.step .fold-body { padding-left: 0; padding-top: 0.5rem; }
+.battue-roles { display: grid; grid-template-columns: max-content 1fr; gap: 0.35rem 0.5rem; align-items: center; }
+.battue-roles .hunt-plan-choice { display: contents; }
+.battue-roles select { width: 100%; }
+@media (max-width: 760px) {
+  .battue-actions { position: static; }
+}
+.territory-card-head input.territory-name { flex: 1; min-width: 0; }
+.territory-card .counts { margin: 0.1rem 0 0.4rem; }
+.territory-actions { align-items: center; }
+.territories-map { height: 34vh; margin-bottom: 0.25rem; }
+details.legend { margin: 0 0 0.25rem; }
+details.legend > summary { cursor: pointer; display: inline; }
+.props .row { align-items: end; }
+.buttons.compact button, .buttons.compact .button { min-height: 36px; padding: 0.25rem 0.7rem; }
+.props details.fold { border-top: 1px solid var(--border); }
+.member-list { padding: 0.25rem 0.9rem; }
+.member-row > summary .fold-title { font-weight: 600; }
+.member-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 0.5rem; align-items: end; margin-bottom: 0.4rem; }
+/* Alertes : compactes (2 lignes de texte au plus) */
+ul.alerts li a { display: grid; grid-template-columns: 1fr auto; gap: 0 0.5rem; }
+ul.alerts li a strong { grid-column: 1; }
+ul.alerts li a > .small { grid-column: 2; grid-row: 1; }
+ul.alerts li a > span:not(.small) { grid-column: 1 / -1; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-size: 0.88rem; color: var(--muted); }

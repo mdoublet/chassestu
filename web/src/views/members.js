@@ -1,11 +1,14 @@
 import { api } from '../api.js';
 import { state } from '../state.js';
-import { h, fill, copyText, errorMessage, formatDate, modal, toast, ROLE_LABELS } from '../ui.js';
+import { h, fill, copyText, errorMessage, formatDate, modal, toast, confirmDialog, fold, ROLE_LABELS } from '../ui.js';
 
 export async function membersView(main) {
   const isPresident = state.role === 'president';
   // Président adjoint : droits du président, sauf sur les droits des autres (rôles, retraits, mandats).
   const isTitular = isPresident && !state.tenant?.deputy_until;
+  const membersBox = h('div');
+  const invitesBox = h('div');
+  main.append(h('h1', 'Membres'), membersBox, ...(isPresident ? [h('section', h('h2', 'Inviter'), invitesBox)] : []));
   const shortDate = (iso) => new Date(new Date(iso).getTime() - 1000).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' });
 
   async function setDeputy(m, until) {
@@ -31,21 +34,11 @@ export async function membersView(main) {
     if (v === 'ok' && input.value) setDeputy(m, input.value);
   }
 
-  function deputyCell(m) {
-    if (m.role === 'president') return h('td');
-    if (m.deputy_until) {
-      return h('td', h('span.badge.deputy', `Adjoint jusqu’au ${shortDate(m.deputy_until)}`),
-        isTitular ? h('button.link', { onclick: () => askDeputy(m) }, ' Prolonger') : null,
-        isTitular ? h('button.link.danger', { onclick: () => setDeputy(m, null) }, ' Fin du mandat') : null);
-    }
-    return h('td', isTitular ? h('button.link', { onclick: () => askDeputy(m), title: 'Mandat temporaire : droits du président sauf les droits des membres' }, 'Nommer adjoint') : null);
-  }
-  const membersBox = h('div');
-  const invitesBox = h('div');
-  main.append(h('h1', 'Membres'), ...(isPresident ? [h('section', h('h2', 'Inviter'), invitesBox)] : []), h('section', h('h2', 'Membres de l’association'), membersBox));
-
-  /** Marche, voiture et places : modifiables par le président et les responsables. */
-  function mobilityCells(m) {
+  /**
+   * Un membre = une ligne dépliable : nom et résumé (rôle, marche, voiture) ;
+   * dépliée : rôle, président adjoint, marche, voiture, retrait.
+   */
+  function memberRow(m) {
     const save = async (body) => {
       try {
         await api.patch(`/members/${encodeURIComponent(m.id)}/mobility`, body);
@@ -55,72 +48,55 @@ export async function membersView(main) {
         toast(errorMessage(err), 'error');
       }
     };
-    return [
-      h('td', h('select', { 'aria-label': `Marche de ${m.display_name}`, onchange: (e) => save({ walking_ability: e.target.value ? Number(e.target.value) : null }) },
-        h('option', { value: '' }, '—'), [1, 2, 3, 4, 5].map((v) => h('option', { value: v, selected: m.walking_ability === v }, `🥾 ${v}`)))),
-      h('td', h('input', { type: 'checkbox', checked: !!m.has_car, 'aria-label': `Voiture de ${m.display_name}`, onchange: (e) => save({ has_car: e.target.checked }) })),
-      h('td', h('input', { type: 'number', min: 0, max: 8, value: m.car_seats ?? '', disabled: !m.has_car, style: 'width:4.5rem', 'aria-label': `Places de ${m.display_name}`,
-        onchange: (e) => save({ car_seats: e.target.value === '' ? null : Number(e.target.value) }) })),
-    ];
+    const summary = [
+      m.deputy_until ? `Adjoint → ${shortDate(m.deputy_until)}` : ROLE_LABELS[m.role],
+      m.walking_ability ? `🥾${m.walking_ability}` : null,
+      m.has_car ? `🚗${m.car_seats ?? ''}` : null,
+    ].filter(Boolean).join(' · ');
+    const role = isTitular
+      ? h('select', { 'aria-label': `Rôle de ${m.display_name}`, onchange: async (e) => {
+          try {
+            await api.patch(`/members/${encodeURIComponent(m.id)}`, { role: e.target.value });
+            toast('Rôle modifié.');
+            loadMembers();
+          } catch (err) {
+            toast(errorMessage(err), 'error');
+            e.target.value = m.role;
+          }
+        } }, Object.entries(ROLE_LABELS).map(([v, l]) => h('option', { value: v, selected: v === m.role }, l)))
+      : h('span', ROLE_LABELS[m.role]);
+    const deputy = m.role === 'president' ? null
+      : m.deputy_until
+        ? h('div', h('span.badge.deputy', `Président adjoint jusqu’au ${shortDate(m.deputy_until)}`),
+            isTitular ? h('button.link', { onclick: () => askDeputy(m) }, ' Prolonger') : null,
+            isTitular ? h('button.link.danger', { onclick: () => setDeputy(m, null) }, ' Fin du mandat') : null)
+        : isTitular ? h('button.link', { onclick: () => askDeputy(m), title: 'Droits du président, sauf les droits des membres' }, 'Nommer président adjoint') : null;
+    return fold(`${m.display_name || '(sans nom)'}${m.id === state.user.id ? ' (vous)' : ''}`, { extra: summary, className: 'member-row' },
+      h('div.member-grid',
+        h('label', 'Rôle', role),
+        h('label', 'Marche', h('select', { 'aria-label': `Marche de ${m.display_name}`, onchange: (e) => save({ walking_ability: e.target.value ? Number(e.target.value) : null }) },
+          h('option', { value: '' }, '—'), [1, 2, 3, 4, 5].map((v) => h('option', { value: v, selected: m.walking_ability === v }, `🥾 ${v}`)))),
+        h('label.check', h('input', { type: 'checkbox', checked: !!m.has_car, 'aria-label': `Voiture de ${m.display_name}`, onchange: (e) => save({ has_car: e.target.checked }) }), 'Voiture'),
+        h('label', 'Places', h('input', { type: 'number', min: 0, max: 8, value: m.car_seats ?? '', disabled: !m.has_car, 'aria-label': `Places de ${m.display_name}`,
+          onchange: (e) => save({ car_seats: e.target.value === '' ? null : Number(e.target.value) }) }))),
+      [m.email, m.phone].filter(Boolean).length ? h('p.small.muted', [m.email, m.phone].filter(Boolean).join(' · ')) : null,
+      deputy,
+      isTitular && m.id !== state.user.id
+        ? h('button.link.danger', { onclick: async () => {
+            if (!(await confirmDialog('Retirer', `Retirer ${m.display_name} de l’association ?`, 'Retirer', true))) return;
+            try {
+              await api.del(`/members/${encodeURIComponent(m.id)}`);
+              loadMembers();
+            } catch (err) {
+              toast(errorMessage(err), 'error');
+            }
+          } }, 'Retirer de l’association')
+        : null);
   }
 
   async function loadMembers() {
     const { members } = await api.get('/members');
-    fill(membersBox, 
-      h(
-        'table.list',
-        h('thead', h('tr', h('th', 'Nom'), h('th', 'Contact'), h('th', 'Rôle'), isPresident ? h('th', 'Président adjoint') : null, h('th', { title: 'Capacité de marche (1 peu … 5 chemins escarpés)' }, 'Marche'), h('th', 'Voiture'), h('th', 'Places'), isTitular ? h('th', '') : null)),
-        h(
-          'tbody',
-          members.map((m) =>
-            h(
-              'tr',
-              h('td', m.display_name || '(sans nom)', m.id === state.user.id ? ' (vous)' : ''),
-              h('td.small', [m.email, m.phone].filter(Boolean).join(' · ')),
-              h(
-                'td',
-                isTitular
-                  ? h(
-                      'select',
-                      {
-                        'aria-label': `Rôle de ${m.display_name}`,
-                        onchange: async (e) => {
-                          try {
-                            await api.patch(`/members/${encodeURIComponent(m.id)}`, { role: e.target.value });
-                            toast('Rôle modifié.');
-                          } catch (err) {
-                            toast(errorMessage(err), 'error');
-                            e.target.value = m.role;
-                          }
-                        },
-                      },
-                      Object.entries(ROLE_LABELS).map(([v, l]) => h('option', { value: v, selected: v === m.role }, l)),
-                    )
-                  : ROLE_LABELS[m.role],
-              ),
-              isPresident ? deputyCell(m) : null,
-              ...mobilityCells(m),
-              isTitular
-                ? h(
-                    'td',
-                    h('button.link.danger', {
-                      onclick: async () => {
-                        if (!confirm(`Retirer ${m.display_name} de l’association ?`)) return;
-                        try {
-                          await api.del(`/members/${encodeURIComponent(m.id)}`);
-                          loadMembers();
-                        } catch (err) {
-                          toast(errorMessage(err), 'error');
-                        }
-                      },
-                    }, 'Retirer'),
-                  )
-                : null,
-            ),
-          ),
-        ),
-      ),
-    );
+    fill(membersBox, h('div.card.member-list', members.map(memberRow)));
   }
 
   async function loadInvites() {
@@ -131,7 +107,6 @@ export async function membersView(main) {
     fill(invitesBox, 
       h(
         'div.card',
-        h('p', 'Créez un lien et partagez-le dans le groupe WhatsApp ou par SMS. Toute personne qui l’ouvre rejoint l’association avec le rôle choisi.'),
         h('div.row', h('label', 'Rôle', role), h('label', 'Validité', days)),
         h('button.primary', {
           onclick: async () => {
@@ -148,15 +123,15 @@ export async function membersView(main) {
               toast(errorMessage(err), 'error');
             }
           },
-        }, 'Créer un lien d’invitation'),
+        }, 'Créer un lien à partager'),
       ),
       invitations.length
-        ? h(
-            'ul.plain',
+        ? fold('Liens actifs', { key: 'members.links', extra: String(invitations.length) }, h(
+            'ul.plain.small',
             invitations.map((i) =>
               h(
                 'li',
-                `${ROLE_LABELS[i.role]} — expire le ${formatDate(i.expires_at)} — utilisé ${i.use_count}${i.max_uses ? `/${i.max_uses}` : ''} fois `,
+                `${ROLE_LABELS[i.role]} · jusqu’au ${formatDate(i.expires_at)} · ${i.use_count}${i.max_uses ? `/${i.max_uses}` : ''} utilisation(s) `,
                 h('button.link.danger', {
                   onclick: async () => {
                     await api.del(`/invitations/${i.id}`);
@@ -166,7 +141,7 @@ export async function membersView(main) {
                 }, 'Révoquer'),
               ),
             ),
-          )
+          ))
         : null,
     );
   }

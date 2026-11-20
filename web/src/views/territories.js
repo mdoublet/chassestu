@@ -6,7 +6,7 @@ import { addBasemaps } from '../map/basemap.js';
 import { toLatLng, escapeHtml, postIcon, ensureHatchPattern } from '../map/shapes.js';
 import { api } from '../api.js';
 import { state } from '../state.js';
-import { h, fill, toast, errorMessage, confirmDialog } from '../ui.js';
+import { h, fill, toast, errorMessage, confirmDialog, fold } from '../ui.js';
 
 export async function territoriesView(main) {
   const canEdit = state.role === 'president';
@@ -17,7 +17,7 @@ export async function territoriesView(main) {
   main.append(
     h('div.page-head', h('h1', 'Territoires'),
       canEdit ? h('a.button.primary', { href: '#/carte/nouveau' }, '+ Nouveau territoire') : null),
-    h('h2.small-title', 'Vue globale'), shown, mapEl, list);
+    mapEl, shown, list);
   const map = L.map(mapEl, { zoomControl: true }).setView([46.6, 2.4], 6);
   addBasemaps(map);
   const layer = L.featureGroup().addTo(map);
@@ -83,16 +83,13 @@ export async function territoriesView(main) {
     const name = h('input.territory-name', { value: t.name, maxlength: 200, 'aria-label': 'Nom du territoire', disabled: !canEdit,
       onchange: (e) => e.target.value.trim() && patch(t, { name: e.target.value.trim() }, 'Territoire renommé.') });
     return h('section.card.territory-card', { id: `t-${t.id}`, class: t.id === highlighted ? 'highlighted' : '' },
-      h('div.territory-card-head', name, h('span.small.muted', `${t.area_ha.toLocaleString('fr-FR')} ha`)),
-      h('p.small.counts',
-        `${t.posts_count} poste(s) · ${t.parkings_count} parking(s) · ${t.reserves_count} réserve(s)`),
-      warnings.length ? h('p.small.alert.warn', `⚠ ${warnings.join(' · ')}`) : null,
-      h('label.small', 'Notes', h('textarea', { rows: 2, maxlength: 5000, disabled: !canEdit, placeholder: canEdit ? 'Accès, propriétaires, consignes particulières…' : '',
-        onchange: (e) => patch(t, { notes: e.target.value }, 'Notes enregistrées.') }, t.notes ?? '')),
-      h('div.buttons',
-        h('a.button', { href: `#/carte/${t.id}` }, canEdit ? '🗺 Ouvrir la carte (postes, parkings, réserves…)' : '🗺 Voir la carte'),
+      h('div.territory-card-head', name, h('span.small.muted.area', `${Math.round(t.area_ha).toLocaleString('fr-FR')} ha`)),
+      h('p.small.counts', `${t.posts_count} poste${t.posts_count > 1 ? 's' : ''} · ${t.parkings_count} P · ${t.reserves_count} réserve${t.reserves_count > 1 ? 's' : ''}`,
+        warnings.length ? h('span.warn-text', { title: warnings.join(' · ') }, ` · ⚠ ${warnings.length > 1 ? `${warnings.length} alertes` : warnings[0]}`) : null),
+      h('div.buttons.territory-actions',
+        h('a.button', { href: `#/carte/${t.id}` }, '🗺 Carte'),
         state.role === 'president' || state.role === 'responsable' ? h('a.button', { href: `#/plans/${t.id}` }, `📋 Plans de chasse (${t.plans_count})`) : null,
-        canEdit ? h('button.link.danger', { onclick: async () => {
+        canEdit ? h('button.icon.danger', { title: 'Supprimer le territoire', 'aria-label': 'Supprimer le territoire', onclick: async () => {
           if (!(await confirmDialog('Supprimer le territoire', `Supprimer « ${t.name} » avec ses réserves, parkings, postes, chemins et plans ? Cette suppression ne peut pas être annulée.`, 'Supprimer', true))) return;
           try {
             await api.del(`/territories/${t.id}`);
@@ -101,19 +98,22 @@ export async function territoriesView(main) {
           } catch (err) {
             toast(errorMessage(err), 'error');
           }
-        } }, 'Supprimer') : null));
+        } }, '🗑') : null),
+      canEdit || t.notes ? fold('Notes', { key: `t.notes.${t.id}`, extra: t.notes ? t.notes.slice(0, 40) + (t.notes.length > 40 ? '…' : '') : '' },
+        h('textarea', { rows: 3, maxlength: 5000, disabled: !canEdit, placeholder: canEdit ? 'Accès, propriétaires, consignes…' : '',
+          onchange: (e) => patch(t, { notes: e.target.value }, 'Notes enregistrées.') }, t.notes ?? '')) : null);
   }
 
   function renderToggles() {
     fill(shown, territories.length > 1
-      ? [h('span.small.muted', 'Afficher : '),
+      ? fold('Territoires affichés sur la carte', { key: 'territories.shown', extra: `${territories.length - territories.filter((t) => hidden.has(t.id)).length}/${territories.length}` },
          territories.map((t) => h('label.check', h('input', { type: 'checkbox', checked: !hidden.has(t.id), onchange: (e) => {
            if (e.target.checked) hidden.delete(t.id); else hidden.add(t.id);
            saveHidden();
            drawMap();
            fitVisible();
          } }), t.name)),
-         h('button.link', { onclick: () => { hidden.clear(); saveHidden(); render(); fitVisible(); } }, 'Tous')]
+         h('button.link', { onclick: () => { hidden.clear(); saveHidden(); render(); fitVisible(); } }, 'Tous'))
       : null);
   }
 

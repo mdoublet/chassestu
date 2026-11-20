@@ -3,7 +3,7 @@
 // journée : ils changent rarement d'une fois à l'autre.
 import { api } from '../api.js';
 import { state } from '../state.js';
-import { h, fill, toast, errorMessage } from '../ui.js';
+import { h, fill, toast, errorMessage, fold } from '../ui.js';
 import { DAY_STATUS_LABELS, formatHuntDate, formatTime } from '../lib/hunts.js';
 import { every } from '../lib/live.js';
 import { placeSelect } from './place-picker.js';
@@ -21,22 +21,25 @@ export async function daysView(main) {
     const { days } = await api.get('/days');
     const upcoming = days.filter((x) => OPEN.includes(x.status)).reverse();
     const past = days.filter((x) => !OPEN.includes(x.status));
+    // Une ligne par journée : date courte, état, l'essentiel du moment.
     const item = (x) => {
       const b = x.current_battue;
-      const extra = [];
-      if (x.status === 'en_cours' && b) extra.push(` · battue n° ${b.number}${b.status === 'terminee' ? ' terminée' : b.started_at ? ' en cours' : ' en préparation'}`);
-      if (canManage && x.status === 'convoquee') extra.push(` · ${x.answered_present}/${x.convoked} présent(s) annoncé(s)${x.lunch_offered ? ` · 🍽 ${x.lunch_count}` : ''}`);
-      if (canManage && x.status === 'en_cours') extra.push(` · ${x.present_count} présent(s)`);
-      if (!canManage && x.status === 'convoquee') extra.push(x.my_response ? ` · vous avez répondu ${x.my_response === 'present' ? `présent${x.my_lunch ? ' (déjeuner)' : ''}` : 'absent'}` : ' · réponse attendue');
-      if (['terminee'].includes(x.status) && x.battue_count) extra.push(` · ${x.battue_count} battue(s)`);
-      return h('a.tile.hunt-tile', { href: `#/journees/${x.id}` },
-        h('strong', formatHuntDate(x.date)),
-        h('span', `RDV ${formatTime(x.meeting_time)}${x.meeting_place ? ` · ${x.meeting_place}` : ''}`),
-        h('span.status', { class: `status-${x.status}` }, DAY_STATUS_LABELS[x.status], ...extra));
+      let extra = '';
+      if (x.status === 'en_cours' && b) extra = `battue ${b.number} ${b.status === 'terminee' ? 'terminée' : b.started_at ? 'en cours' : 'en préparation'}`;
+      else if (canManage && x.status === 'convoquee') extra = `${x.answered_present}/${x.convoked} présents${x.lunch_offered ? ` · 🍽 ${x.lunch_count}` : ''}`;
+      else if (!canManage && x.status === 'convoquee') extra = x.my_response ? (x.my_response === 'present' ? '✔ présent' : '✘ absent') : 'réponse attendue';
+      else if (x.status === 'terminee' && x.battue_count) extra = `${x.battue_count} battue(s)`;
+      return h('a.day-row', { href: `#/journees/${x.id}` },
+        h('span.day-date', new Date(`${x.date}T12:00`).toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' })),
+        h('span.status', { class: `status-${x.status}` }, DAY_STATUS_LABELS[x.status]),
+        extra ? h('span.small.muted', extra) : null);
     };
+    const done = past.filter((x) => x.status === 'terminee');
+    const cancelled = past.filter((x) => x.status === 'annulee');
     fill(listBox,
-      upcoming.length ? [h('h2', 'À venir'), h('nav.tiles', upcoming.map(item))] : h('p.muted', canManage ? 'Aucune journée prévue.' : 'Aucune journée à laquelle vous êtes convoqué.'),
-      past.length ? [h('h2', 'Passées'), h('nav.tiles', past.slice(0, 20).map(item))] : null);
+      upcoming.length ? h('div.day-list', upcoming.map(item)) : h('p.muted', canManage ? 'Aucune journée prévue.' : 'Aucune journée à laquelle vous êtes convoqué.'),
+      done.length ? fold('Passées', { key: 'days.past', extra: String(done.length) }, h('div.day-list', done.slice(0, 30).map(item))) : null,
+      cancelled.length && canManage ? fold('Annulées', { key: 'days.cancelled', extra: String(cancelled.length) }, h('div.day-list', cancelled.slice(0, 30).map(item))) : null);
   }
 
   async function renderForm() {
@@ -88,9 +91,8 @@ export async function daysView(main) {
     h('label', 'Déjeuner : lieu, prix…', lunchInfo),
     h('label', 'Consignes de la journée', h('textarea', { name: 'briefing', rows: 2, maxlength: 5000 })),
     h('fieldset.members', h('legend', 'Membres convoqués'), checks.map(({ m, input }) => h('label.check', input, m.display_name || m.email || 'Membre'))),
-    h('p.small.muted', 'Les territoires, postes et espèces se choisissent le jour même, battue par battue.'),
     h('button.primary', { type: 'submit' }, 'Créer la journée (brouillon)'));
-    fill(formBox, h('details', h('summary.button-like', '+ Nouvelle journée de chasse'), form));
+    fill(formBox, h('details', h('summary.button-like', '+ Nouvelle journée'), form));
   }
 
   try {

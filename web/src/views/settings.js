@@ -1,5 +1,5 @@
 import { api } from '../api.js';
-import { h, errorMessage, toast } from '../ui.js';
+import { h, errorMessage, toast, fold } from '../ui.js';
 
 export async function settingsView(main, { refreshMe }) {
   const { tenant } = await api.get('/tenant');
@@ -32,7 +32,8 @@ export async function settingsView(main, { refreshMe }) {
         }
       },
     },
-    field('name', 'Nom de l’association', { required: true, maxlength: 200 }),
+    fold('Association', { key: 'settings.assoc', open: true, extra: tenant.name },
+    field('name', 'Nom', { required: true, maxlength: 200 }),
     h(
       'label',
       'Type',
@@ -42,28 +43,18 @@ export async function settingsView(main, { refreshMe }) {
         [['acca', 'ACCA'], ['societe', 'Société de chasse'], ['autre', 'Autre']].map(([v, l]) => h('option', { value: v, selected: v === tenant.kind }, l)),
       ),
     ),
-    field('departement', 'Département', { maxlength: 3, pattern: '([0-9]{2}|2A|2B|97[1-6])', placeholder: 'ex. 11' }),
-    field(
-      'buffer_distance_m',
-      'Distance de sécurité autour des habitations (m)',
-      { type: 'number', min: 50, max: 1000, required: true },
-      '150 m par défaut (art. L.422-10 en ACCA) ; certains arrêtés imposent 200 m. Modifier cette distance recalcule les zones non chassables et marque invalides les postes devenus trop proches.',
-    ),
-    field(
-      'post_max_outside_m',
-      'Distance maximale d’un poste hors du territoire (m)',
-      { type: 'number', min: 0, max: 500, required: true },
-      '0 = postes uniquement dans le territoire. Au-delà du territoire, il faut le droit de chasse (ou l’accord du propriétaire) ; la règle des habitations s’applique toujours. Augmenter cette distance demande d’actualiser les bâtiments.',
-    ),
-    field('gps_tolerance_m', 'Tolérance GPS « sur le poste » (m)', { type: 'number', min: 5, max: 200, required: true }),
-    field('position_retention_h', 'Conservation des positions GPS (heures)', { type: 'number', min: 1, max: 720, required: true }),
-    h('label.check', h('input', { type: 'checkbox', name: 'show_all_posts', checked: tenant.show_all_posts }), 'Les chasseurs voient tous les postes occupés (sinon : le leur et leurs voisins)'),
-    field(
-      'hunters_per_car',
-      'Covoiturage : chasseurs au plus par voiture (conducteur compris)',
-      { type: 'number', min: 2, max: 9, required: true },
-      'Chaque chasseur qui a une voiture la prend ; ce nombre évite de trop charger une voiture : les voitures resservent pour les battues suivantes.',
-    ),
+    field('departement', 'Département', { maxlength: 3, pattern: '([0-9]{2}|2A|2B|97[1-6])', placeholder: 'ex. 11' })),
+    fold('Sécurité', { key: 'settings.safety', extra: `${tenant.buffer_distance_m} m des habitations` },
+      field('buffer_distance_m', 'Distance des habitations (m)', { type: 'number', min: 50, max: 1000, required: true },
+        '150 m en ACCA (L.422-10), parfois 200 m. Recalcule les zones non chassables.'),
+      field('post_max_outside_m', 'Poste hors du territoire, au plus (m)', { type: 'number', min: 0, max: 500, required: true },
+        '0 : postes dans le territoire seulement.')),
+    fold('Postes et GPS', { key: 'settings.gps', extra: `${tenant.gps_tolerance_m} m · ${tenant.position_retention_h} h` },
+      field('gps_tolerance_m', 'Tolérance « sur le poste » (m)', { type: 'number', min: 5, max: 200, required: true }),
+      field('position_retention_h', 'Conservation des positions (heures)', { type: 'number', min: 1, max: 720, required: true }),
+      h('label.check', h('input', { type: 'checkbox', name: 'show_all_posts', checked: tenant.show_all_posts }), 'Les chasseurs voient tous les postes (sinon leurs voisins)')),
+    fold('Covoiturage', { key: 'settings.car', extra: `${tenant.hunters_per_car} par voiture` },
+      field('hunters_per_car', 'Chasseurs par voiture, au plus', { type: 'number', min: 2, max: 9, required: true }, 'Conducteur compris.')),
     h('button.primary', { type: 'submit' }, 'Enregistrer'),
   );
   main.append(h('h1', 'Paramètres'), form);

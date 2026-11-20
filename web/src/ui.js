@@ -131,3 +131,23 @@ export const ROLE_LABELS = { president: 'Président', responsable: 'Organisateur
 export function formatDate(iso) {
   return new Date(iso).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
 }
+
+/**
+ * Section dépliable, modèle commun à tous les écrans : titre, résumé court à
+ * droite (nombre, alerte), contenu masqué tant qu'elle est fermée. `key` :
+ * l'état ouvert/fermé est gardé pendant la session (re-rendus, retours).
+ */
+export function fold(title, { key = null, extra = null, open = false, className = '' } = {}, ...content) {
+  let isOpen = open;
+  if (key) {
+    try {
+      const v = sessionStorage.getItem(`fold.${key}`);
+      if (v !== null) isOpen = v === '1';
+    } catch { /* rien */ }
+  }
+  const d = h('details.fold', { open: isOpen, class: className },
+    h('summary', h('span.fold-title', title), extra ? h('span.fold-extra', extra) : null),
+    h('div.fold-body', ...content));
+  if (key) d.addEventListener('toggle', () => { try { sessionStorage.setItem(`fold.${key}`, d.open ? '1' : '0'); } catch { /* rien */ } });
+  return d;
+}

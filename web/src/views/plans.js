@@ -248,7 +248,7 @@ export async function plansView(main, territoryId, huntPlanId) {
     const hp = huntPlan();
     if (!hp) {
       fill(traqueBox, ps.data ? h('div.card', h('p', 'Aucun plan de chasse pour ce territoire.'),
-        h('p.small.muted', 'Un plan de chasse décrit une traque (départ, tracé, sortie) et les postes à pourvoir selon le nombre de chasseurs. On peut en avoir plusieurs par territoire ; on le choisit en créant une battue.'),
+        h('p.small.muted', 'Une traque (départ, tracé, sortie) et ses postes à pourvoir selon le nombre de chasseurs.'),
         canEdit ? h('button.primary', { onclick: createHuntPlan }, '+ Créer un plan de chasse') : null) : null);
       return;
     }
@@ -419,7 +419,7 @@ export async function plansView(main, territoryId, huntPlanId) {
     fill(
       gridBox,
       h('h3', 'Postes à pourvoir selon l’effectif'),
-      h('p.small.muted', `${available} poste(s) disponible(s) sur ${cols.length}. ${canEdit ? 'Cliquez sur un effectif pour le sélectionner, puis cochez les postes dans la grille ou sur la carte.' : 'Survolez une ligne pour voir ses postes sur la carte.'}`),
+      h('p.small.muted', `${available}/${cols.length} postes disponibles${canEdit ? ' · touchez un effectif, puis cochez ses postes (grille ou carte)' : ''}.`),
       !cols.length ? h('p.muted', 'Ce territoire n’a pas encore de poste.')
         : counts().length ? h('div.table-scroll', h('table.plans', h('thead', header), h('tbody', body)))
           : h('p.small', 'Aucun effectif défini : choisissez-en un ci-dessous.'),

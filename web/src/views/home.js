@@ -1,7 +1,7 @@
 import { api } from '../api.js';
 import { providerName } from '../auth.js';
 import { state } from '../state.js';
-import { h, fill, errorMessage, toast, ROLE_LABELS } from '../ui.js';
+import { h, fill, errorMessage, toast } from '../ui.js';
 import { pushCard } from './notifications.js';
 import { every, localToday } from '../lib/live.js';
 import { formatHuntDate, formatTime } from '../lib/hunts.js';
@@ -47,22 +47,12 @@ export async function homeView(main, { refreshMe, rerender }) {
   } else {
     const role = state.role;
     const tiles = [
-      {
-        href: '#/journees',
-        title: 'Journées de chasse',
-        text: role === 'chasseur' ? 'Vos convocations, votre poste, l’itinéraire et le covoiturage.' : 'Convoquer, pointer les présents, organiser les battues.',
-      },
-      {
-        href: '#/territoires',
-        title: 'Territoires',
-        text: role === 'president' ? 'Liste, ajout et carte : réserves, postes, parkings, chemins, plans de couverture.' : 'Consulter les territoires et les postes.',
-      },
-      (role === 'president' || role === 'responsable') && {
-        href: '#/membres',
-        title: 'Membres',
-        text: role === 'president' ? 'Inviter des chasseurs, gérer les rôles.' : 'Liste des membres.',
-      },
-      role === 'president' && { href: '#/parametres', title: 'Paramètres', text: 'Distance de sécurité, tolérance GPS, conservation des positions.' },
+      { href: '#/journees', icon: '🎯', title: 'Journées' },
+      { href: '#/territoires', icon: '🗺️', title: 'Territoires' },
+      role === 'president' && { href: '#/lieux', icon: '📍', title: 'Lieux' },
+      (role === 'president' || role === 'responsable') && { href: '#/membres', icon: '👥', title: 'Membres' },
+      role === 'president' && { href: '#/parametres', icon: '⚙️', title: 'Paramètres' },
+      { href: '#/profil', icon: '👤', title: 'Mon profil' },
     ].filter(Boolean);
 
     // Journée du moment : en cours, sinon la prochaine convoquée (vue chasseur en un clic).
@@ -92,8 +82,7 @@ export async function homeView(main, { refreshMe, rerender }) {
 
     main.append(
       current,
-      h('p.muted', `${state.tenant.name} — ${ROLE_LABELS[role]}`),
-      h('nav.tiles', tiles.map((t) => h('a.tile', { href: t.href }, h('strong', t.title), h('span', t.text)))),
+      h('nav.icon-tiles', tiles.map((t) => h('a.icon-tile', { href: t.href }, h('span.icon', t.icon), h('span', t.title)))),
     );
   }
 
@@ -104,14 +93,11 @@ export async function homeView(main, { refreshMe, rerender }) {
     import('../push-client.js').then(async ({ pushStatus }) => { if ((await pushStatus()) === 'enabled') card.remove(); });
   }
 
-  if (state.user.is_super_admin) {
-    main.append(h('p', h('a', { href: '#/admin' }, 'Administration de la plateforme')));
-  }
 
   // Rappel en haut de page tant que le profil (marche, voiture) n'est pas rempli.
   if (!state.user.walking_ability || state.user.has_car === null || state.user.has_car === undefined) {
     main.querySelector('h1')?.after(
-      h('a.current-hunt', { href: '#/profil' }, h('strong', '👤 Complétez votre profil'), h('span', 'Votre marche et votre voiture : pour des postes accessibles et le covoiturage →')));
+      h('a.current-hunt', { href: '#/profil' }, h('strong', '👤 Complétez votre profil'), h('span', 'Marche et voiture →')));
   }
   return () => stopRefresh?.();
 }
