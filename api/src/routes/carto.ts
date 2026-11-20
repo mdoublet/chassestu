@@ -53,6 +53,7 @@ const postFields = z.object({
   parking_id: z.uuid().nullable(),
   access_path: lineSchema.nullable(),
   instructions: z.string().max(2000),
+  special_instructions: z.boolean(),
   active: z.boolean(),
   // Difficulté d'accès saisie par le président (1 facile … 5 escarpé) ; NULL : estimée.
   access_difficulty: z.number().int().min(1).max(5).nullable(),
@@ -80,7 +81,7 @@ const KINDS: Record<string, FeatureKind> = {
     table: 'posts',
     label: 'Poste',
     geoms: { geom: 'Point', access_path: 'LineString' },
-    columns: ['id', 'territory_id', 'number', 'name', 'parking_id', 'instructions', 'active', 'invalid_reason', 'access_difficulty', 'updated_at'],
+    columns: ['id', 'territory_id', 'number', 'name', 'parking_id', 'instructions', 'special_instructions', 'active', 'invalid_reason', 'access_difficulty', 'updated_at'],
     // nearest_dwelling_m : renseigné si une habitation est à moins de distance + 50 m
     // (bande d'avertissement : tir interdit en direction de l'habitation).
     extraSelect: `round(ST_Length(access_path::geography))::int AS access_path_length_m,
@@ -90,7 +91,7 @@ const KINDS: Record<string, FeatureKind> = {
       coalesce((SELECT array_agg(cp.hunter_count ORDER BY cp.hunter_count)
                   FROM coverage_plan_posts cpp JOIN coverage_plans cp ON cp.id = cpp.plan_id
                  WHERE cpp.post_id = posts.id), '{}') AS plan_counts`,
-    create: postFields.partial({ number: true, name: true, parking_id: true, access_path: true, instructions: true, active: true, access_difficulty: true }).strict(),
+    create: postFields.partial({ number: true, name: true, parking_id: true, access_path: true, instructions: true, special_instructions: true, active: true, access_difficulty: true }).strict(),
     patch: postFields.partial().strict(),
   },
 };
@@ -289,7 +290,7 @@ cartoRoutes.get('/territories/:id/export', (c) => {
       ...reserves.map((r) => feature(r.geom, { kind: 'reserve', name: r.name, reason: r.reason })),
       ...parkings.map((p) => feature(p.geom, { kind: 'parking', id: p.id, name: p.name })),
       ...posts.map((p) =>
-        feature(p.geom, { kind: 'poste', number: p.number, name: p.name, parking_id: p.parking_id, instructions: p.instructions, active: p.active }),
+        feature(p.geom, { kind: 'poste', number: p.number, name: p.name, parking_id: p.parking_id, instructions: p.instructions, special_instructions: p.special_instructions, active: p.active }),
       ),
       ...posts
         .filter((p) => p.access_path)

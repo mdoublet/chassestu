@@ -2911,4 +2911,18 @@ GRANT EXECUTE ON FUNCTION app.parking_for_path(uuid, geometry, geometry) TO app_
 
 INSERT INTO schema_migrations (name, checksum) VALUES ('0015_parking_du_chemin.sql', 'a1750819b88d2931315b2c2cec8be20ece505742d719d82b14d56fec07b86782');
 
+DO $guard$
+BEGIN
+  IF EXISTS (SELECT 1 FROM schema_migrations WHERE name = '0016_consignes_particulieres.sql') THEN
+    RAISE EXCEPTION 'La migration % est déjà appliquée : rien à faire.', '0016_consignes_particulieres.sql';
+  END IF;
+END $guard$;
+
+-- ==================== 0016_consignes_particulieres.sql ====================
+-- Case « Consignes particulières » d'un poste : signalée par ⚠ dans l'éditeur
+-- (comme des consignes contenant le mot « attention »).
+ALTER TABLE posts ADD COLUMN special_instructions boolean NOT NULL DEFAULT false;
+
+INSERT INTO schema_migrations (name, checksum) VALUES ('0016_consignes_particulieres.sql', '12af5dd11c46336f40eea56dbc7d6f3dc511a67857bc6bd774a193ce66b52d87');
+
 COMMIT;

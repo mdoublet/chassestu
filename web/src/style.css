@@ -134,6 +134,10 @@ dialog.modal h2 { margin-top: 0; }
   background: var(--surface); border-left: 1px solid var(--border);
 }
 .editor .panel select { max-width: 100%; }
+.editor .resizer { flex: none; width: 7px; cursor: col-resize; background: var(--border); touch-action: none; position: relative; }
+.editor .resizer::after { content: ''; position: absolute; left: 2px; top: 50%; width: 3px; height: 36px; margin-top: -18px; border-left: 1px dotted var(--muted); border-right: 1px dotted var(--muted); }
+.editor .resizer:hover, .editor .resizer.dragging { background: color-mix(in srgb, var(--primary) 35%, var(--border)); }
+li.obj-row .post-name { font-size: 0.78rem; color: var(--muted); }
 .panel .disclaimer { font-size: 0.8rem; color: var(--warn); margin: 0 0 0.5rem; }
 .panel .hint { background: color-mix(in srgb, var(--accent) 10%, transparent); border-radius: 8px; padding: 0.5rem 0.75rem; margin: 0.5rem 0; }
 .panel .hint.recording { background: color-mix(in srgb, #d9480f 14%, transparent); }
@@ -145,7 +149,8 @@ ul.objects li { padding: 0.2rem 0; break-inside: avoid; }
 @media (max-width: 760px) {
   .editor { flex-direction: column; }
   .editor .map { flex: none; height: 58vh; }
-  .editor .panel { width: 100%; max-height: none; border-left: 0; border-top: 1px solid var(--border); }
+  .editor .panel { width: 100% !important; max-height: none; border-left: 0; border-top: 1px solid var(--border); }
+  .editor .resizer { display: none; }
 }
 
 /* Objets cartographiques */

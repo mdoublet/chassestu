@@ -23,7 +23,7 @@ import { startCenter } from '../lib/start-center.js';
 const FIELDS = {
   reserves: ['name', 'reason', 'geom'],
   parkings: ['name', 'geom'],
-  posts: ['number', 'name', 'geom', 'parking_id', 'access_path', 'instructions', 'active', 'access_difficulty'],
+  posts: ['number', 'name', 'geom', 'parking_id', 'access_path', 'instructions', 'special_instructions', 'active', 'access_difficulty'],
   dwellings: ['geom', 'comment'],
 };
 const LABEL = { territories: 'du territoire', reserves: 'de la réserve', parkings: 'du parking', posts: 'du poste', dwellings: 'de l’habitation' };
@@ -78,11 +78,15 @@ function importSummary(report) {
   return `${parts.join(', ')}. Zone non chassable recalculée.`;
 }
 
+/** ⚠ : case « Consignes particulières » cochée, ou consignes contenant « attention ». */
+const hasSpecial = (p) => Boolean(p.special_instructions) || /attention/i.test(p.instructions ?? '');
+
 function postTooltip(p, bufferM = 150) {
   const label = `Poste ${p.number}${p.name ? ` · ${p.name}` : ''}`;
   if (p.invalid_reason) return `⛔ ${label} — invalide : à moins de ${bufferM} m d’une habitation, à déplacer`;
-  if (p.nearest_dwelling_m != null) return `⚠ ${label} — habitation à ${p.nearest_dwelling_m} m : ne pas tirer dans sa direction`;
-  return label;
+  const parts = [hasSpecial(p) ? `⚠ ${label} — consignes particulières` : label];
+  if (p.nearest_dwelling_m != null) parts.push(`habitation à ${p.nearest_dwelling_m} m : ne pas tirer dans sa direction`);
+  return parts.join(' — ');
 }
 
 /** `start` : identifiant d'un territoire à ouvrir, ou « nouveau » pour en créer un. */
@@ -106,7 +110,32 @@ export async function editorView(main, start) {
   ensureHatchPattern();
   const panel = h('aside.panel');
   const mapEl = h('div.map');
-  main.append(h('div.editor', mapEl, panel));
+  // Panneau élargissable : poignée à glisser (largeur mémorisée sur l'appareil).
+  const WIDTH_KEY = 'chassestu.editorPanelWidth';
+  const setWidth = (w) => { panel.style.width = `${Math.round(Math.min(Math.max(w, 280), window.innerWidth * 0.7))}px`; };
+  try { const w = Number(localStorage.getItem(WIDTH_KEY)); if (w) setWidth(w); } catch { /* rien */ }
+  const resizer = h('div.resizer', { title: 'Glisser pour élargir le panneau', role: 'separator', 'aria-orientation': 'vertical' });
+  resizer.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    resizer.setPointerCapture(e.pointerId);
+    resizer.classList.add('dragging');
+    const right = panel.getBoundingClientRect().right;
+    const move = (ev) => setWidth(right - ev.clientX);
+    const up = () => {
+      resizer.removeEventListener('pointermove', move);
+      resizer.classList.remove('dragging');
+      try { localStorage.setItem(WIDTH_KEY, String(panel.offsetWidth)); } catch { /* rien */ }
+      map.invalidateSize();
+    };
+    resizer.addEventListener('pointermove', move);
+    resizer.addEventListener('pointerup', up, { once: true });
+  });
+  resizer.addEventListener('dblclick', () => {
+    panel.style.width = '';
+    try { localStorage.removeItem(WIDTH_KEY); } catch { /* rien */ }
+    map.invalidateSize();
+  });
+  main.append(h('div.editor', mapEl, resizer, panel));
 
   const map = L.map(mapEl, { zoomControl: true }).setView([46.6, 2.4], 6);
   if (import.meta.env.DEV) window.__map = map; // tests de bout en bout (jamais en production)
@@ -450,7 +479,7 @@ export async function editorView(main, start) {
       const cls = [
         isSelected('posts', p.id) ? 'selected' : '',
         p.active ? '' : 'inactive',
-        p.invalid_reason ? 'invalid-static' : p.nearest_dwelling_m != null ? 'warning' : '',
+        p.invalid_reason ? 'invalid-static' : hasSpecial(p) ? 'warning' : '',
       ].join(' ');
       // Au-dessus des poignées du chemin (sa fin est sur le poste) : glisser déplace le poste, le chemin suit.
       const m = L.marker(toLatLng(p.geom.coordinates), { icon: postIcon(p.number, cls), draggable: canEdit, title: `Poste ${p.number}`, bubblingMouseEvents: true, zIndexOffset: 1000 });
@@ -515,6 +544,26 @@ export async function editorView(main, start) {
     if (ed.proposal?.postId !== post.id) return undefined; // entre-temps : autre sélection
     ed.proposal = { postId: post.id, ...best };
     return render();
+  }
+
+  /**
+   * Nouveau poste : le meilleur chemin depuis les parkings est appliqué
+   * d'office (annulable avec ↶, ou à retracer).
+   */
+  async function autoPath(post) {
+    if (!ed.data?.parkings.length) {
+      toast('Poste créé. Ajoutez un parking pour qu’un chemin d’accès soit tracé automatiquement.');
+      return;
+    }
+    toast('Calcul du chemin d’accès depuis le parking le plus favorable…');
+    const best = await bestPathToPost(post.geom.coordinates, ed.data.parkings);
+    const current = find('posts', post.id);
+    // Entre-temps, le poste a pu être supprimé, déplacé ou doté d'un chemin.
+    if (!best || !current || current.access_path || distanceMeters(current.geom.coordinates, post.geom.coordinates) > 1) return;
+    await run(async () => {
+      await updateItem('posts', current, { access_path: { type: 'LineString', coordinates: best.coords }, parking_id: best.parking.id });
+      toast(`Chemin de ${Math.round(best.length)} m tracé depuis « ${best.parking.name} »${best.routed ? '' : ' (à vol d’oiseau : itinéraire IGN indisponible)'}. ↶ pour l’annuler, ou retracez-le.`);
+    });
   }
 
   function saveShape(kind, item, geom) {
@@ -664,7 +713,7 @@ export async function editorView(main, start) {
       return run(async () => {
         const item = await createItem('posts', { geom });
         ed.selected = { kind: 'posts', id: item.id };
-        proposePath(item);
+        autoPath(item);
       });
     }
     if (mode === 'path') {
@@ -931,7 +980,7 @@ export async function editorView(main, start) {
       item.invalid_reason
         ? h('p.alert.danger', `Poste invalide : il est à moins de ${ed.data.exclusion?.buffer_distance_m ?? 150} m d’une habitation. Déplacez-le ; il ne sera pas proposé pour les battues tant qu’il est invalide.`)
         : item.nearest_dwelling_m != null
-          ? h('p.alert.warn', `Habitation à ${item.nearest_dwelling_m} m : rappeler l’interdiction de tirer en direction de l’habitation.`)
+          ? h('p.small.muted', `Habitation à ${item.nearest_dwelling_m} m : rappeler l’interdiction de tirer en direction de l’habitation.`)
           : null,
       (item.plan_counts ?? []).length
         ? h('p.small', `Utilisé dans les plans à ${item.plan_counts.join(', ')} chasseurs. `, h('a', { href: '#/plans' }, 'Voir les plans'))
@@ -941,6 +990,7 @@ export async function editorView(main, start) {
       field('Parking', parkingSelect),
       field('Difficulté d’accès (pour les chasseurs qui marchent peu)', difficultySelect(item)),
       field('Consignes', bound(kind, item, 'instructions', { rows: 3, maxlength: 2000 }, 'textarea')),
+      h('label.check', bound(kind, item, 'special_instructions', { type: 'checkbox' }), 'Consignes particulières (signalé par ⚠)'),
       h('label.check', bound(kind, item, 'active', { type: 'checkbox' }), 'Poste actif'),
       h('p.small', item.access_path ? `Chemin d’accès : ${item.access_path_length_m} m. Déplacez ses sommets pour l’ajuster.` : 'Pas encore de chemin d’accès.'),
       canEdit ? pathProposal(item) : null,
@@ -1093,8 +1143,8 @@ export async function editorView(main, start) {
   function postsSection() {
     const posts = [...ed.data.posts].sort((a, b) => a.number - b.number);
     const problems = posts.filter((p) => p.invalid_reason || !p.parking_id || !p.access_path || isOutside(p)).length;
-    return foldSection('posts', `Postes (${posts.length})`, problems ? `· ⚠ ${problems} à compléter` : '',
-      posts.length ? h('p.small.muted.legend', '🅿 parking · 🥾 chemin · ✅ actif · 🗺 dans le territoire (grisé : non)') : h('p.small.muted', 'Aucun poste : « + Poste » pour en placer un.'),
+    return foldSection('posts', `Postes (${posts.length})`, problems ? `· ${problems} à compléter` : '',
+      posts.length ? h('p.small.muted.legend', '🅿 parking · 🥾 chemin · ✅ actif · 🗺 dans le territoire (grisé : non) · ⚠ consignes particulières · ⛔ trop près d’une habitation') : h('p.small.muted', 'Aucun poste : « + Poste » pour en placer un.'),
       h('ul.obj-list', posts.map((p) => objectRow('posts', p, {
         symbols: [
           sym('🅿', !!p.parking_id, 'Parking associé', 'Pas de parking associé'),
@@ -1102,7 +1152,11 @@ export async function editorView(main, start) {
           sym('✅', p.active, 'Actif', 'Inactif'),
           sym('🗺', !isOutside(p), 'Dans le territoire', 'Hors du territoire'),
         ],
-        label: [p.invalid_reason ? '⛔ ' : p.nearest_dwelling_m != null ? '⚠ ' : '', postLabel(p)].join(''),
+        label: [
+          p.invalid_reason ? h('span', { title: 'Trop près d’une habitation : à déplacer' }, '⛔ ') : hasSpecial(p) ? h('span', { title: 'Consignes particulières' }, '⚠ ') : null,
+          String(p.number),
+          p.name ? h('span.post-name', ` (${p.name})`) : null,
+        ],
         dim: !p.active,
         onDelete: () => askDelete('posts', p),
       }))));
