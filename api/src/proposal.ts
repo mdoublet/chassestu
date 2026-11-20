@@ -112,16 +112,70 @@ export function canReach(difficulty: number | null | undefined, ability: number 
 }
 
 /**
- * Tirage au sort : les attributions verrouillées sont conservées ; les autres
- * chasseurs postés sont répartis au hasard sur les postes libres. Avec
- * `allowDouble`, les chasseurs en trop complètent les postes (2 au plus).
+ * Historique des placements d'un chasseur : poids par poste (occupations
+ * passées, les plus récentes pèsent le plus ; voir `rotationWeight`).
+ */
+export type PlacementHistory = Map<string, Map<string, number>>;
+
+/**
+ * Poids d'une occupation passée selon son ancienneté (0 : la battue précédente
+ * du chasseur). Reprendre le poste de sa battue précédente coûte beaucoup plus
+ * que toute l'histoire ancienne réunie (somme des 0,5^n < 1) : on l'évite dès
+ * que c'est possible, puis on équilibre sur la durée.
+ */
+export const rotationWeight = (age: number) => (age === 0 ? 4 : 0.5 ** age);
+
+const INFEASIBLE = 1e7; // poste trop difficile : jamais choisi
+const UNPLACED = 1e5; //   chasseur laissé sans poste : seulement si impossible autrement
+
+/**
+ * Affectation de coût minimal (algorithme hongrois) sur une matrice carrée.
+ * Renvoie pour chaque ligne la colonne choisie.
+ */
+export function hungarian(cost: number[][]): number[] {
+  const n = cost.length;
+  const u = new Array(n + 1).fill(0);
+  const v = new Array(n + 1).fill(0);
+  const p = new Array(n + 1).fill(0);
+  const way = new Array(n + 1).fill(0);
+  for (let i = 1; i <= n; i++) {
+    p[0] = i;
+    let j0 = 0;
+    const minv = new Array(n + 1).fill(Infinity);
+    const used = new Array(n + 1).fill(false);
+    do {
+      used[j0] = true;
+      const i0 = p[j0];
+      let delta = Infinity;
+      let j1 = 0;
+      for (let j = 1; j <= n; j++) {
+        if (used[j]) continue;
+        const cur = cost[i0 - 1][j - 1] - u[i0] - v[j];
+        if (cur < minv[j]) { minv[j] = cur; way[j] = j0; }
+        if (minv[j] < delta) { delta = minv[j]; j1 = j; }
+      }
+      for (let j = 0; j <= n; j++) {
+        if (used[j]) { u[p[j]] += delta; v[j] -= delta; } else minv[j] -= delta;
+      }
+      j0 = j1;
+    } while (p[j0] !== 0);
+    do { const j1 = way[j0]; p[j0] = p[j1]; j0 = j1; } while (j0);
+  }
+  const rowToCol = new Array(n).fill(-1);
+  for (let j = 1; j <= n; j++) if (p[j]) rowToCol[p[j] - 1] = j - 1;
+  return rowToCol;
+}
+
+/**
+ * Placement automatique : les attributions verrouillées sont conservées ; les
+ * autres chasseurs postés sont répartis sur les postes libres en faisant
+ * TOURNER les postes : chacun évite ceux qu'il a occupés récemment (`history`),
+ * à égalité c'est le hasard qui tranche. Avec `allowDouble`, les chasseurs en
+ * trop complètent les postes (2 au plus).
  *
  * Avec `mobility` : jamais un poste plus difficile que la capacité de marche
- * du chasseur. Les chasseurs qui marchent le moins sont placés d'abord, et
- * ceux qui marchent peu (1 ou 2) reçoivent le poste le plus facile restant.
- * (Les postes accessibles à un chasseur sont inclus dans ceux accessibles à
- * un meilleur marcheur : placer d'abord les moins mobiles trouve une
- * répartition dès qu'il en existe une.)
+ * du chasseur ; le plus grand nombre possible de chasseurs est placé. Ceux
+ * qui marchent peu (1 ou 2) préfèrent légèrement les postes les plus faciles.
  * Renvoie les nouvelles attributions (hors verrouillées) et les non-placés.
  */
 export function drawAssignments(
@@ -131,50 +185,42 @@ export function drawAssignments(
   allowDouble: boolean,
   random?: () => number,
   mobility?: Mobility,
+  history?: PlacementHistory,
 ): { assignments: { post_id: string; participant_id: string }[]; unplaced: string[] } {
+  const rnd = random ?? cryptoRandom;
   const lockedHunters = new Set(locked.map((l) => l.participant_id));
   const load = new Map(postIds.map((id) => [id, 0]));
   for (const l of locked) load.set(l.post_id, (load.get(l.post_id) ?? 0) + 1);
   const diff = (p: string) => mobility?.difficulty.get(p) ?? null;
   const ab = (h: string) => mobility?.ability.get(h) ?? null;
 
-  // Au hasard, puis (tri stable) les moins mobiles d'abord.
-  const toPlace = shuffle(hunters.filter((h) => !lockedHunters.has(h)), random)
-    .sort((a, b) => (ab(a) ?? 99) - (ab(b) ?? 99));
-  const assignments: { post_id: string; participant_id: string }[] = [];
-  const unplaced: string[] = [];
-
-  const pick = (h: string, candidates: string[]) => {
-    const ok = candidates.filter((p) => canReach(diff(p), ab(h)));
-    if (!ok.length) return null;
+  const cost = (h: string, p: string) => {
+    if (!canReach(diff(p), ab(h))) return INFEASIBLE;
     const a = ab(h);
-    if (a !== null && a <= 2) {
-      // Marche difficile : le poste connu le plus facile (inconnu en dernier recours).
-      return ok.slice().sort((x, y) => (diff(x) ?? 6) - (diff(y) ?? 6))[0];
-    }
-    return ok[0]; // candidats déjà mélangés
+    const ease = a !== null && a <= 2 ? 0.05 * (diff(p) ?? 6) : 0; // marche difficile : postes faciles d'abord
+    return (history?.get(h)?.get(p) ?? 0) + ease + 0.01 * rnd(); // hasard pour départager
   };
 
-  const rest: string[] = [];
-  for (const h of toPlace) {
-    const free = shuffle(postIds.filter((id) => (load.get(id) ?? 0) === 0), random);
-    const post_id = pick(h, free);
-    if (post_id) {
-      assignments.push({ post_id, participant_id: h });
-      load.set(post_id, 1);
-    } else {
-      rest.push(h);
-    }
-  }
-  for (const h of rest) {
-    const singles = allowDouble ? shuffle(postIds.filter((id) => (load.get(id) ?? 0) === 1), random) : [];
-    const post_id = pick(h, singles);
-    if (post_id) {
-      assignments.push({ post_id, participant_id: h });
-      load.set(post_id, 2);
-    } else {
-      unplaced.push(h);
-    }
-  }
-  return { assignments, unplaced };
+  /** Une passe : chaque chasseur sur au plus un des postes candidats. */
+  const pass = (people: string[], candidates: string[]) => {
+    const n = Math.max(people.length, candidates.length);
+    if (!people.length || !candidates.length) return { placed: [] as { post_id: string; participant_id: string }[], left: people };
+    const m = Array.from({ length: n }, (_, i) => Array.from({ length: n }, (_, j) =>
+      i >= people.length ? 0 : j >= candidates.length ? UNPLACED : cost(people[i], candidates[j])));
+    const pick = hungarian(m);
+    const placed: { post_id: string; participant_id: string }[] = [];
+    const left: string[] = [];
+    people.forEach((h, i) => {
+      const j = pick[i];
+      if (j >= 0 && j < candidates.length && m[i][j] < UNPLACED) placed.push({ post_id: candidates[j], participant_id: h });
+      else left.push(h);
+    });
+    return { placed, left };
+  };
+
+  const toPlace = shuffle(hunters.filter((h) => !lockedHunters.has(h)), random);
+  const first = pass(toPlace, shuffle(postIds.filter((id) => (load.get(id) ?? 0) === 0), random));
+  for (const a of first.placed) load.set(a.post_id, 1);
+  const second = allowDouble ? pass(first.left, shuffle(postIds.filter((id) => (load.get(id) ?? 0) === 1), random)) : { placed: [], left: first.left };
+  return { assignments: [...first.placed, ...second.placed], unplaced: second.left };
 }

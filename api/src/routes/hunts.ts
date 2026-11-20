@@ -12,7 +12,7 @@ import { notFoundIfNull, parseId, tenantTx, type Role } from '../context';
 import { AppError } from '../errors';
 import { sha256Hex } from '../auth';
 import { loadHuntPlan, loadPlans } from './plans';
-import { drawAssignments, proposePosts } from '../proposal';
+import { drawAssignments, proposePosts, rotationWeight, type PlacementHistory } from '../proposal';
 import { planCarpool, type CarpoolPlan } from '../carpool';
 import { notifyUsers } from './notifications';
 
@@ -336,6 +336,37 @@ huntRoutes.delete('/hunts/:id/assignments/:pid', (c) => {
 });
 
 /**
+ * Placements passés des chasseurs sur ces postes (battues publiées, toutes
+ * journées, sur un an) : poids décroissant avec l'ancienneté, compté en
+ * battues du chasseur (0 : sa battue précédente). Un invité n'a d'historique
+ * que dans la journée (il n'a pas de compte).
+ */
+async function placementHistory(tx: Tx, huntId: string, hunters: { id: string; who: string }[], postIds: string[]): Promise<PlacementHistory> {
+  const rows = await tx.query<{ who: string; post_id: string; age: number }>(
+    `WITH past AS (
+       SELECT coalesce(hp.user_id, 'dp:' || hp.day_participant_id) AS who, a.post_id,
+              coalesce(h.started_at, h.assignments_published_at) AS at, h.id AS hunt_id
+         FROM hunt_assignments a
+         JOIN hunts h ON h.id = a.hunt_id
+         JOIN hunt_participants hp ON hp.id = a.participant_id
+        WHERE h.id <> $1 AND h.assignments_published_at IS NOT NULL
+          AND h.assignments_published_at > now() - interval '1 year')
+     SELECT who, post_id, (dense_rank() OVER (PARTITION BY who ORDER BY at DESC, hunt_id) - 1)::int AS age
+       FROM past WHERE who = ANY ($2::text[])`,
+    [huntId, hunters.map((h) => h.who)],
+  );
+  const wanted = new Set(postIds);
+  const byWho = new Map<string, Map<string, number>>();
+  for (const r of rows) {
+    if (!wanted.has(r.post_id)) continue;
+    const m = byWho.get(r.who) ?? new Map<string, number>();
+    m.set(r.post_id, (m.get(r.post_id) ?? 0) + rotationWeight(r.age));
+    byWho.set(r.who, m);
+  }
+  return new Map(hunters.map((h) => [h.id, byWho.get(h.who) ?? new Map()]));
+}
+
+/**
  * Tirage au sort : garde les attributions verrouillées, répartit les autres,
  * sans jamais donner un poste plus difficile que la capacité de marche.
  */
@@ -349,8 +380,9 @@ huntRoutes.post('/hunts/:id/draw', async (c) => {
       `SELECT hp.post_id, app.post_difficulty(p.access_difficulty, p.access_path) AS difficulty
          FROM hunt_posts hp JOIN posts p ON p.id = hp.post_id WHERE hp.hunt_id = $1`, [id]);
     if (!posts.length) throw new AppError(422, 'NO_DAY_POSTS', 'Choisissez d’abord les postes de la battue.');
-    const hunters = await tx.query<{ id: string; ability: number | null }>(
-      `SELECT hp.id, coalesce(dp.walking_ability, u.walking_ability) AS ability
+    const hunters = await tx.query<{ id: string; ability: number | null; who: string }>(
+      `SELECT hp.id, coalesce(dp.walking_ability, u.walking_ability) AS ability,
+              coalesce(hp.user_id, 'dp:' || hp.day_participant_id) AS who
          FROM hunt_participants hp JOIN day_participants dp ON dp.id = hp.day_participant_id
          LEFT JOIN users u ON u.id = hp.user_id
         WHERE hp.hunt_id = $1 AND hp.present AND hp.role = 'poste'`, [id]);
@@ -362,6 +394,7 @@ huntRoutes.post('/hunts/:id/draw', async (c) => {
     const { assignments, unplaced } = drawAssignments(
       posts.map((p) => p.post_id), hunters.map((h) => h.id), locked, allow_double, undefined,
       { difficulty: new Map(posts.map((p) => [p.post_id, p.difficulty])), ability: new Map(hunters.map((h) => [h.id, h.ability])) },
+      await placementHistory(tx, id, hunters, posts.map((p) => p.post_id)),
     );
     for (const a of assignments) {
       await tx.execute('INSERT INTO hunt_assignments (hunt_id, post_id, participant_id) VALUES ($1, $2, $3)', [id, a.post_id, a.participant_id]);

@@ -222,6 +222,14 @@ aucune réserve de l'association ne peut contenir un poste.
 
 Accès : Territoires → « 📋 Plans de chasse » sur la carte du territoire (`#/plans/<id>[/<plan>]`) ; plus d'entrée dans le menu du haut.
 
+**Rotation des postes** : le placement des postés est automatique dès que les
+postes de la battue sont choisis (plan de chasse ou carte), puis ajustable à
+la main. Il minimise un coût par chasseur et par poste tiré de l'historique des
+placements publiés (toutes journées, un an) : reprendre le poste de sa battue
+précédente coûte 4, les occupations plus anciennes 0,5^n ; jamais un poste
+plus difficile que sa marche ; le hasard départage les égalités (algorithme
+hongrois). Un invité n'a d'historique que dans sa journée.
+
 **Président adjoint et responsable de battue** (migration 0018) : le président
 peut nommer un ou plusieurs présidents adjoints jusqu'à une date (page Membres) ;
 pendant le mandat, ils ont les droits du président sauf sur les droits des

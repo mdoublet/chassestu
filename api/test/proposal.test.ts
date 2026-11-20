@@ -1,6 +1,6 @@
 // Proposition des postes du jour et tirage au sort (logique pure).
 import { describe, expect, it } from 'vitest';
-import { drawAssignments, proposePosts } from '../src/proposal';
+import { drawAssignments, hungarian, proposePosts, rotationWeight } from '../src/proposal';
 
 // Postes « p1 » … « p13 » ; plans de l'exemple de la spécification.
 const P = (...n: number[]) => n.map((i) => `p${i}`);
@@ -61,5 +61,60 @@ describe('tirage au sort', () => {
     const counts = new Map<string, number>();
     for (const a of doubled.assignments) counts.set(a.post_id, (counts.get(a.post_id) ?? 0) + 1);
     expect(Math.max(...counts.values())).toBe(2);
+  });
+});
+
+describe('rotation des postes', () => {
+  const H = (entries: Record<string, Record<string, number>>) =>
+    new Map(Object.entries(entries).map(([h, m]) => [h, new Map(Object.entries(m))]));
+
+  it('chacun évite les postes occupés récemment', () => {
+    // a était au p1, b au p2 la battue précédente : ils échangent.
+    const history = H({ a: { p1: 1 }, b: { p2: 1 } });
+    for (let run = 0; run < 30; run++) {
+      const { assignments } = drawAssignments(['p1', 'p2'], ['a', 'b'], [], false, undefined, undefined, history);
+      expect(Object.fromEntries(assignments.map((x) => [x.participant_id, x.post_id]))).toEqual({ a: 'p2', b: 'p1' });
+    }
+  });
+
+  it('postes jamais occupés d’abord, puis les plus anciens ; à égalité, le hasard', () => {
+    const history = H({ a: { p1: rotationWeight(0), p2: rotationWeight(3) } });
+    expect(drawAssignments(['p1', 'p2', 'p3'], ['a'], [], false, undefined, undefined, history).assignments[0].post_id).toBe('p3');
+    expect(drawAssignments(['p1', 'p2'], ['a'], [], false, undefined, undefined, history).assignments[0].post_id).toBe('p2');
+    const seen = new Set<string>();
+    for (let run = 0; run < 60; run++) seen.add(drawAssignments(['p1', 'p2', 'p3'], ['z'], [], false).assignments[0].post_id);
+    expect(seen.size).toBe(3);
+  });
+
+  it('la marche prime sur la rotation ; on place le plus de chasseurs possible', () => {
+    const mobility = {
+      difficulty: new Map<string, number | null>([['facile', 1], ['dur', 5]]),
+      ability: new Map<string, number | null>([['lent', 1], ['rapide', 5]]),
+    };
+    // « lent » a toujours eu le poste facile : il le garde (seul accessible), « rapide » prend le dur.
+    const history = H({ lent: { facile: 3 }, rapide: { dur: 3 } });
+    for (let run = 0; run < 20; run++) {
+      const { assignments, unplaced } = drawAssignments(['facile', 'dur'], ['lent', 'rapide'], [], false, undefined, mobility, history);
+      expect(unplaced).toEqual([]);
+      expect(Object.fromEntries(assignments.map((x) => [x.participant_id, x.post_id]))).toEqual({ lent: 'facile', rapide: 'dur' });
+    }
+  });
+
+  it('affectation optimale (hongrois)', () => {
+    expect(hungarian([[4, 1, 3], [2, 0, 5], [3, 2, 2]])).toEqual([1, 0, 2]);
+  });
+});
+
+describe('rotation : la battue précédente prime', () => {
+  it('ne reprend pas le poste de la battue précédente, même avec un long passé ailleurs', () => {
+    // marc : poste 3 à la battue précédente, mais poste 1 très souvent avant ; jean : poste 1 la dernière fois.
+    const history = new Map([
+      ['marc', new Map([['p3', rotationWeight(0)], ['p1', rotationWeight(1) + rotationWeight(2) + rotationWeight(3) + rotationWeight(4)]])],
+      ['jean', new Map([['p1', rotationWeight(0)], ['p3', rotationWeight(1)]])],
+    ]);
+    for (let run = 0; run < 20; run++) {
+      const a = drawAssignments(['p1', 'p3'], ['marc', 'jean'], [], false, undefined, undefined, history).assignments;
+      expect(Object.fromEntries(a.map((x) => [x.participant_id, x.post_id]))).toEqual({ marc: 'p1', jean: 'p3' });
+    }
   });
 });

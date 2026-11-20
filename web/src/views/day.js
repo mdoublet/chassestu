@@ -124,8 +124,23 @@ async function dayConsole(main, dayId) {
     if (!hunt || hunt.started_at || !proposal?.post_ids.length || !proposal.plan_count) return;
     const untouched = !day_post_ids.length || (previous && sameIds(previous, day_post_ids));
     if (!untouched || sameIds(proposal.post_ids, day_post_ids)) return;
-    await act(() => api.put(`/hunts/${hunt.id}/posts`, { post_ids: proposal.post_ids }),
-      `Postes du plan « ${hunt.hunt_plan_name} » à ${proposal.plan_count} chasseurs repris (modifiables sur la carte).`);
+    if (await act(() => api.put(`/hunts/${hunt.id}/posts`, { post_ids: proposal.post_ids }),
+      `Postes du plan « ${hunt.hunt_plan_name} » à ${proposal.plan_count} chasseurs repris (modifiables sur la carte).`)) await autoPlace();
+  }
+
+  /**
+   * Placement automatique des postés sans poste : rotation (chacun évite les
+   * postes occupés lors de ses battues précédentes), marche respectée, hasard
+   * à égalité. Les placements déjà faits sont gardés.
+   */
+  async function autoPlace(all = false) {
+    const { hunt, participants, day_post_ids } = dv.hunt ?? {};
+    if (!hunt || hunt.started_at || !day_post_ids?.length) return;
+    if (!all && !participants.some((p) => p.present && p.role === 'poste' && !p.post_id)) return;
+    if (all) await api.del(`/hunts/${hunt.id}/assignments`).catch(() => {});
+    const res = await act(() => api.post(`/hunts/${hunt.id}/draw`, { allow_double: dv.allowDouble, keep_existing: true }),
+      'Chasseurs placés : chacun change de poste par rapport à ses battues précédentes (marche respectée). Ajustez à la main si besoin.');
+    if (res?.unplaced) toast(`${res.unplaced} chasseur(s) sans poste accessible : ajoutez un poste plus facile ou passez-les en traque.`, 'warn');
   }
   const sameIds = (a, b) => a.length === b.length && a.every((id) => b.includes(id));
 
@@ -197,7 +212,10 @@ async function dayConsole(main, dayId) {
     if (chosen.has(p.id)) chosen.delete(p.id);
     else if (available) chosen.add(p.id);
     else return toast(`Poste ${p.number} indisponible.`, 'error');
-    act(() => api.put(`/hunts/${dv.hunt.hunt.id}/posts`, { post_ids: [...chosen] }));
+    // Placement initial automatique : personne n'est encore placé et il y a un poste pour chacun.
+    const posted = dv.hunt.participants.filter((x) => x.present && x.role === 'poste').length;
+    const auto = !dv.hunt.participants.some((x) => x.post_id) && chosen.size >= posted;
+    act(() => api.put(`/hunts/${dv.hunt.hunt.id}/posts`, { post_ids: [...chosen] })).then((r) => r && auto && autoPlace());
   }
 
   map.on('click', (e) => {
@@ -576,7 +594,10 @@ async function dayConsole(main, dayId) {
     return h('section.card.assign',
       h('h3', `2. Postes · ${dayPosts.length} pour ${posted.length} posté(s)`),
       editable && proposal?.post_ids.length && !sameAsProposal
-        ? h('button', { onclick: () => act(() => api.put(`/hunts/${hunt.id}/posts`, { post_ids: proposal.post_ids }), 'Postes du plan choisis.') },
+        ? h('button', { onclick: async () => {
+            const nobodyPlaced = !participants.some((x) => x.post_id);
+            if (await act(() => api.put(`/hunts/${hunt.id}/posts`, { post_ids: proposal.post_ids }), 'Postes du plan choisis.') && nobodyPlaced) await autoPlace();
+          } },
             proposal.plan_count ? `Prendre les postes du plan « ${hunt.hunt_plan_name} » à ${proposal.plan_count} chasseurs (${proposal.post_ids.length})` : `Prendre la proposition (${proposal.post_ids.length} postes)`)
         : null,
       editable ? h('p.small.muted', picked ? `Touchez le poste où placer ${picked.name}.` : 'Touchez un nom puis un poste pour le placer. Postes : ajout et retrait sur la carte.') : null,
@@ -588,10 +609,10 @@ async function dayConsole(main, dayId) {
         : h('p.muted', 'Choisissez les postes sur la carte.'),
       editable && dayPosts.length
         ? h('div.buttons',
-            h('button', { onclick: async () => {
-              const res = await act(() => api.post(`/hunts/${hunt.id}/draw`, { allow_double: dv.allowDouble, keep_existing: true }), 'Chasseurs sans poste placés au hasard (marche respectée).');
-              if (res?.unplaced) toast(`${res.unplaced} chasseur(s) sans poste accessible : ajoutez un poste plus facile ou passez-les en traque.`, 'warn');
-            } }, '🎲 Placer au hasard'),
+            unassigned.length ? h('button', { onclick: () => autoPlace(), title: 'Rotation : chacun évite ses postes récents' }, `Placer les ${unassigned.length} sans poste`) : null,
+            participants.some((p) => p.post_id) ? h('button', { onclick: async () => {
+              if (await confirmDialog('Tout replacer', 'Refaire tout le placement (rotation des postes) ? Les placements faits à la main seront perdus.', 'Tout replacer')) autoPlace(true);
+            }, title: 'Rotation : chacun évite ses postes récents' }, '🔄 Tout replacer') : null,
             participants.some((p) => p.post_id) ? h('button.link', { onclick: () => act(() => api.del(`/hunts/${hunt.id}/assignments`)) }, 'Tout effacer') : null,
             proposal?.kind === 'too_many' ? h('label.check', h('input', { type: 'checkbox', checked: dv.allowDouble, onchange: (e) => { dv.allowDouble = e.target.checked; } }), 'Doublons') : null)
         : null,
