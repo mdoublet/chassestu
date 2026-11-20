@@ -99,6 +99,8 @@ export async function editorView(main, start) {
     fitted: false,
     showAll: false, // les autres territoires : vue globale de la page Territoires
     overview: null, // { territories, reserves, posts, exclusions } de tout le tenant
+    open: new Set(), // sections dépliées du panneau (fermées au départ)
+    allDwellings: false, // liste des bâtiments : tout afficher
   };
 
   ensureHatchPattern();
@@ -910,15 +912,7 @@ export async function editorView(main, start) {
     }
     const item = find(kind, id);
     if (!item) return null;
-    const del = canEdit
-      ? h('button.danger', {
-          onclick: async () => {
-            const plans = kind === 'posts' ? item.plan_counts ?? [] : [];
-            if (plans.length && !(await confirmDialog('Supprimer le poste', `Le poste ${item.number} est utilisé dans les plans à ${plans.join(', ')} chasseurs : ces plans deviendront incomplets.`, 'Supprimer', true))) return;
-            run(async () => { await deleteItem(kind, item); ed.selected = null; });
-          },
-        }, 'Supprimer')
-      : null;
+    const del = canEdit ? h('button.danger', { onclick: () => askDelete(kind, item) }, 'Supprimer') : null;
 
     if (kind === 'reserves') {
       return h('section.props', h('h3', 'Zone de réserve'), field('Nom', bound(kind, item, 'name', { maxlength: 200 })), field('Motif', bound(kind, item, 'reason', { maxlength: 1000 })), h('p.small', `${item.area_ha.toLocaleString('fr-FR')} ha`), del);
@@ -1007,7 +1001,7 @@ export async function editorView(main, start) {
     ].filter(Boolean);
     const reason = h('input', { maxlength: 500, placeholder: 'Pourquoi ? ex. ruine, hangar sans logement' });
     const remove = () => {
-      if (!ign) return run(async () => { await deleteItem('dwellings', d); ed.selected = null; });
+      if (!ign) return confirmDelete('dwellings', d, 'Supprimer l’habitation', `Supprimer l’habitation ajoutée « ${d.comment || 'Habitation'} » ? (Annulable avec ↶.)`);
       if (reason.value.trim().length < 3) {
         toast('Indiquez pourquoi ce bâtiment n’est pas une habitation.', 'error');
         reason.focus();
@@ -1044,13 +1038,146 @@ export async function editorView(main, start) {
     await reload();
   }
 
-  function listSection(title, kind, items, labelOf) {
-    if (!items.length) return null;
-    return h(
-      'section',
-      h('h3', title),
-      h('ul.objects', items.map((it) => h('li', h('button.link', { class: isSelected(kind, it.id) ? 'active' : '', onclick: () => select(kind, it.id, { zoom: true }) }, labelOf(it))))),
-    );
+  /** Section dépliable (fermée au départ, état gardé entre deux rendus). */
+  function foldSection(key, title, extra, ...content) {
+    const d = h('details.fold', { open: ed.open.has(key) },
+      h('summary', h('span', title), extra ? h('span.small.muted', ` ${extra}`) : null),
+      ...content);
+    d.addEventListener('toggle', () => { if (d.open) ed.open.add(key); else ed.open.delete(key); });
+    return d;
+  }
+
+  /** Symbole d'état : grisé quand la condition n'est pas remplie. */
+  const sym = (icon, ok, yes, no) => h('span.sym', { class: ok ? '' : 'off', title: ok ? yes : no, 'aria-label': ok ? yes : no }, icon);
+
+  /** Ligne de liste : symboles, libellé (zoom), ✏️ éditer, 🗑 supprimer. */
+  function objectRow(kind, it, { symbols = [], label, note, onDelete, deleteTitle = 'Supprimer', dim = false }) {
+    const edit = () => {
+      select(kind, it.id, { zoom: true });
+      panel.querySelector('.props')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    };
+    return h('li.obj-row', { class: [isSelected(kind, it.id) ? 'active' : '', dim ? 'dim' : ''].join(' ') },
+      symbols.length ? h('span.syms', symbols) : null,
+      h('button.link.obj-label', { onclick: () => select(kind, it.id, { zoom: true }), title: 'Voir sur la carte' }, label,
+        note ? h('span.small.muted', ` ${note}`) : null),
+      h('span.obj-actions',
+        h('button.icon', { onclick: edit, title: canEdit ? 'Modifier' : 'Détails', 'aria-label': canEdit ? 'Modifier' : 'Détails' }, '✏️'),
+        canEdit && onDelete ? h('button.icon.danger', { onclick: onDelete, title: deleteTitle, 'aria-label': deleteTitle }, '🗑') : null));
+  }
+
+  async function confirmDelete(kind, item, title, message) {
+    if (!(await confirmDialog(title, message, 'Supprimer', true))) return;
+    run(async () => {
+      await deleteItem(kind, item);
+      if (isSelected(kind, item.id)) ed.selected = null;
+    });
+  }
+
+  const postLabel = (p) => `${p.number}${p.name ? ` (${p.name})` : ''}`;
+
+  /** Suppression confirmée d'un poste, parking ou réserve (liste ou fiche). */
+  function askDelete(kind, item) {
+    if (kind === 'posts') {
+      const plans = item.plan_counts ?? [];
+      return confirmDelete('posts', item, 'Supprimer le poste', `Supprimer le poste ${postLabel(item)}${item.access_path ? ' et son chemin d’accès' : ''} ?${plans.length ? ` Il est utilisé dans les plans à ${plans.join(', ')} chasseurs : ces plans deviendront incomplets.` : ''} (Annulable avec ↶.)`);
+    }
+    if (kind === 'parkings') {
+      const linked = ed.data.posts.filter((p) => p.parking_id === item.id);
+      return confirmDelete('parkings', item, 'Supprimer le parking',
+        `Supprimer le parking « ${item.name} » ?${linked.length ? ` Les postes ${linked.map((p) => p.number).join(', ')} n’auront plus de parking associé.` : ''} (Annulable avec ↶.)`);
+    }
+    if (kind === 'reserves') return confirmDelete('reserves', item, 'Supprimer la réserve', `Supprimer la réserve « ${item.name || 'Réserve'} » ? (Annulable avec ↶.)`);
+    return confirmDelete(kind, item, 'Supprimer', 'Supprimer cet élément ? (Annulable avec ↶.)');
+  }
+
+  function postsSection() {
+    const posts = [...ed.data.posts].sort((a, b) => a.number - b.number);
+    const problems = posts.filter((p) => p.invalid_reason || !p.parking_id || !p.access_path || isOutside(p)).length;
+    return foldSection('posts', `Postes (${posts.length})`, problems ? `· ⚠ ${problems} à compléter` : '',
+      posts.length ? h('p.small.muted.legend', '🅿 parking · 🥾 chemin · ✅ actif · 🗺 dans le territoire (grisé : non)') : h('p.small.muted', 'Aucun poste : « + Poste » pour en placer un.'),
+      h('ul.obj-list', posts.map((p) => objectRow('posts', p, {
+        symbols: [
+          sym('🅿', !!p.parking_id, 'Parking associé', 'Pas de parking associé'),
+          sym('🥾', !!p.access_path, `Chemin d’accès${p.access_path_length_m ? ` (${p.access_path_length_m} m)` : ''}`, 'Pas de chemin d’accès'),
+          sym('✅', p.active, 'Actif', 'Inactif'),
+          sym('🗺', !isOutside(p), 'Dans le territoire', 'Hors du territoire'),
+        ],
+        label: [p.invalid_reason ? '⛔ ' : p.nearest_dwelling_m != null ? '⚠ ' : '', postLabel(p)].join(''),
+        dim: !p.active,
+        onDelete: () => askDelete('posts', p),
+      }))));
+  }
+
+  function parkingsSection() {
+    const parkings = ed.data.parkings;
+    return foldSection('parkings', `Parkings (${parkings.length})`, '',
+      parkings.length ? null : h('p.small.muted', 'Aucun parking : « + Parking » pour en ajouter un.'),
+      h('ul.obj-list', parkings.map((pk) => {
+        const linked = ed.data.posts.filter((p) => p.parking_id === pk.id);
+        return objectRow('parkings', pk, {
+          symbols: [sym('🗺', booleanPointInPolygon(pk.geom.coordinates, ed.data.territory.geom), 'Dans le territoire', 'Hors du territoire')],
+          label: pk.name,
+          note: linked.length ? `· ${linked.length} poste(s)` : '· aucun poste',
+          onDelete: () => askDelete('parkings', pk),
+        });
+      })));
+  }
+
+  function reservesSection() {
+    const reserves = ed.data.reserves;
+    return foldSection('reserves', `Réserves (${reserves.length})`, '',
+      reserves.length ? null : h('p.small.muted', 'Aucune réserve : « + Réserve » pour en dessiner une.'),
+      h('ul.obj-list', reserves.map((r) => objectRow('reserves', r, {
+        label: r.name || 'Réserve',
+        note: `· ${r.area_ha.toLocaleString('fr-FR')} ha${r.reason ? ` · ${r.reason}` : ''}`,
+        onDelete: () => askDelete('reserves', r),
+      }))));
+  }
+
+  /** Bâtiments IGN et habitations ajoutées à la main, dans une seule liste. */
+  function dwellingsSection() {
+    const all = ed.data.dwellings ?? [];
+    const rank = (d) => (d.ignored ? 3 : d.missing_since || d.likely_non_residential ? 0 : d.source === 'manuel' ? 1 : 2);
+    // Repère pour distinguer des bâtiments au même libellé : le poste le plus proche.
+    const anchor = (g) => (g.type === 'Point' ? g.coordinates : g.type === 'Polygon' ? g.coordinates[0][0] : g.coordinates[0][0][0]);
+    const near = new Map(all.map((d) => {
+      let best = null;
+      for (const p of ed.data.posts) {
+        const m = distanceMeters(anchor(d.geom), p.geom.coordinates);
+        if (!best || m < best.m) best = { p, m };
+      }
+      return [d.id, best];
+    }));
+    const where = (d) => { const n = near.get(d.id); return n ? `à ${Math.round(n.m)} m du poste ${n.p.number}` : ''; };
+    const sorted = [...all].sort((a, b) => rank(a) - rank(b) || (near.get(a.id)?.m ?? 0) - (near.get(b.id)?.m ?? 0));
+    const toCheck = all.filter((d) => rank(d) === 0).length;
+    const LIMIT = 50;
+    const shown = ed.allDwellings ? sorted : sorted.slice(0, LIMIT);
+    const removeDwelling = async (d) => {
+      if (d.source === 'manuel') {
+        return confirmDelete('dwellings', d, 'Supprimer l’habitation', `Supprimer l’habitation ajoutée « ${d.comment || 'Habitation'} » ? Elle ne comptera plus dans la zone non chassable. (Annulable avec ↶.)`);
+      }
+      const reason = await promptDialog('Supprimer ce bâtiment', `Bâtiment IGN${d.usage ? ` (${d.usage})` : ''} : pourquoi n’est-ce pas une habitation ? Il restera mémorisé (et rétablissable) pour ne pas revenir à la prochaine actualisation.`, '');
+      if (reason == null) return undefined;
+      if (reason.trim().length < 3) return toast('Indiquez pourquoi ce bâtiment n’est pas une habitation.', 'error');
+      return run(() => updateItem('dwellings', d, { ignored: true, ignored_reason: reason.trim() }));
+    };
+    return foldSection('dwellings', `Bâtiments (${all.filter((d) => !d.ignored).length})`, toCheck ? `· ⚠ ${toCheck} à vérifier` : '',
+      all.length ? h('p.small.muted.legend', '🏛 IGN · ✍ ajoutée à la main · ⚠ à vérifier · 🚫 supprimé (ne compte plus)') : h('p.small.muted', 'Aucun bâtiment : actualisez-les depuis la section « Données ».'),
+      h('ul.obj-list', shown.map((d) => objectRow('dwellings', d, {
+        symbols: [
+          h('span.sym', { title: d.source === 'manuel' ? 'Ajoutée à la main' : 'Bâtiment IGN (BD TOPO)' }, d.source === 'manuel' ? '✍' : '🏛'),
+          d.ignored ? h('span.sym', { title: `Supprimé : ${d.ignored_reason ?? ''}` }, '🚫')
+            : rank(d) === 0 ? h('span.sym', { title: d.missing_since ? 'Disparu de la BD TOPO' : 'Probablement pas une habitation' }, '⚠') : null,
+        ],
+        label: d.source === 'manuel' ? d.comment || 'Habitation' : d.usage || 'Bâtiment',
+        note: [where(d), d.ignored ? d.ignored_reason ?? 'supprimé' : d.missing_since ? 'disparu de la BD TOPO' : ''].filter(Boolean).map((x) => `· ${x}`).join(' '),
+        dim: d.ignored,
+        onDelete: d.ignored ? null : () => removeDwelling(d),
+      }))),
+      sorted.length > LIMIT ? h('button.link.small', { onclick: () => { ed.allDwellings = !ed.allDwellings; render(); } },
+        ed.allDwellings ? 'Réduire la liste' : `Afficher les ${sorted.length - LIMIT} autres`) : null,
+      h('p.small.muted', 'Astuce : cliquez un bâtiment sur la carte pour l’identifier.'));
   }
 
   function exclusionSummary() {
@@ -1066,7 +1193,7 @@ export async function editorView(main, start) {
         ex.dwellings_refreshed_at ? ` Bâtiments IGN du ${new Date(ex.dwellings_refreshed_at).toLocaleDateString('fr-FR')}.` : ''),
       ex.needs_refresh ? h('p.alert.warn', 'Bâtiments à actualiser : jamais importés, ou territoire / distance modifiés depuis le dernier import.') : null,
       invalid ? h('p.alert.danger', `${invalid} poste(s) invalide(s) : trop près d’une habitation, à déplacer.`) : null,
-      ex.needs_refresh && canEdit ? h('p.small.muted', 'Actualisation : section « Données et bâtiments » en bas.') : null,
+      ex.needs_refresh && canEdit ? h('p.small.muted', 'Actualisation : section « Données » en bas.') : null,
     );
   }
 
@@ -1082,9 +1209,6 @@ export async function editorView(main, start) {
       : null;
     const rec = ed.recording;
     const t = ed.data?.territory;
-    const dwellings = ed.data?.dwellings ?? [];
-    const toCheck = dwellings.filter((d) => !d.ignored && (d.likely_non_residential || d.missing_since));
-    const manual = dwellings.filter((d) => d.source === 'manuel');
 
     fill(panel,
       h('a.small', { href: '#/territoires' }, '← Territoires'),
@@ -1107,20 +1231,16 @@ export async function editorView(main, start) {
         : null,
       tools,
       propertiesPanel(),
-      ed.data ? listSection('Postes', 'posts', ed.data.posts, (p) => `${p.invalid_reason ? '⛔ ' : p.nearest_dwelling_m != null ? '⚠ ' : ''}${p.number}${p.name ? ` · ${p.name}` : ''}${isOutside(p) ? ' (hors territoire)' : ''}${p.access_path ? '' : ' (sans chemin)'}${p.active ? '' : ' (inactif)'}`) : null,
-      ed.data ? listSection('Parkings', 'parkings', ed.data.parkings, (p) => p.name) : null,
-      ed.data ? listSection('Réserves', 'reserves', ed.data.reserves, (r) => r.name || 'Réserve') : null,
-      // Rarement utile : fermé au départ.
+      ed.data ? postsSection() : null,
+      ed.data ? parkingsSection() : null,
+      ed.data ? reservesSection() : null,
+      ed.data ? dwellingsSection() : null,
       ed.data && !busy
-        ? h('details.more-tools',
-            h('summary', `Données et bâtiments${toCheck.length ? ` · ${toCheck.length} à vérifier` : ''}`),
+        ? foldSection('data', 'Données', 'import, export, IGN',
             h('div.buttons',
               canEdit ? h('button', { onclick: pickFile }, 'Importer (GeoJSON, KML, GPX)') : null,
               h('button', { onclick: exportGeoJSON }, 'Exporter GeoJSON'),
-              canEdit ? h('button', { onclick: refreshDwellings }, 'Actualiser les bâtiments (IGN)') : null),
-            listSection('Bâtiments à vérifier', 'dwellings', toCheck, (d) => d.missing_since ? `Disparu de la BD TOPO · ${d.usage || 'bâtiment'}` : d.usage || 'Bâtiment'),
-            listSection('Habitations ajoutées', 'dwellings', manual, (d) => d.comment || 'Habitation'),
-            h('p.small.muted', 'Astuce : cliquez un bâtiment sur la carte pour l’identifier et, si besoin, ne plus le compter.'))
+              canEdit ? h('button', { onclick: refreshDwellings }, 'Actualiser les bâtiments (IGN)') : null))
         : null,
       h('p.disclaimer', 'Aide au placement uniquement : la responsabilité du placement des postes reste celle du président.'),
     );

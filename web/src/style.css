@@ -401,8 +401,6 @@ input.territory-name:hover:not(:disabled), input.territory-name:focus { border-c
 .territory-toggles label.check { margin: 0; }
 h2.small-title { font-size: 1rem; margin: 0.5rem 0 0.25rem; }
 h2.editor-title { font-size: 1.2rem; margin: 0.25rem 0 0.5rem; }
-details.more-tools { margin-top: 1rem; border-top: 1px solid var(--border); padding-top: 0.5rem; }
-details.more-tools > summary { cursor: pointer; font-weight: 600; }
 /* Calque des bâtiments (éditeur) : seul un bâtiment capte le clic, pas le fond du calque. */
 .leaflet-dwellings-pane > svg { pointer-events: none; }
 .leaflet-dwellings-pane > svg path.leaflet-interactive { pointer-events: auto; }
@@ -413,3 +411,20 @@ details.more-tools > summary { cursor: pointer; font-weight: 600; }
 .basemap-ortho path[stroke="#5c3d1e"] { stroke: #ffffff; filter: drop-shadow(0 0 1.5px rgba(0, 0, 0, 0.9)); }
 .basemap-ortho path[stroke="#5f6b63"] { stroke: #e9ecef; }
 .basemap-ortho .territory-label { background: rgba(0, 0, 0, 0.55); color: #ffe066; }
+
+/* Éditeur : sections dépliables Postes / Parkings / Réserves / Bâtiments / Données */
+details.fold { border-top: 1px solid var(--border); padding: 0.35rem 0; }
+details.fold > summary { cursor: pointer; font-weight: 600; padding: 0.25rem 0; }
+details.fold[open] > summary { margin-bottom: 0.25rem; }
+details.fold .legend { margin: 0 0 0.25rem; }
+ul.obj-list { list-style: none; padding: 0; margin: 0; }
+li.obj-row { display: flex; align-items: center; gap: 0.35rem; padding: 0.15rem 0.25rem; border-radius: 6px; }
+li.obj-row.active { background: color-mix(in srgb, var(--primary) 14%, transparent); }
+li.obj-row.dim .obj-label { opacity: 0.55; }
+li.obj-row .syms { display: inline-flex; gap: 0.1rem; flex: none; }
+li.obj-row .sym { font-size: 0.85rem; width: 1.2rem; text-align: center; cursor: default; }
+li.obj-row .sym.off { filter: grayscale(1); opacity: 0.25; }
+li.obj-row .obj-label { flex: 1; min-width: 0; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+li.obj-row .obj-actions { display: inline-flex; gap: 0.1rem; flex: none; }
+button.icon { background: none; border: 0; padding: 0.2rem 0.3rem; min-height: 0; cursor: pointer; font-size: 0.95rem; line-height: 1; border-radius: 4px; }
+button.icon:hover { background: var(--border); }
