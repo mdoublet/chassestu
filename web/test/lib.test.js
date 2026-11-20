@@ -147,7 +147,7 @@ describe('postes hors du territoire (côté client)', () => {
   });
 });
 
-import { previousCount, rowStatus, sameSet, selectable } from '../src/lib/plans.js';
+import { freeCounts, previousCount, rowStatus, sameSet, selectable } from '../src/lib/plans.js';
 describe('grille des plans de couverture', () => {
   it('compteur « n / effectif » et ligne valide seulement si exacte', () => {
     expect(rowStatus(5, new Set(['a', 'b', 'c', 'd']))).toEqual({ n: 4, exact: false, label: '4 / 5' });
@@ -156,6 +156,8 @@ describe('grille des plans de couverture', () => {
   it('« Dupliquer N-1 » prend l’effectif inférieur le plus proche (pas forcément N-1)', () => {
     expect(previousCount([5, 6, 9], 9)).toBe(6);
     expect(previousCount([5, 6], 5)).toBeNull();
+    expect(freeCounts([2, 4], 5)).toEqual([1, 3, 5]);
+    expect(freeCounts([], 0)).toEqual([]);
   });
   it('ensembles et postes sélectionnables', () => {
     expect(sameSet(new Set([1, 2]), new Set([2, 1]))).toBe(true);

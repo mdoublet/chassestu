@@ -25,3 +25,11 @@ export function sameSet(a, b) {
 
 /** Un poste peut-il être coché (actif et valide) ? */
 export const selectable = (post) => post.active && !post.invalid_reason;
+
+/** Effectifs encore libres (1 … nombre de postes disponibles), hors effectifs déjà définis. */
+export function freeCounts(counts, available) {
+  const used = new Set(counts);
+  const out = [];
+  for (let n = 1; n <= Math.min(available, 999); n++) if (!used.has(n)) out.push(n);
+  return out;
+}

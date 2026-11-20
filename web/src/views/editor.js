@@ -18,6 +18,7 @@ import { parseGeoFile } from '../lib/importer.js';
 import { DIFFICULTY_LABELS } from '../lib/hunts.js';
 import { updatedPath, bestPathToPost } from '../lib/routing.js';
 import { startCenter } from '../lib/start-center.js';
+import { panelResizer } from '../map/resizer.js';
 
 /** Champs nécessaires pour recréer un objet supprimé (annulation). */
 const FIELDS = {
@@ -111,30 +112,7 @@ export async function editorView(main, start) {
   const panel = h('aside.panel');
   const mapEl = h('div.map');
   // Panneau élargissable : poignée à glisser (largeur mémorisée sur l'appareil).
-  const WIDTH_KEY = 'chassestu.editorPanelWidth';
-  const setWidth = (w) => { panel.style.width = `${Math.round(Math.min(Math.max(w, 280), window.innerWidth * 0.7))}px`; };
-  try { const w = Number(localStorage.getItem(WIDTH_KEY)); if (w) setWidth(w); } catch { /* rien */ }
-  const resizer = h('div.resizer', { title: 'Glisser pour élargir le panneau', role: 'separator', 'aria-orientation': 'vertical' });
-  resizer.addEventListener('pointerdown', (e) => {
-    e.preventDefault();
-    resizer.setPointerCapture(e.pointerId);
-    resizer.classList.add('dragging');
-    const right = panel.getBoundingClientRect().right;
-    const move = (ev) => setWidth(right - ev.clientX);
-    const up = () => {
-      resizer.removeEventListener('pointermove', move);
-      resizer.classList.remove('dragging');
-      try { localStorage.setItem(WIDTH_KEY, String(panel.offsetWidth)); } catch { /* rien */ }
-      map.invalidateSize();
-    };
-    resizer.addEventListener('pointermove', move);
-    resizer.addEventListener('pointerup', up, { once: true });
-  });
-  resizer.addEventListener('dblclick', () => {
-    panel.style.width = '';
-    try { localStorage.removeItem(WIDTH_KEY); } catch { /* rien */ }
-    map.invalidateSize();
-  });
+  const resizer = panelResizer(panel, { key: 'chassestu.editorPanelWidth', onResize: () => map.invalidateSize() });
   main.append(h('div.editor', mapEl, resizer, panel));
 
   const map = L.map(mapEl, { zoomControl: true }).setView([46.6, 2.4], 6);

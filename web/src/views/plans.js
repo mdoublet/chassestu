@@ -12,7 +12,8 @@ import { escapeHtml, toLatLng, ensureHatchPattern, postIcon, traqueIcon, traqueL
 import { api } from '../api.js';
 import { state } from '../state.js';
 import { h, fill, toast, errorMessage, confirmDialog, promptDialog } from '../ui.js';
-import { previousCount, rowStatus, sameSet, selectable } from '../lib/plans.js';
+import { freeCounts, previousCount, rowStatus, sameSet, selectable } from '../lib/plans.js';
+import { panelResizer } from '../map/resizer.js';
 
 const TERRITORY_KEY = 'chassestu.plansTerritory';
 
@@ -32,6 +33,7 @@ export async function plansView(main, territoryId, huntPlanId) {
     huntPlans: [], // plans de chasse du territoire (avec leur grille)
     huntPlanId: huntPlanId ?? null,
     placing: null, // 'start' | 'exit' | 'path' : dessin de la traque en cours
+    collapsed: false, // bloc du plan de chasse actif replié
     data: null, // détail du territoire (postes, zones…)
     plans: [], // plans enregistrés (serveur)
     rows: new Map(), // effectif → { saved: Set|null, current: Set, plan }
@@ -41,11 +43,15 @@ export async function plansView(main, territoryId, huntPlanId) {
   };
 
   ensureHatchPattern();
+  // Même principe que l'éditeur de territoire : carte, poignée, panneau à droite.
   const gridBox = h('div.plans-grid');
-  const mapEl = h('div.plans-map');
+  const mapEl = h('div.map');
   const head = h('div.plans-head');
   const traqueBox = h('div.traque-box');
-  main.append(h('div.plans-page', head, h('div.plans-layout', mapEl, h('div.plans-side', traqueBox, gridBox))));
+  const listBox = h('div.hunt-plan-list');
+  const panel = h('aside.panel.plans-panel', head, listBox);
+  const resizer = panelResizer(panel, { key: 'chassestu.plansPanelWidth', defaultWidth: 520, onResize: () => map.invalidateSize() });
+  main.append(h('div.editor', mapEl, resizer, panel));
 
   const map = L.map(mapEl, { zoomControl: true }).setView([46.6, 2.4], 6);
   addBasemaps(map);
@@ -139,7 +145,11 @@ export async function plansView(main, territoryId, huntPlanId) {
 
   async function switchHuntPlan(id) {
     if (id === ps.huntPlanId) return;
-    if (anyDirty() && !(await confirmDialog('Modifications non enregistrées', 'Changer de plan de chasse abandonne les lignes non enregistrées de la grille.', 'Continuer'))) return;
+    if (anyDirty() && !(await confirmDialog('Modifications non enregistrées', 'Changer de plan de chasse abandonne les lignes non enregistrées de la grille.', 'Continuer'))) {
+      renderHead();
+      return;
+    }
+    ps.collapsed = false;
     stopPlacing();
     ps.huntPlanId = id;
     ps.rows = new Map();
@@ -154,6 +164,7 @@ export async function plansView(main, territoryId, huntPlanId) {
     try {
       const { hunt_plan } = await api.post(`/territories/${ps.territoryId}/hunt-plans`, { name });
       ps.huntPlanId = hunt_plan.id;
+      ps.collapsed = false;
       ps.rows = new Map();
       ps.selected = null;
       await load();
@@ -331,27 +342,22 @@ export async function plansView(main, territoryId, huntPlanId) {
     }
   }
 
-  function duplicate(count) {
-    const from = previousCount(counts(), count);
-    if (from === null) return;
-    const r = ps.rows.get(count);
-    r.current = new Set([...ps.rows.get(from).current].filter((id) => selectable(posts().find((p) => p.id === id) ?? {})));
-    ps.selected = count;
-    renderGrid();
-    highlight();
-  }
-
   function addRow(count) {
     if (!Number.isInteger(count) || count < 1 || count > 999) {
       toast('Effectif invalide.', 'error');
       return;
     }
-    if (ps.rows.has(count)) {
-      ps.selected = count;
-    } else {
-      ps.rows.set(count, { saved: null, current: new Set(), plan: null });
-      ps.selected = count;
+    if (!ps.rows.has(count)) {
+      // Prérempli avec les postes de l'effectif inférieur le plus proche (postes encore disponibles).
+      const from = previousCount(counts(), count);
+      const current = new Set(from === null ? [] : [...ps.rows.get(from).current].filter((id) => selectable(posts().find((p) => p.id === id) ?? {})));
+      ps.rows.set(count, { saved: null, current, plan: null });
+      const missing = count - current.size;
+      toast(from === null
+        ? `Effectif ${count} : cochez ${count} poste(s) dans la grille ou sur la carte.`
+        : `Effectif ${count} prérempli avec les postes de l’effectif ${from}${missing > 0 ? ` : cochez encore ${missing} poste(s).` : '.'}`);
     }
+    ps.selected = count;
     renderGrid();
     highlight();
   }
@@ -393,9 +399,6 @@ export async function plansView(main, territoryId, huntPlanId) {
           'td.sticky-right',
           h('div.row-actions',
             h('span.count', { class: status.exact ? 'ok' : 'ko' }, status.label),
-            canEdit && previousCount(counts(), count) !== null
-              ? h('button.link', { onclick: () => duplicate(count), title: `Copier la ligne ${previousCount(counts(), count)} chasseurs` }, 'Dupliquer N-1')
-              : null,
             canEdit ? h('button.small', { onclick: () => save(count), disabled: !status.exact || !dirty, title: status.exact ? '' : 'Le nombre de postes cochés doit égaler l’effectif' }, 'Enregistrer') : null,
             canEdit ? h('button.link.danger', { onclick: () => remove(count), title: 'Supprimer ce plan' }, '✕') : null,
           ),
@@ -408,38 +411,45 @@ export async function plansView(main, territoryId, huntPlanId) {
       return [tr, noteRow];
     });
 
-    const newCount = h('input', { type: 'number', min: 1, max: 999, placeholder: 'Effectif', 'aria-label': 'Effectif à ajouter' });
+    const free = freeCounts(counts(), available);
+    const newCount = h('select', { 'aria-label': 'Effectif à ajouter', onchange: (e) => e.target.value && addRow(Number(e.target.value)) },
+      h('option', { value: '' }, free.length ? '+ Ajouter un effectif…' : 'Tous les effectifs sont définis'),
+      free.map((n) => h('option', { value: n }, `${n} chasseur${n > 1 ? 's' : ''}${previousCount(counts(), n) !== null ? ` (à partir de ${previousCount(counts(), n)})` : ''}`)));
+    newCount.disabled = !free.length;
     fill(
       gridBox,
-      h('h3', `Postes à pourvoir · ${huntPlan().name}`),
+      h('h3', 'Postes à pourvoir selon l’effectif'),
       h('p.small.muted', `${available} poste(s) disponible(s) sur ${cols.length}. ${canEdit ? 'Cliquez sur un effectif pour le sélectionner, puis cochez les postes dans la grille ou sur la carte.' : 'Survolez une ligne pour voir ses postes sur la carte.'}`),
-      cols.length
-        ? h('div.table-scroll', h('table.plans', h('thead', header), h('tbody', body)))
-        : h('p.muted', 'Ce territoire n’a pas encore de poste.'),
-      canEdit && cols.length
-        ? h(
-            'form.row.add-row',
-            { onsubmit: (e) => { e.preventDefault(); addRow(Number(newCount.value)); newCount.value = ''; } },
-            newCount,
-            h('button', { type: 'submit' }, 'Ajouter un effectif'),
-          )
-        : null,
+      !cols.length ? h('p.muted', 'Ce territoire n’a pas encore de poste.')
+        : counts().length ? h('div.table-scroll', h('table.plans', h('thead', header), h('tbody', body)))
+          : h('p.small', 'Aucun effectif défini : choisissez-en un ci-dessous.'),
+      canEdit && cols.length ? h('div.add-row', newCount) : null,
     );
   }
 
   function renderHead() {
     const t = ps.territories.find((x) => x.id === ps.territoryId);
-    fill(
-      head,
+    fill(head,
       h('a.small', { href: '#/territoires' }, '← Territoires'),
-      h('h1', 'Plans de chasse', t ? h('span.muted', ` · ${t.name}`) : null),
-      ps.huntPlans.length || canEdit
-        ? h('div.hunt-plan-tabs',
-            ps.huntPlans.map((hp) => h('button.tab', { class: hp.id === ps.huntPlanId ? 'active' : '', onclick: () => switchHuntPlan(hp.id) },
-              hp.name, h('span.small', ` (${hp.coverage.length})`))),
-            canEdit && ps.huntPlans.length ? h('button.link', { onclick: createHuntPlan }, '+ Nouveau plan de chasse') : null)
-        : null,
-    );
+      h('h2.editor-title', 'Plans de chasse', t ? h('span.small.muted', ` · ${t.name}`) : null));
+    // Un bloc dépliable par plan de chasse ; un seul ouvert à la fois (celui affiché sur la carte).
+    const blocks = ps.huntPlans.map((hp) => {
+      const active = hp.id === ps.huntPlanId;
+      const traque = [hp.start_point ? 'D' : null, hp.drive_path ? '〰' : null, hp.exit_point ? 'S' : null].filter(Boolean).join(' ');
+      const d = h('details.fold.hunt-plan', { open: active && !ps.collapsed, class: active ? 'active' : '' },
+        h('summary', h('span', hp.name),
+          h('span.small.muted', ` · ${hp.coverage.length ? `effectifs ${hp.coverage.map((c) => c.hunter_count).join(', ')}` : 'grille vide'}${traque ? ` · ${traque}` : ' · traque non tracée'}`)),
+        active ? [traqueBox, gridBox] : null);
+      d.addEventListener('toggle', () => {
+        if (d.open && !active) switchHuntPlan(hp.id);
+        else if (active) ps.collapsed = !d.open;
+      });
+      return d;
+    });
+    fill(listBox,
+      blocks,
+      ps.data && !ps.huntPlans.length ? traqueBox : null, // « aucun plan » : explication et bouton de création
+      canEdit && ps.huntPlans.length ? h('button.link.new-hunt-plan', { onclick: createHuntPlan }, '+ Nouveau plan de chasse') : null);
   }
 
   function renderAll() {
@@ -454,6 +464,7 @@ export async function plansView(main, territoryId, huntPlanId) {
     fill(gridBox, h('p.error', errorMessage(err)));
   }
   setTimeout(() => map.invalidateSize(), 0);
+  setTimeout(() => map.invalidateSize(), 400); // après la mise en page du panneau
 
   return () => { document.removeEventListener('keydown', onKey); map.remove(); };
 }
