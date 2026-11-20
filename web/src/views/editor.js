@@ -983,7 +983,7 @@ export async function editorView(main, start) {
           ? h('p.small.muted', `Habitation à ${item.nearest_dwelling_m} m : rappeler l’interdiction de tirer en direction de l’habitation.`)
           : null,
       (item.plan_counts ?? []).length
-        ? h('p.small', `Utilisé dans les plans à ${item.plan_counts.join(', ')} chasseurs. `, h('a', { href: '#/plans' }, 'Voir les plans'))
+        ? h('p.small', `Utilisé dans les plans à ${item.plan_counts.join(', ')} chasseurs. `, h('a', { href: `#/plans/${ed.territoryId}` }, 'Voir les plans'))
         : null,
       isOutside(item) ? h('p.alert.warn', 'Poste hors du territoire : il faut le droit de chasse à cet endroit (ou l’accord du propriétaire).') : null,
       h('div.row', field('Numéro', bound(kind, item, 'number', { type: 'number', min: 1, max: 999, required: true })), field('Nom', bound(kind, item, 'name', { maxlength: 200 }))),

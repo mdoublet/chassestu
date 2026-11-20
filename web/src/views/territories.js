@@ -85,13 +85,13 @@ export async function territoriesView(main) {
     return h('section.card.territory-card', { id: `t-${t.id}`, class: t.id === highlighted ? 'highlighted' : '' },
       h('div.territory-card-head', name, h('span.small.muted', `${t.area_ha.toLocaleString('fr-FR')} ha`)),
       h('p.small.counts',
-        `${t.posts_count} poste(s) · ${t.parkings_count} parking(s) · ${t.reserves_count} réserve(s) · ${t.plans_count} plan(s) de couverture`),
+        `${t.posts_count} poste(s) · ${t.parkings_count} parking(s) · ${t.reserves_count} réserve(s)`),
       warnings.length ? h('p.small.alert.warn', `⚠ ${warnings.join(' · ')}`) : null,
       h('label.small', 'Notes', h('textarea', { rows: 2, maxlength: 5000, disabled: !canEdit, placeholder: canEdit ? 'Accès, propriétaires, consignes particulières…' : '',
         onchange: (e) => patch(t, { notes: e.target.value }, 'Notes enregistrées.') }, t.notes ?? '')),
       h('div.buttons',
         h('a.button', { href: `#/carte/${t.id}` }, canEdit ? '🗺 Ouvrir la carte (postes, parkings, réserves…)' : '🗺 Voir la carte'),
-        h('a.button', { href: '#/plans' }, '📋 Plans'),
+        state.role === 'president' || state.role === 'responsable' ? h('a.button', { href: `#/plans/${t.id}` }, `📋 Plans de couverture (${t.plans_count})`) : null,
         canEdit ? h('button.link.danger', { onclick: async () => {
           if (!(await confirmDialog('Supprimer le territoire', `Supprimer « ${t.name} » avec ses réserves, parkings, postes, chemins et plans ? Cette suppression ne peut pas être annulée.`, 'Supprimer', true))) return;
           try {

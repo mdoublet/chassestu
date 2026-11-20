@@ -220,6 +220,8 @@ aucune réserve de l'association ne peut contenir un poste.
 
 **Lot 3 — Plans de couverture**
 
+Accès : Territoires → « 📋 Plans de couverture » sur la carte du territoire (`#/plans/<id>`) ; plus d'entrée dans le menu du haut.
+
 - [x] Les plans de l'exemple (5 et 6 chasseurs) se saisissent dans la grille et s'affichent sur la carte.
 - [x] Une ligne dont le nombre de postes cochés diffère de l'effectif ne peut pas être enregistrée (client et base).
 - [x] Un poste invalidé signale en rouge les plans qui l'utilisent (aussi : poste désactivé ou supprimé).

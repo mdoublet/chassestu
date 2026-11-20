@@ -21,11 +21,11 @@ function storedTerritory() {
   }
 }
 
-export async function plansView(main) {
+export async function plansView(main, territoryId) {
   const canEdit = state.role === 'president';
   const ps = {
     territories: [],
-    territoryId: storedTerritory(),
+    territoryId: territoryId ?? storedTerritory(),
     data: null, // détail du territoire (postes, zones…)
     plans: [], // plans enregistrés (serveur)
     rows: new Map(), // effectif → { saved: Set|null, current: Set, plan }
@@ -264,30 +264,11 @@ export async function plansView(main) {
   }
 
   function renderHead() {
+    const t = ps.territories.find((x) => x.id === ps.territoryId);
     fill(
       head,
-      h('h1', 'Plans de couverture'),
-      ps.territories.length
-        ? h(
-            'select',
-            {
-              'aria-label': 'Territoire',
-              onchange: async (e) => {
-                if ([...ps.rows.values()].some(isDirty) && !(await confirmDialog('Modifications non enregistrées', 'Changer de territoire abandonne les lignes non enregistrées.', 'Continuer'))) {
-                  e.target.value = ps.territoryId;
-                  return;
-                }
-                ps.territoryId = e.target.value;
-                try { localStorage.setItem(TERRITORY_KEY, ps.territoryId); } catch { /* préférence non mémorisée */ }
-                ps.rows = new Map();
-                ps.selected = null;
-                ps.fitted = false;
-                await load();
-              },
-            },
-            ps.territories.map((t) => h('option', { value: t.id, selected: t.id === ps.territoryId }, t.name)),
-          )
-        : null,
+      h('a.small', { href: '#/territoires' }, '← Territoires'),
+      h('h1', 'Plans de couverture', t ? h('span.muted', ` · ${t.name}`) : null),
     );
   }
 

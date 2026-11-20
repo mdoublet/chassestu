@@ -33,7 +33,7 @@ const routes = [
   { re: /^#\/notifications$/, view: (el, opts) => import('./views/notifications.js').then((m) => m.notificationsView(el, opts)) },
   { re: /^#\/profil$/, view: (el, opts) => import('./views/profile.js').then((m) => m.profileView(el, opts)) },
   { re: /^#\/lieux$/, view: (el) => import('./views/places.js').then((m) => m.placesView(el)), tenant: true, roles: ['president'] },
-  { re: /^#\/plans$/, view: (el) => import('./views/plans.js').then((m) => m.plansView(el)), tenant: true, roles: ['president', 'responsable'], full: true },
+  { re: /^#\/plans(?:\/([0-9a-f-]{36}))?$/, view: (el, id) => import('./views/plans.js').then((m) => m.plansView(el, id)), tenant: true, roles: ['president', 'responsable'], full: true },
   { re: /^#\/membres$/, view: membersView, tenant: true, roles: ['president', 'responsable'] },
   { re: /^#\/parametres$/, view: settingsView, tenant: true, roles: ['president'] },
   { re: /^#\/admin$/, view: adminView },

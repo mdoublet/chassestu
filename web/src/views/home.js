@@ -55,12 +55,7 @@ export async function homeView(main, { refreshMe, rerender }) {
       {
         href: '#/territoires',
         title: 'Territoires',
-        text: role === 'president' ? 'Liste, ajout et carte : réserves, postes, parkings, chemins.' : 'Consulter les territoires et les postes.',
-      },
-      (role === 'president' || role === 'responsable') && {
-        href: '#/plans',
-        title: 'Plans de couverture',
-        text: role === 'president' ? 'Quels postes couvrir selon le nombre de chasseurs.' : 'Postes à couvrir selon le nombre de chasseurs.',
+        text: role === 'president' ? 'Liste, ajout et carte : réserves, postes, parkings, chemins, plans de couverture.' : 'Consulter les territoires et les postes.',
       },
       (role === 'president' || role === 'responsable') && {
         href: '#/membres',
