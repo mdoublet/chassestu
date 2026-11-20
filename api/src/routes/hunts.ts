@@ -136,10 +136,19 @@ huntRoutes.patch('/hunts/:id', async (c) => {
   return tenantTx(c, MANAGERS, async (tx) => {
     const hunt = await loadHunt(tx, id);
     requireOpen(hunt, 'Modification');
+    if (body.leader_user_id && !(await tx.maybeOne('SELECT 1 FROM memberships WHERE tenant_id = app.current_tenant_id() AND user_id = $1', [body.leader_user_id]))) {
+      throw new AppError(422, 'LEADER_NOT_MEMBER', 'Le responsable de battue doit être un membre de l’association.');
+    }
     await tx.execute(
       'UPDATE hunts SET briefing = coalesce($2, briefing), leader_user_id = coalesce($3, leader_user_id) WHERE id = $1',
       [id, body.briefing ?? null, body.leader_user_id ?? null],
     );
+    if (body.leader_user_id && body.leader_user_id !== hunt.leader_user_id && body.leader_user_id !== c.get('user').id) {
+      await notifyUsers(c, tx, { huntId: id, dayId: hunt.day_id }, 'responsable', [{
+        user_id: body.leader_user_id, title: 'Responsable de battue',
+        body: `Vous êtes responsable de la battue n° ${hunt.number} (${hunt.territory_name}) : vous verrez qui est en place et pourrez la lancer et l’arrêter.`,
+      }]);
+    }
     if (body.hunt_plan_id !== undefined) {
       if (hunt.started_at) throw new AppError(409, 'HUNT_STARTED', 'Changement de plan de chasse impossible : la battue a commencé.');
       await setHuntPlan(tx, id, hunt.territory_id, body.hunt_plan_id);
@@ -214,25 +223,37 @@ huntRoutes.patch('/hunts/:id/participants/:pid', async (c) => {
 // Début et fin de battue
 // ---------------------------------------------------------------------------
 
+/**
+ * Début / fin de battue : président, responsable, ou responsable désigné de
+ * la battue (depuis sa vue chasseur ; il reçoit alors un simple accusé).
+ */
 huntRoutes.post('/hunts/:id/actions/:action{debut|fin}', (c) => {
   const id = parseId(c.req.param('id'));
   const action = c.req.param('action');
-  return tenantTx(c, MANAGERS, async (tx) => {
+  return tenantTx(c, null, async (tx, { role }) => {
+    const lead = await tx.one<{ ok: boolean }>('SELECT app.can_lead_hunt($1) AS ok', [id]);
+    if (!lead.ok) throw new AppError(403, 'FORBIDDEN', 'Seul le responsable de la battue (ou le président) peut la lancer ou l’arrêter.');
     const hunt = await loadHunt(tx, id);
     requireOpen(hunt, action === 'debut' ? 'Début de battue' : 'Fin de battue');
-    if (action === 'debut') {
-      if (!hunt.assignments_published_at) {
-        throw new AppError(422, 'ASSIGNMENTS_NOT_PUBLISHED', 'Publiez les postes avant de lancer la battue.');
-      }
-      await tx.execute('UPDATE hunts SET started_at = coalesce(started_at, now()) WHERE id = $1', [id]);
-      if (!hunt.started_at) await notifyHunt(c, tx, id, 'debut');
-    } else {
-      await tx.execute(`UPDATE hunts SET status = 'terminee' WHERE id = $1`, [id]);
-      // Le regroupement précédent ne vaut plus : le responsable en annonce un nouveau.
-      await tx.execute('UPDATE hunt_days SET regroup_at = NULL WHERE id = $1', [hunt.day_id]);
-      await notifyHunt(c, tx, id, 'fin');
+    if (action === 'debut' && !hunt.assignments_published_at) {
+      throw new AppError(422, 'ASSIGNMENTS_NOT_PUBLISHED', 'Publiez les postes avant de lancer la battue.');
     }
-    return c.json(await huntDetail(tx, id));
+    await tx.query('SELECT app.lead_hunt_action($1, $2)', [id, action]);
+    if (action === 'fin' || !hunt.started_at) await notifyHunt(c, tx, id, action as HuntEvent);
+    return c.json(MANAGERS.includes(role) ? await huntDetail(tx, id) : { ok: true });
+  });
+});
+
+/** Vue du responsable désigné : la battue et la mise en place des postés. */
+huntRoutes.get('/hunts/:id/lead', (c) => {
+  const id = parseId(c.req.param('id'));
+  return tenantTx(c, null, async (tx) => {
+    const lead = await tx.one<{ ok: boolean }>('SELECT app.can_lead_hunt($1) AS ok', [id]);
+    const me = c.get('user').id;
+    const hunt = lead.ok ? await tx.maybeOne<Record<string, any>>(`SELECT ${HUNT_SELECT} FROM ${HUNT_FROM} WHERE h.id = $1`, [id]) : null;
+    if (!hunt || hunt.leader_user_id !== me) return c.json({ lead: false }); // seulement le responsable désigné
+    const readiness = await tx.query('SELECT * FROM app.hunt_readiness($1)', [id]);
+    return c.json({ lead: true, hunt, readiness });
   });
 });
 

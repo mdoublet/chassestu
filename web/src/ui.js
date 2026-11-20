@@ -124,7 +124,9 @@ export async function copyText(text) {
   }
 }
 
-export const ROLE_LABELS = { president: 'Président', responsable: 'Responsable de battue', chasseur: 'Chasseur' };
+// « Organisateur » : prépare les journées et mène les battues (rôle dans l'association) ;
+// le responsable d'UNE battue est désigné battue par battue.
+export const ROLE_LABELS = { president: 'Président', responsable: 'Organisateur', chasseur: 'Chasseur' };
 
 export function formatDate(iso) {
   return new Date(iso).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });

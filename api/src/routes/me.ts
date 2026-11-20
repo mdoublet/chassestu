@@ -25,7 +25,8 @@ meRoutes.get('/me', (c) =>
       [u.id],
     );
     const tenants = await tx.query(
-      `SELECT t.id, t.name, t.kind, m.role
+      `SELECT t.id, t.name, t.kind, app.effective_role(m.role, m.deputy_until) AS role,
+              CASE WHEN m.role <> 'president' AND m.deputy_until > now() THEN m.deputy_until END AS deputy_until
          FROM memberships m JOIN tenants t ON t.id = m.tenant_id
         WHERE m.user_id = $1
         ORDER BY t.name`,

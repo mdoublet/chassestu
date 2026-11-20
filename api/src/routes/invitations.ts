@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import type { AppEnv, Env } from '../env';
-import { parseId, tenantTx, userTx } from '../context';
+import { assertNotDeputy, parseId, tenantTx, userTx } from '../context';
 import { AppError } from '../errors';
 import { randomToken, sha256Hex } from '../auth';
 
@@ -30,6 +30,7 @@ invitationRoutes.post('/invitations', async (c) => {
   const token = randomToken();
   const tokenHash = await sha256Hex(token);
   return tenantTx(c, ['president'], async (tx) => {
+    if (body.role !== 'chasseur') await assertNotDeputy(tx, 'Un président adjoint ne peut inviter que des chasseurs.');
     const invitation = await tx.one(
       `INSERT INTO invitations (token_hash, role, max_uses, expires_at, created_by)
        VALUES ($1, $2, $3, now() + make_interval(days => $4), app.current_user_id())

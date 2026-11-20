@@ -4,6 +4,42 @@ import { h, fill, copyText, errorMessage, formatDate, modal, toast, ROLE_LABELS 
 
 export async function membersView(main) {
   const isPresident = state.role === 'president';
+  // Président adjoint : droits du président, sauf sur les droits des autres (rôles, retraits, mandats).
+  const isTitular = isPresident && !state.tenant?.deputy_until;
+  const shortDate = (iso) => new Date(new Date(iso).getTime() - 1000).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' });
+
+  async function setDeputy(m, until) {
+    try {
+      await api.put(`/members/${encodeURIComponent(m.id)}/deputy`, { until });
+      toast(until ? `${m.display_name} est président adjoint jusqu’au ${new Date(until).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })}.` : `Mandat de ${m.display_name} terminé.`);
+      loadMembers();
+    } catch (err) {
+      toast(errorMessage(err), 'error');
+    }
+  }
+
+  async function askDeputy(m) {
+    const d = new Date(Date.now() + 7 * 86_400_000);
+    const iso = (x) => `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`;
+    const input = h('input', { type: 'date', value: iso(d), min: iso(new Date()), max: iso(new Date(Date.now() + 365 * 86_400_000)) });
+    const v = await modal(`Président adjoint : ${m.display_name}`, h('div',
+      h('p', `${m.display_name} aura tous les droits du président (territoires, plans, journées, battues, paramètres), sauf changer les droits des membres. Il pourra désigner le responsable des battues qu’il crée.`),
+      h('label', 'Jusqu’au (inclus)', input)), [
+      { label: 'Annuler', value: null },
+      { label: 'Nommer', value: 'ok', primary: true },
+    ]);
+    if (v === 'ok' && input.value) setDeputy(m, input.value);
+  }
+
+  function deputyCell(m) {
+    if (m.role === 'president') return h('td');
+    if (m.deputy_until) {
+      return h('td', h('span.badge.deputy', `Adjoint jusqu’au ${shortDate(m.deputy_until)}`),
+        isTitular ? h('button.link', { onclick: () => askDeputy(m) }, ' Prolonger') : null,
+        isTitular ? h('button.link.danger', { onclick: () => setDeputy(m, null) }, ' Fin du mandat') : null);
+    }
+    return h('td', isTitular ? h('button.link', { onclick: () => askDeputy(m), title: 'Mandat temporaire : droits du président sauf les droits des membres' }, 'Nommer adjoint') : null);
+  }
   const membersBox = h('div');
   const invitesBox = h('div');
   main.append(h('h1', 'Membres'), ...(isPresident ? [h('section', h('h2', 'Inviter'), invitesBox)] : []), h('section', h('h2', 'Membres de l’association'), membersBox));
@@ -33,7 +69,7 @@ export async function membersView(main) {
     fill(membersBox, 
       h(
         'table.list',
-        h('thead', h('tr', h('th', 'Nom'), h('th', 'Contact'), h('th', 'Rôle'), h('th', { title: 'Capacité de marche (1 peu … 5 chemins escarpés)' }, 'Marche'), h('th', 'Voiture'), h('th', 'Places'), isPresident ? h('th', '') : null)),
+        h('thead', h('tr', h('th', 'Nom'), h('th', 'Contact'), h('th', 'Rôle'), isPresident ? h('th', 'Président adjoint') : null, h('th', { title: 'Capacité de marche (1 peu … 5 chemins escarpés)' }, 'Marche'), h('th', 'Voiture'), h('th', 'Places'), isTitular ? h('th', '') : null)),
         h(
           'tbody',
           members.map((m) =>
@@ -43,7 +79,7 @@ export async function membersView(main) {
               h('td.small', [m.email, m.phone].filter(Boolean).join(' · ')),
               h(
                 'td',
-                isPresident
+                isTitular
                   ? h(
                       'select',
                       {
@@ -62,8 +98,9 @@ export async function membersView(main) {
                     )
                   : ROLE_LABELS[m.role],
               ),
+              isPresident ? deputyCell(m) : null,
               ...mobilityCells(m),
-              isPresident
+              isTitular
                 ? h(
                     'td',
                     h('button.link.danger', {
@@ -88,7 +125,8 @@ export async function membersView(main) {
 
   async function loadInvites() {
     const { invitations } = await api.get('/invitations');
-    const role = h('select', Object.entries(ROLE_LABELS).map(([v, l]) => h('option', { value: v, selected: v === 'chasseur' }, l)));
+    // Un président adjoint n'invite que des chasseurs.
+    const role = h('select', Object.entries(ROLE_LABELS).filter(([v]) => isTitular || v === 'chasseur').map(([v, l]) => h('option', { value: v, selected: v === 'chasseur' }, l)));
     const days = h('select', [7, 30, 90, 365].map((d) => h('option', { value: d, selected: d === 30 }, `${d} jours`)));
     fill(invitesBox, 
       h(

@@ -11,7 +11,7 @@ import { addBasemaps } from '../map/basemap.js';
 import { escapeHtml, toLatLng, ensureHatchPattern, postIcon, parkingIcon } from '../map/shapes.js';
 import { api } from '../api.js';
 import { state } from '../state.js';
-import { h, fill, toast, errorMessage } from '../ui.js';
+import { h, fill, toast, errorMessage, confirmDialog } from '../ui.js';
 import { watchRevision, every } from '../lib/live.js';
 import {
   DAY_STATUS_LABELS, ROLE_LABELS, CATEGORY_LABELS, COMMON_SPECIES, NAV_APPS,
@@ -251,6 +251,7 @@ export function createDaySheet(container, opts = {}) {
       info,
       me?.guest ? h('p.notice', `Bonjour ${me.name} (accès invité pour la journée).`) : null,
       h('section.status-banner', { class: `tone-${step.tone}` }, h('strong', step.title), step.text ? h('span', step.text) : null, respondBox(view)),
+      opts.leadCard?.() ?? null, // responsable désigné de la battue en cours
       h('p.small.day-line', h('span.status', { class: `status-${day.status}` }, DAY_STATUS_LABELS[day.status]),
         ` ${formatHuntDate(day.date)}`,
         lastBattue && day.status === 'en_cours' ? ` · battue n° ${lastBattue.number} (${lastBattue.territory_name})` : '',
@@ -363,10 +364,59 @@ export function createDaySheet(container, opts = {}) {
 export async function memberDayView(main, dayId) {
   let view = null;
   let watcher = null;
+  let lead = null; // { hunt, readiness } si je suis responsable de la battue en cours
   const load = async () => {
     const res = await api.get(`/days/${dayId}/view`);
+    const running = (res.view.battues ?? []).find((b) => b.status === 'en_cours');
+    lead = null;
+    if (running && res.view.day.status === 'en_cours') {
+      const r = await api.get(`/hunts/${running.id}/lead`).catch(() => null);
+      if (r?.lead) lead = r;
+    }
     view.update(res.view, res.carpool);
   };
+
+  /** Carte du responsable de battue : qui est en place, lancer / arrêter la battue. */
+  function leadCard() {
+    if (!lead) return null;
+    const { hunt, readiness } = lead;
+    const posts = new Map();
+    for (const r of readiness) {
+      const k = r.post_number;
+      if (!posts.has(k)) posts.set(k, { number: k, name: r.post_name, people: [] });
+      if (r.participant_name) posts.get(k).people.push(r);
+    }
+    const rows = [...posts.values()];
+    const ok = (p) => p.people.length > 0 && p.people.every((x) => x.in_place_at);
+    const ready = rows.filter(ok).length;
+    const go = (action, msg, confirmText) => async () => {
+      if (!(await confirmDialog(`Battue n° ${hunt.number}`, confirmText, 'Confirmer'))) return;
+      act(() => api.post(`/hunts/${hunt.id}/actions/${action}`), msg);
+    };
+    return h('section.card.lead-card',
+      h('h3', `🎯 Vous êtes responsable de la battue n° ${hunt.number}`),
+      !hunt.assignments_published_at
+        ? h('p.small.muted', 'Les postes ne sont pas encore publiés : vous pourrez lancer la battue une fois les chasseurs placés.')
+        : hunt.started_at
+          ? h('p', h('span.status.status-en_cours', `Traque depuis ${new Date(hunt.started_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`))
+          : [
+              h('p', h('strong', { class: ready === rows.length ? 'all-ready' : '' }, `${ready}/${rows.length} poste(s) occupé(s) et confirmé(s)`)),
+              h('ul.plain.readiness', rows.map((p) => h('li', { class: ok(p) ? 'ok' : '' },
+                h('span.light', ok(p) ? '●' : '○'),
+                h('strong', `Poste ${p.number}${p.name ? ` · ${p.name}` : ''}`),
+                h('span', p.people.length
+                  ? p.people.map((x) => `${x.participant_name} ${x.in_place_at ? `✅ ${new Date(x.in_place_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}` : '⏳'}`).join(' · ')
+                  : 'libre')))),
+            ],
+      h('div.buttons',
+        hunt.assignments_published_at && !hunt.started_at
+          ? h('button.primary', { onclick: go('debut', 'Début de battue : les chasseurs sont prévenus.',
+              ready === rows.length ? 'Lancer la battue ? Les chasseurs seront prévenus.' : `Seulement ${ready}/${rows.length} poste(s) confirmé(s). Lancer quand même la battue ?`) }, 'Lancer la battue')
+          : null,
+        hunt.started_at
+          ? h('button.danger', { onclick: go('fin', 'Fin de battue : les chasseurs sont prévenus.', 'Terminer la battue ? Les chasseurs seront prévenus (armes déchargées).') }, 'Fin de battue')
+          : null));
+  }
   const act = async (fn, msg) => {
     try {
       await fn();
@@ -379,6 +429,7 @@ export async function memberDayView(main, dayId) {
   };
   view = createDaySheet(main, {
     dayId,
+    leadCard,
     canSeeAll: ['president', 'responsable'].includes(state.role),
     onRespond: (response, lunch) => act(() => api.post(`/days/${dayId}/respond`, { response, lunch: !!lunch }), 'Réponse enregistrée.'),
     onDeclare: (huntId, body) => act(() => api.post(`/hunts/${huntId}/harvests`, body), `${body.species} déclaré.`),

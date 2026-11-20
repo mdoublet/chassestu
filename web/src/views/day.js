@@ -111,8 +111,7 @@ async function dayConsole(main, dayId) {
     const plans = huntPlansOf(territoryId);
     if (plans === null) return h('select', { disabled: true }, h('option', 'Chargement…'));
     return h('select', { disabled, 'aria-label': 'Plan de chasse', onchange: (e) => onchange(e.target.value || null) },
-      plans.map((hp) => h('option', { value: hp.id, selected: hp.id === value },
-        `${hp.name}${hp.coverage.length ? ` · effectifs ${hp.coverage.map((c) => c.hunter_count).join(', ')}` : ' · grille vide'}`)),
+      plans.map((hp) => h('option', { value: hp.id, selected: hp.id === value }, hp.name)),
       h('option', { value: '', selected: !value }, '— sans plan : postes choisis à la main —'));
   }
 
@@ -468,32 +467,46 @@ async function dayConsole(main, dayId) {
   // -------------------------------------------------------------------------
 
   function battueHeader() {
+    const { hunt, participants } = dv.hunt;
+    // Responsable de battue : un membre participant (ou le responsable actuel) ; le président par défaut.
+    const candidates = new Map(participants.filter((p) => p.user_id).map((p) => [p.user_id, p.name]));
+    if (hunt.leader_user_id && !candidates.has(hunt.leader_user_id)) candidates.set(hunt.leader_user_id, hunt.leader_name ?? '?');
+    return h('div.battue-head',
+      h('h2', `Battue n° ${hunt.number} · ${hunt.territory_name}`),
+      hunt.started_at ? h('p', h('span.status.status-en_cours', `Traque depuis ${timeOf(hunt.started_at)}`)) : null,
+      h('div.battue-roles',
+        h('label.hunt-plan-choice', 'Plan de chasse ',
+          hunt.started_at
+            ? h('strong', hunt.hunt_plan_name ?? 'aucun (postes à la main)')
+            : huntPlanSelect(hunt.territory_id, hunt.hunt_plan_id, async (v) => {
+                const previous = dv.hunt.proposal?.post_ids ?? null;
+                if (await act(() => api.patch(`/hunts/${hunt.id}`, { hunt_plan_id: v }), v ? 'Plan de chasse changé.' : 'Battue sans plan de chasse : choisissez les postes sur la carte.')) await takePlanPosts(previous);
+              })),
+        h('label.hunt-plan-choice', { title: 'Il voit qui est en place et peut lancer et arrêter la battue depuis son téléphone (le président le peut toujours).' }, 'Responsable de battue ',
+          h('select', { 'aria-label': 'Responsable de battue', onchange: (e) => act(() => api.patch(`/hunts/${hunt.id}`, { leader_user_id: e.target.value }), 'Responsable de battue désigné : il est prévenu.') },
+            [...candidates].map(([id, name]) => h('option', { value: id, selected: id === hunt.leader_user_id }, id === state.user.id ? `${name} (moi)` : name))))),
+      dv.hunt.hunt_plan?.notes ? h('p.small', `Traque : ${dv.hunt.hunt_plan.notes}`) : null);
+  }
+
+  /** En bas, dans l'ordre des actions : d'abord publier les postes, puis lancer ; fin ; suppression. */
+  function battueActions() {
     const { hunt } = dv.hunt;
     const r = readiness();
     const go = (action, msg, confirmText) => async () => {
       if (confirmText && !(await confirmDialog(`Battue n° ${hunt.number}`, confirmText, 'Confirmer'))) return;
       await act(() => api.post(`/hunts/${hunt.id}/actions/${action}`), msg);
     };
-    return h('div.battue-head',
-      h('h2', `Battue n° ${hunt.number} · ${hunt.territory_name}`),
-      h('label.hunt-plan-choice', 'Plan de chasse ',
-        hunt.started_at
-          ? h('strong', hunt.hunt_plan_name ?? 'aucun (postes à la main)')
-          : huntPlanSelect(hunt.territory_id, hunt.hunt_plan_id, async (v) => {
-              const previous = dv.hunt.proposal?.post_ids ?? null;
-              if (await act(() => api.patch(`/hunts/${hunt.id}`, { hunt_plan_id: v }), v ? 'Plan de chasse changé.' : 'Battue sans plan de chasse : choisissez les postes sur la carte.')) await takePlanPosts(previous);
-            })),
-      dv.hunt.hunt_plan?.notes ? h('p.small', `Traque : ${dv.hunt.hunt_plan.notes}`) : null,
+    return h('section.card.battue-actions',
       h('div.buttons',
         !hunt.started_at
           ? [h('button.primary', { onclick: go('debut', 'Début de battue : les chasseurs sont prévenus.'), disabled: !hunt.assignments_published_at, title: hunt.assignments_published_at ? '' : 'Publiez d’abord les postes' }, 'Lancer la battue'),
-             r ? h('span.small', { class: r.ready === r.rows.length ? 'all-ready' : 'muted' }, `${r.ready}/${r.rows.length} poste(s) confirmé(s)`) : null]
-          : h('span.status.status-en_cours', `Traque depuis ${timeOf(hunt.started_at)}`),
+             r ? h('span.small', { class: r.ready === r.rows.length ? 'all-ready' : 'muted' }, `${r.ready}/${r.rows.length} poste(s) confirmé(s)`) : h('span.small.muted', 'Publiez d’abord les postes.')]
+          : null,
         h('button.danger', { onclick: go('fin', 'Fin de battue : les chasseurs sont prévenus. Annoncez le regroupement.', 'Terminer la battue ? Les chasseurs seront prévenus.') }, 'Fin de battue'),
         !hunt.started_at ? h('button.link.danger', { onclick: async () => {
           if (!(await confirmDialog('Supprimer', `Supprimer la battue n° ${hunt.number} (créée par erreur) ?`, 'Supprimer', true))) return;
           act(() => api.del(`/hunts/${hunt.id}`));
-        } }, 'Supprimer') : null));
+        } }, 'Annuler la battue') : null));
   }
 
   function volunteersSection() {
@@ -596,7 +609,7 @@ async function dayConsole(main, dayId) {
     const name = h('input', { list: 'species-list', placeholder: 'Espèce (ex. Sanglier)', maxlength: 60 });
     const quota = h('input', { type: 'number', min: 0, max: 999, placeholder: 'nombre' });
     return h('section.card.species-editor',
-      h('h3', 'Espèces tirables et nombre'),
+      h('h3', '3. Espèces tirables et nombre'),
       rows.length
         ? h('table.list.compact', h('tbody', rows.map((r, i) => h('tr',
             h('td', r.species),
@@ -617,7 +630,7 @@ async function dayConsole(main, dayId) {
     const c = dv.carpool;
     if (!c) return null;
     return h('section.card.carpool',
-      h('h3', `🚗 Covoiturage vers les parkings · ${c.cars.length} voiture(s)`),
+      h('h3', `4. 🚗 Covoiturage vers les parkings · ${c.cars.length} voiture(s)`),
       c.cars.length < c.carsAdvised ? h('p.alert.warn', `${c.carsAdvised} voitures conseillées (${c.maxPerCar} chasseurs au plus par voiture) : il en manque ${c.carsAdvised - c.cars.length}.`) : null,
       h('ul.plain', c.cars.map((car) => h('li',
         h('strong', car.driver.name), ` → ${car.destinationName}`,
@@ -681,11 +694,12 @@ async function dayConsole(main, dayId) {
         h('h2.section-title', 'Battues'),
         battuesList(),
         run && dv.hunt
-          ? [h('div.battue', battueHeader(), readinessSection(), volunteersSection(), assignmentSection(), speciesEditor(), carpoolSection(), harvestSection())]
+          // Ordre des actions ; prélèvements seulement une fois la battue lancée.
+          ? [h('div.battue', battueHeader(), volunteersSection(), assignmentSection(), speciesEditor(), carpoolSection(), readinessSection(),
+              dv.hunt.hunt.started_at ? harvestSection() : null, battueActions())]
           : [last?.status === 'terminee' ? regroupForm() : null, newBattueForm(),
              last && dv.hunt ? harvestSection() : null],
-        infoSection(false),
-        convocationSection(),
+        // Rendez-vous, déjeuner, consignes et convocations : acquis, la journée a commencé.
       ];
     } else {
       sections = [battuesList(), last && dv.hunt ? harvestSection() : null];

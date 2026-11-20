@@ -222,6 +222,15 @@ aucune réserve de l'association ne peut contenir un poste.
 
 Accès : Territoires → « 📋 Plans de chasse » sur la carte du territoire (`#/plans/<id>[/<plan>]`) ; plus d'entrée dans le menu du haut.
 
+**Président adjoint et responsable de battue** (migration 0018) : le président
+peut nommer un ou plusieurs présidents adjoints jusqu'à une date (page Membres) ;
+pendant le mandat, ils ont les droits du président sauf sur les droits des
+autres (rôles, retraits, mandats, invitations autres que chasseur). Chaque
+battue a un responsable désigné (le créateur par défaut) : dans sa vue
+chasseur, il voit la mise en place des postés et lance / arrête la battue ;
+le président le peut toujours. Le rôle « responsable » de l'association
+s'affiche désormais « Organisateur ».
+
 **Plans de chasse** (migration 0017) : un territoire peut avoir plusieurs plans
 de chasse. Chacun décrit une traque — départ (D), tracé, sortie (S), consignes —
 et possède sa propre grille par effectif (les postes à pourvoir changent selon

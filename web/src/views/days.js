@@ -1,4 +1,4 @@
-// Journées de chasse : liste et création (président, responsable de battue).
+// Journées de chasse : liste et création (président, organisateur).
 // L'heure, le lieu du rendez-vous et le déjeuner sont repris de la dernière
 // journée : ils changent rarement d'une fois à l'autre.
 import { api } from '../api.js';

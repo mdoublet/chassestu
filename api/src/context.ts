@@ -50,3 +50,8 @@ export function notFoundIfNull<T>(row: T | null | undefined, what = 'Élément')
   if (row === null || row === undefined) throw new AppError(404, 'NOT_FOUND', `${what} introuvable.`);
   return row as NonNullable<T>;
 }
+
+/** Les droits des autres (rôles, retraits, mandats) : président en titre seulement. */
+export async function assertNotDeputy(tx: Tx, message = 'Un président adjoint ne peut pas modifier les droits des membres.') {
+  if ((await tx.one<{ d: boolean }>('SELECT app.is_deputy() AS d')).d) throw new AppError(403, 'DEPUTY_FORBIDDEN', message);
+}

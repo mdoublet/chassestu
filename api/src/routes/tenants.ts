@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import type { AppEnv } from '../env';
-import { notFoundIfNull, parseId, tenantTx, userTx } from '../context';
+import { assertNotDeputy, notFoundIfNull, parseId, tenantTx, userTx } from '../context';
 import { AppError } from '../errors';
 import { randomToken, sha256Hex } from '../auth';
 import { invitationUrl } from './invitations';
@@ -120,7 +120,8 @@ tenantRoutes.patch('/tenant', async (c) => {
 tenantRoutes.get('/members', (c) =>
   tenantTx(c, ['president', 'responsable'], async (tx, { tenantId }) => {
     const members = await tx.query(
-      `SELECT u.id, u.display_name, u.email, u.phone, m.role, m.created_at, u.walking_ability, u.has_car, u.car_seats
+      `SELECT u.id, u.display_name, u.email, u.phone, m.role, m.created_at, u.walking_ability, u.has_car, u.car_seats,
+              CASE WHEN m.deputy_until > now() THEN m.deputy_until END AS deputy_until
          FROM memberships m JOIN users u ON u.id = m.user_id
         WHERE m.tenant_id = $1
         ORDER BY m.role, u.display_name`,
@@ -131,6 +132,7 @@ tenantRoutes.get('/members', (c) =>
 );
 
 const roleSchema = z.object({ role: z.enum(['president', 'responsable', 'chasseur']) });
+
 
 async function assertNotLastPresident(tx: import('../db').Tx, tenantId: string, userId: string) {
   const row = await tx.one<{ others: number; is_president: boolean }>(
@@ -148,6 +150,7 @@ tenantRoutes.patch('/members/:userId', async (c) => {
   const { role } = roleSchema.parse(await c.req.json());
   const userId = c.req.param('userId');
   return tenantTx(c, ['president'], async (tx, { tenantId }) => {
+    await assertNotDeputy(tx);
     if (role !== 'president') await assertNotLastPresident(tx, tenantId, userId);
     const member = notFoundIfNull(
       await tx.maybeOne(
@@ -177,12 +180,39 @@ tenantRoutes.patch('/members/:userId/mobility', async (c) => {
   });
 });
 
+/**
+ * Mandat de président adjoint (président en titre) : jusqu'au soir de la date
+ * donnée (heure de Paris) ; `until: null` retire le mandat.
+ */
+tenantRoutes.put('/members/:userId/deputy', async (c) => {
+  const { until } = z.object({ until: z.iso.date().nullable() }).strict().parse(await c.req.json());
+  const userId = c.req.param('userId');
+  return tenantTx(c, ['president'], async (tx, { tenantId }) => {
+    await assertNotDeputy(tx);
+    if (until) {
+      const ok = await tx.one<{ ok: boolean }>(`SELECT $1::date >= (now() AT TIME ZONE 'Europe/Paris')::date AND $1::date <= (now() + interval '1 year')::date AS ok`, [until]);
+      if (!ok.ok) throw new AppError(422, 'VALIDATION', 'Date de fin du mandat : aujourd’hui au plus tôt, dans un an au plus tard.');
+    }
+    const m = notFoundIfNull(await tx.maybeOne<{ role: string }>('SELECT role FROM memberships WHERE tenant_id = $1 AND user_id = $2', [tenantId, userId]), 'Membre');
+    if (m.role === 'president') throw new AppError(422, 'ALREADY_PRESIDENT', 'Ce membre est déjà président.');
+    const member = await tx.one(
+      `UPDATE memberships SET deputy_until = CASE WHEN $3::date IS NULL THEN NULL
+                ELSE (($3::date + 1)::timestamp AT TIME ZONE 'Europe/Paris') END
+        WHERE tenant_id = $1 AND user_id = $2
+        RETURNING user_id, role, CASE WHEN deputy_until > now() THEN deputy_until END AS deputy_until`,
+      [tenantId, userId, until],
+    );
+    return c.json({ member });
+  });
+});
+
 /** Retirer un membre (président) ou quitter l'association (soi-même). */
 tenantRoutes.delete('/members/:userId', (c) => {
   const userId = c.req.param('userId');
   return tenantTx(c, null, async (tx, { tenantId, role }) => {
-    if (role !== 'president' && userId !== c.get('user').id) {
-      throw new AppError(403, 'FORBIDDEN', 'Seul le président peut retirer un membre.');
+    if (userId !== c.get('user').id) {
+      if (role !== 'president') throw new AppError(403, 'FORBIDDEN', 'Seul le président peut retirer un membre.');
+      await assertNotDeputy(tx);
     }
     await assertNotLastPresident(tx, tenantId, userId);
     const n = await tx.execute('DELETE FROM memberships WHERE tenant_id = $1 AND user_id = $2', [tenantId, userId]);
