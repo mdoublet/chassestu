@@ -248,9 +248,9 @@ async function dayConsole(main, dayId) {
       await act(() => api.post(`/days/${dayId}/actions/${action}`), msg);
     };
     const buttons = {
-      brouillon: [h('button.primary', { onclick: go('convoquer', 'Convocations envoyées : les chasseurs sont prévenus dans l’application.') }, 'Convoquer les chasseurs'),
+      brouillon: [h('button.primary', { onclick: go('convoquer', 'Convocations envoyées : les chasseurs sont prévenus dans l’application.') }, 'Envoyer les convocations'),
         h('button.danger', { onclick: async () => {
-          if (!(await confirmDialog('Supprimer', 'Supprimer ce brouillon de journée ?', 'Supprimer', true))) return;
+          if (!(await confirmDialog('Supprimer', 'Supprimer cette journée (brouillon) ?', 'Supprimer', true))) return;
           try { await api.del(`/days/${dayId}`); location.hash = '#/journees'; } catch (err) { toast(errorMessage(err), 'error'); }
         } }, 'Supprimer')],
       convoquee: [h('button.primary', { onclick: go('demarrer', 'Journée commencée : ajustez les présents.') }, 'Commencer la journée (jour J)'),
@@ -296,22 +296,35 @@ async function dayConsole(main, dayId) {
       counts[p.response ?? 'none'] += 1;
       if (p.lunch) lunch += 1;
     }
-    return h('details.card', { open: day.status !== 'en_cours' },
-      h('summary', `Convocations (${convoked.size})`, day.status !== 'brouillon' ? ` · ✅ ${counts.present} · ❌ ${counts.absent} · … ${counts.none}${day.lunch_offered ? ` · 🍽 ${lunch}` : ''}` : ''),
-      h('ul.plain.members', dv.members.map((m) => {
-        const p = convoked.get(m.id);
-        return h('li', h('label.check',
-          h('input', {
-            type: 'checkbox', checked: !!p, disabled: !editable,
-            onchange: (e) => {
-              const ids = new Set(convoked.keys());
-              if (e.target.checked) ids.add(m.id);
-              else ids.delete(m.id);
-              act(() => api.put(`/days/${dayId}/convocations`, { user_ids: [...ids] }));
-            },
-          }),
-          `${icon(p)} ${m.display_name || m.email || 'Membre'}${p?.lunch ? ' 🍽' : ''}`));
-      })));
+    // Liste longue : une section par catégorie (chasseurs, traqueurs, autres), cocher / décocher tout.
+    const save = (ids) => act(() => api.put(`/days/${dayId}/convocations`, { user_ids: [...ids] }));
+    const groups = [['chasseur', 'Chasseurs'], ['traqueur', 'Traqueurs'], ['autre', 'Autres']]
+      .map(([k, label]) => ({ label, members: dv.members.filter((m) => (m.usual_role ?? 'chasseur') === k) }))
+      .filter((g) => g.members.length);
+    const section = (g) => {
+      const n = g.members.filter((m) => convoked.has(m.id)).length;
+      return fold(g.label, { key: `convoc.${g.label}`, open: dv.members.length <= 15, extra: `${n}/${g.members.length}` },
+        editable ? h('div.buttons.compact',
+          h('button.link', { onclick: () => save(new Set([...convoked.keys(), ...g.members.map((m) => m.id)])) }, 'Tout cocher'),
+          h('button.link', { onclick: () => { const ids = new Set(convoked.keys()); for (const m of g.members) ids.delete(m.id); save(ids); } }, 'Tout décocher')) : null,
+        h('ul.plain.members', g.members.map((m) => {
+          const p = convoked.get(m.id);
+          return h('li', h('label.check',
+            h('input', {
+              type: 'checkbox', checked: !!p, disabled: !editable,
+              onchange: (e) => {
+                const ids = new Set(convoked.keys());
+                if (e.target.checked) ids.add(m.id);
+                else ids.delete(m.id);
+                save(ids);
+              },
+            }),
+            `${icon(p)} ${m.display_name || m.email || 'Membre'}${p?.lunch ? ' 🍽' : ''}`));
+        })));
+    };
+    return h('section.card.step', fold(`Convocations (${convoked.size})`, { key: 'convoc', open: day.status !== 'en_cours',
+      extra: day.status !== 'brouillon' ? `✅ ${counts.present} · ❌ ${counts.absent} · … ${counts.none}${day.lunch_offered ? ` · 🍽 ${lunch}` : ''}` : '' },
+      groups.map(section)));
   }
 
   // -------------------------------------------------------------------------
@@ -766,8 +779,8 @@ async function dayConsole(main, dayId) {
     fill(box,
       h('h1', `Journée du ${formatHuntDate(day.date)}`),
       h('p', `Rendez-vous à ${formatTime(day.meeting_time)}${day.meeting_place ? `, ${day.meeting_place}` : ''} · `, h('span.status', { class: `status-${day.status}` }, DAY_STATUS_LABELS[day.status])),
-      actionsSection(),
-      sections,
+      // En préparation : on règle d'abord, les boutons (envoyer, supprimer…) viennent en bas.
+      ['brouillon', 'convoquee'].includes(day.status) ? [sections, actionsSection()] : [actionsSection(), sections],
     );
     renderMap();
   }

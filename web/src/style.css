@@ -509,3 +509,4 @@ ul.alerts li a { display: grid; grid-template-columns: 1fr auto; gap: 0 0.5rem; 
 ul.alerts li a strong { grid-column: 1; }
 ul.alerts li a > .small { grid-column: 2; grid-row: 1; }
 ul.alerts li a > span:not(.small) { grid-column: 1 / -1; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-size: 0.88rem; color: var(--muted); }
+button.primary-outline { background: transparent; border: 1px solid var(--primary); color: var(--primary); font-weight: 600; margin-bottom: 0.75rem; }

@@ -120,7 +120,7 @@ tenantRoutes.patch('/tenant', async (c) => {
 tenantRoutes.get('/members', (c) =>
   tenantTx(c, ['president', 'responsable'], async (tx, { tenantId }) => {
     const members = await tx.query(
-      `SELECT u.id, u.display_name, u.email, u.phone, m.role, m.created_at, u.walking_ability, u.has_car, u.car_seats,
+      `SELECT u.id, u.display_name, u.email, u.phone, m.role, m.usual_role, m.created_at, u.walking_ability, u.has_car, u.car_seats,
               CASE WHEN m.deputy_until > now() THEN m.deputy_until END AS deputy_until
          FROM memberships m JOIN users u ON u.id = m.user_id
         WHERE m.tenant_id = $1
@@ -169,6 +169,7 @@ tenantRoutes.patch('/members/:userId/mobility', async (c) => {
     walking_ability: z.number().int().min(1).max(5).nullable(),
     has_car: z.boolean().nullable(),
     car_seats: z.number().int().min(0).max(8).nullable(),
+    usual_role: z.enum(['chasseur', 'traqueur', 'autre']),
   }).partial().strict().parse(await c.req.json());
   const userId = c.req.param('userId');
   return tenantTx(c, ['president', 'responsable'], async (tx) => {
@@ -176,6 +177,7 @@ tenantRoutes.patch('/members/:userId/mobility', async (c) => {
       userId, 'walking_ability' in body, body.walking_ability ?? null, 'has_car' in body, body.has_car ?? null,
       'car_seats' in body, body.car_seats ?? null,
     ]);
+    if (body.usual_role) await tx.query('SELECT app.set_member_usual_role($1, $2)', [userId, body.usual_role]);
     return c.json({ ok: true });
   });
 });

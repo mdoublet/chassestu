@@ -2,6 +2,8 @@ import { api } from '../api.js';
 import { state } from '../state.js';
 import { h, fill, copyText, errorMessage, formatDate, modal, toast, confirmDialog, fold, ROLE_LABELS } from '../ui.js';
 
+const CATEGORY = { chasseur: 'Chasseur', traqueur: 'Traqueur', autre: 'Autre' };
+
 export async function membersView(main) {
   const isPresident = state.role === 'president';
   // Président adjoint : droits du président, sauf sur les droits des autres (rôles, retraits, mandats).
@@ -49,7 +51,9 @@ export async function membersView(main) {
       }
     };
     const summary = [
-      m.deputy_until ? `Adjoint → ${shortDate(m.deputy_until)}` : ROLE_LABELS[m.role],
+      // Catégorie (chasseur, traqueur, autre) ; le rôle seulement s'il donne des droits.
+      CATEGORY[m.usual_role ?? 'chasseur'],
+      m.deputy_until ? `adjoint → ${shortDate(m.deputy_until)}` : m.role !== 'chasseur' ? ROLE_LABELS[m.role].toLowerCase() : null,
       m.walking_ability ? `🥾${m.walking_ability}` : null,
       m.has_car ? `🚗${m.car_seats ?? ''}` : null,
     ].filter(Boolean).join(' · ');
@@ -74,6 +78,9 @@ export async function membersView(main) {
     return fold(`${m.display_name || '(sans nom)'}${m.id === state.user.id ? ' (vous)' : ''}`, { extra: summary, className: 'member-row' },
       h('div.member-grid',
         h('label', 'Rôle', role),
+        h('label', { title: 'Range les convocations ; un traqueur est traqueur par défaut dans les battues.' }, 'Catégorie',
+          h('select', { 'aria-label': `Catégorie de ${m.display_name}`, onchange: (e) => save({ usual_role: e.target.value }) },
+            Object.entries(CATEGORY).map(([v, l]) => h('option', { value: v, selected: (m.usual_role ?? 'chasseur') === v }, l)))),
         h('label', 'Marche', h('select', { 'aria-label': `Marche de ${m.display_name}`, onchange: (e) => save({ walking_ability: e.target.value ? Number(e.target.value) : null }) },
           h('option', { value: '' }, '—'), [1, 2, 3, 4, 5].map((v) => h('option', { value: v, selected: m.walking_ability === v }, `🥾 ${v}`)))),
         h('label.check', h('input', { type: 'checkbox', checked: !!m.has_car, 'aria-label': `Voiture de ${m.display_name}`, onchange: (e) => save({ has_car: e.target.checked }) }), 'Voiture'),

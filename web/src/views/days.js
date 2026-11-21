@@ -6,7 +6,6 @@ import { state } from '../state.js';
 import { h, fill, toast, errorMessage, fold } from '../ui.js';
 import { DAY_STATUS_LABELS, formatHuntDate, formatTime } from '../lib/hunts.js';
 import { every } from '../lib/live.js';
-import { placeSelect } from './place-picker.js';
 import { pushCard } from './notifications.js';
 
 const MANAGERS = ['president', 'responsable'];
@@ -49,61 +48,35 @@ export async function daysView(main) {
       cancelled.length && canManage ? fold('Annulées', { key: 'days.cancelled', extra: String(cancelled.length) }, h('div.day-list', cancelled.slice(0, 30).map(item))) : null);
   }
 
-  async function renderForm() {
-    const [{ members }, defaults, places] = await Promise.all([api.get('/members'), api.get('/days/defaults'), api.get('/places')]);
-    let meetingPoint = defaults.meeting_point;
-    const placeInput = h('input', { name: 'meeting_place', maxlength: 200, value: defaults.meeting_place ?? '', placeholder: 'ex. cabane de chasse' });
-    const nextSaturday = (() => {
+  /**
+   * Nouvelle journée : brouillon créé d'office (samedi prochain, rendez-vous et
+   * déjeuner repris de la dernière journée, tous les membres convoqués), puis
+   * réglé sur sa page avant l'envoi des convocations.
+   */
+  async function createDay() {
+    try {
+      const [{ members }, defaults] = await Promise.all([api.get('/members'), api.get('/days/defaults')]);
       const d = new Date();
       d.setDate(d.getDate() + ((6 - d.getDay() + 7) % 7 || 7));
-      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    })();
-    const checks = members.map((m) => ({ m, input: h('input', { type: 'checkbox', checked: true, value: m.id }) }));
-    const lunch = h('input', { type: 'checkbox', name: 'lunch_offered', checked: defaults.lunch_offered });
-    const lunchInfo = h('input', { name: 'lunch_info', maxlength: 300, value: defaults.lunch_info ?? '', placeholder: 'ex. salle des fêtes, 15 €' });
-    const form = h('form.card', {
-      onsubmit: async (e) => {
-        e.preventDefault();
-        const fd = new FormData(form);
-        try {
-          const res = await api.post('/days', {
-            date: fd.get('date'),
-            meeting_time: fd.get('meeting_time'),
-            meeting_place: fd.get('meeting_place'),
-            meeting_point: meetingPoint ?? null,
-            briefing: fd.get('briefing'),
-            lunch_offered: lunch.checked,
-            lunch_info: lunchInfo.value,
-            participant_user_ids: checks.filter((c) => c.input.checked).map((c) => c.m.id),
-          });
-          location.hash = `#/journees/${res.day.id}`;
-        } catch (err) {
-          toast(errorMessage(err), 'error');
-        }
-      },
-    },
-    h('div.row',
-      h('label', 'Date', h('input', { type: 'date', name: 'date', value: nextSaturday, required: true })),
-      h('label', 'Rendez-vous', h('input', { type: 'time', name: 'meeting_time', value: defaults.meeting_time, required: true }))),
-    h('label', 'Lieu du rendez-vous', placeSelect(places, {
-      current: defaults.meeting_place,
-      other: 'Autre (texte libre)',
-      onpick: (c) => {
-        if (c && c !== 'other') { placeInput.value = c.name; meetingPoint = c.point; }
-        else if (c === 'other') { meetingPoint = null; placeInput.focus(); }
-      },
-    })),
-    h('label', 'Lieu (texte)', placeInput),
-    h('label.check', lunch, 'Déjeuner proposé (inscription facultative)'),
-    h('label', 'Déjeuner : lieu, prix…', lunchInfo),
-    h('label', 'Consignes de la journée', h('textarea', { name: 'briefing', rows: 2, maxlength: 5000 })),
-    h('fieldset.members', h('legend', 'Membres convoqués'), checks.map(({ m, input }) => h('label.check', input, m.display_name || m.email || 'Membre'))),
-    h('button.primary', { type: 'submit' }, 'Créer la journée (brouillon)'));
-    fill(formBox, h('details', h('summary.button-like', '+ Nouvelle journée'), form));
+      const date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      const res = await api.post('/days', {
+        date,
+        meeting_time: defaults.meeting_time,
+        meeting_place: defaults.meeting_place ?? '',
+        meeting_point: defaults.meeting_point ?? null,
+        lunch_offered: !!defaults.lunch_offered,
+        lunch_info: defaults.lunch_info ?? '',
+        participant_user_ids: members.map((m) => m.id),
+      });
+      location.hash = `#/journees/${res.day.id}`;
+    } catch (err) {
+      toast(errorMessage(err), 'error');
+    }
   }
+  if (canManage) fill(formBox, h('button.primary-outline', { onclick: createDay }, '+ Nouvelle journée'));
 
   try {
-    await Promise.all([loadList(), canManage ? renderForm() : null]);
+    await loadList();
   } catch (err) {
     main.append(h('p.error', errorMessage(err)));
   }
