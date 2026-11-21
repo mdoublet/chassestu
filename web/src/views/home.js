@@ -34,6 +34,12 @@ export async function homeView(main, { refreshMe, rerender }) {
     return;
   }
 
+  // Membre d'une association : l'accueil ne ferait que répéter le menu, on ouvre les journées.
+  if (state.tenants.length) {
+    location.replace('#/journees');
+    return;
+  }
+
   main.append(h('h1', `Bonjour ${state.user.display_name}`));
 
   if (state.tenants.length === 0) {

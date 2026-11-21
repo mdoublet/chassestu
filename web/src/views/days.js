@@ -7,6 +7,7 @@ import { h, fill, toast, errorMessage, fold } from '../ui.js';
 import { DAY_STATUS_LABELS, formatHuntDate, formatTime } from '../lib/hunts.js';
 import { every } from '../lib/live.js';
 import { placeSelect } from './place-picker.js';
+import { pushCard } from './notifications.js';
 
 const MANAGERS = ['president', 'responsable'];
 const OPEN = ['brouillon', 'convoquee', 'en_cours'];
@@ -15,7 +16,13 @@ export async function daysView(main) {
   const canManage = MANAGERS.includes(state.role);
   const listBox = h('div');
   const formBox = h('div');
-  main.append(...[h('h1', 'Journées de chasse'), canManage ? formBox : null, listBox].filter(Boolean));
+  // Repris de l'ancien accueil : profil à compléter, notifications à activer sur cet appareil.
+  const profileMissing = !state.user.walking_ability || state.user.has_car === null || state.user.has_car === undefined;
+  const push = pushCard((status) => { if (status === 'enabled') setTimeout(() => push.remove(), 2500); });
+  import('../push-client.js').then(async ({ pushStatus }) => { if ((await pushStatus()) === 'enabled') push.remove(); }).catch(() => {});
+  main.append(...[h('h1', 'Journées de chasse'),
+    profileMissing ? h('a.current-hunt', { href: '#/profil' }, h('strong', '👤 Complétez votre profil'), h('span', 'Marche et voiture →')) : null,
+    canManage ? formBox : null, listBox, push].filter(Boolean));
 
   async function loadList() {
     const { days } = await api.get('/days');

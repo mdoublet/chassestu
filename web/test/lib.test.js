@@ -201,15 +201,14 @@ describe('menu principal', () => {
   });
   it('entrées selon le rôle', () => {
     const labels = (who) => navItems(who).map((i) => i.label);
-    expect(labels({ role: 'president', isSuperAdmin: true, hasTenant: true })).toEqual(['Accueil', 'Journées', 'Territoires', 'Lieux', 'Membres', 'Paramètres', 'Mon profil', 'Administration']);
-    expect(labels({ role: 'responsable', isSuperAdmin: false, hasTenant: true })).toEqual(['Accueil', 'Journées', 'Territoires', 'Membres', 'Mon profil']);
-    expect(labels({ role: 'chasseur', isSuperAdmin: false, hasTenant: true })).toEqual(['Accueil', 'Journées', 'Territoires', 'Mon profil']);
+    expect(labels({ role: 'president', isSuperAdmin: true, hasTenant: true })).toEqual(['Journées', 'Territoires', 'Lieux', 'Membres', 'Paramètres', 'Mon profil', 'Administration']);
+    expect(labels({ role: 'responsable', isSuperAdmin: false, hasTenant: true })).toEqual(['Journées', 'Territoires', 'Membres', 'Mon profil']);
+    expect(labels({ role: 'chasseur', isSuperAdmin: false, hasTenant: true })).toEqual(['Journées', 'Territoires', 'Mon profil']);
     expect(labels({ role: null, isSuperAdmin: false, hasTenant: false })).toEqual(['Accueil', 'Mon profil']);
   });
   it('entrée active, y compris pour les sous-pages', () => {
     const items = navItems({ role: 'president', isSuperAdmin: false, hasTenant: true });
-    expect(activeHref('#/', items)).toBe('#/');
-    expect(activeHref('', items)).toBe('#/');
+    expect(activeHref('#/', items)).toBeNull(); // plus d'accueil : redirigé vers les journées
     expect(activeHref('#/journees/3f2b0c3e-1111-2222-3333-444455556666', items)).toBe('#/journees');
     expect(activeHref('#/carte/3f2b0c3e-1111-2222-3333-444455556666', items)).toBe('#/territoires');
     expect(activeHref('#/plans/3f2b0c3e-1111-2222-3333-444455556666', items)).toBe('#/territoires');

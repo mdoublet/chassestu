@@ -107,13 +107,12 @@ function header() {
     : null;
   const bar = h(
     'header.topbar',
-    h('a.brand', { href: '#/' }, APP_NAME),
+    h('a.brand', { href: state.tenants.length ? '#/journees' : '#/' }, APP_NAME),
     tenantSelect,
     state.role ? h('span.role-badge', state.tenant?.deputy_until ? 'Président adjoint' : ROLE_LABELS[state.role]) : null,
     h('span.spacer'),
     state.user ? h('a.bell', { href: '#/notifications', title: 'Alertes', 'aria-label': `Alertes : ${unread} non lue(s)` },
       '🔔', h('span.bell-count', { hidden: unread === 0 }, unread > 9 ? '9+' : String(unread))) : null,
-    items.length ? h('a.home-button', { href: '#/', title: 'Accueil', 'aria-label': 'Accueil' }, '🏠') : null,
     nav
       ? h('button.menu-button', {
           'aria-expanded': 'false',

@@ -8,7 +8,8 @@ export const APP_NAME = 'Chasses-tu ?'; // espace fine insécable avant « ? �
 export function navItems({ role, isSuperAdmin, hasTenant }) {
   const manager = role === 'president' || role === 'responsable';
   return [
-    { href: '#/', label: 'Accueil', icon: '🏠' },
+    // Pas d'accueil une fois membre : on arrive directement sur les journées.
+    !hasTenant && { href: '#/', label: 'Accueil', icon: '🏠' },
     hasTenant && { href: '#/journees', label: 'Journées', icon: '🎯' },
     hasTenant && { href: '#/territoires', label: 'Territoires', icon: '🗺️', also: ['#/carte', '#/plans'] },
     hasTenant && role === 'president' && { href: '#/lieux', label: 'Lieux', icon: '📍' },
