@@ -119,7 +119,8 @@ dayRoutes.get('/days', (c) =>
                                          'territory_name', t.name, 'published', h.assignments_published_at IS NOT NULL)
                  FROM hunts h JOIN territories t ON t.id = h.territory_id
                 WHERE h.day_id = d.id ORDER BY h.number DESC LIMIT 1) AS current_battue,
-              (SELECT count(*)::int FROM hunts h WHERE h.day_id = d.id) AS battue_count
+              (SELECT count(*)::int FROM hunts h WHERE h.day_id = d.id) AS battue_count,
+              d.season_id, d.season_id IS NOT DISTINCT FROM app.current_season() AS in_season
          FROM ${DAY_FROM}
         ORDER BY d.date DESC, d.meeting_time DESC`,
       [c.get('user').id],
@@ -384,6 +385,12 @@ dayRoutes.post('/days/:id/battues', async (c) => {
     await setSelection(tx, huntId, ids);
     if (previous) {
       await tx.execute('INSERT INTO hunt_species (hunt_id, species, quota) SELECT $1, species, quota FROM hunt_species WHERE hunt_id = $2', [huntId, previous.id]);
+    } else {
+      // Première battue de la journée : espèces de la saison, avec leur nombre par défaut par battue.
+      await tx.execute(
+        `INSERT INTO hunt_species (hunt_id, species, quota)
+         SELECT $1, ss.species, ss.battue_quota FROM season_species ss JOIN hunt_days d ON d.season_id = ss.season_id WHERE d.id = $2`,
+        [huntId, id]);
     }
     await tx.execute('UPDATE hunt_days SET regroup_at = NULL WHERE id = $1', [id]);
     return c.json({ hunt_id: huntId, ...(await dayDetail(tx, id)) }, 201);

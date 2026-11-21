@@ -8,7 +8,7 @@ const ICON = { cabane: '🛖', restaurant: '🍽', autre: '📍' };
 /** Liste des choix possibles : { key, label, name, point }. */
 export function placeChoices({ places = [], parkings = [] }) {
   return [
-    ...places.map((p) => ({ key: `place:${p.id}`, group: 'Lieux de l’association', label: `${ICON[p.kind] ?? '📍'} ${p.name}`, name: p.name, point: p.geom })),
+    ...places.filter((p) => p.in_season !== false).map((p) => ({ key: `place:${p.id}`, group: 'Lieux de l’association', label: `${ICON[p.kind] ?? '📍'} ${p.name}`, name: p.name, point: p.geom })),
     ...parkings.map((p) => ({ key: `parking:${p.id}`, group: 'Parkings', label: `🅿 ${p.name} (${p.territory_name})`, name: /^parking\b/i.test(p.name) ? p.name : `Parking ${p.name}`, point: p.geom })),
   ];
 }

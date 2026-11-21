@@ -121,7 +121,8 @@ tenantRoutes.get('/members', (c) =>
   tenantTx(c, ['president', 'responsable'], async (tx, { tenantId }) => {
     const members = await tx.query(
       `SELECT u.id, u.display_name, u.email, u.phone, m.role, m.usual_role, m.created_at, u.walking_ability, u.has_car, u.car_seats,
-              CASE WHEN m.deputy_until > now() THEN m.deputy_until END AS deputy_until
+              CASE WHEN m.deputy_until > now() THEN m.deputy_until END AS deputy_until,
+              EXISTS (SELECT 1 FROM season_members sm WHERE sm.user_id = m.user_id AND sm.season_id = app.current_season()) AS in_season
          FROM memberships m JOIN users u ON u.id = m.user_id
         WHERE m.tenant_id = $1
         ORDER BY m.role, u.display_name`,

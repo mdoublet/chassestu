@@ -20,10 +20,13 @@ const placeFields = z.object({
 /** Lieux et parkings (tous les membres). */
 placeRoutes.get('/places', (c) =>
   tenantTx(c, null, async (tx) => {
-    const places = await tx.query(`SELECT ${PLACE_SELECT} FROM places ORDER BY kind, lower(name)`);
+    const places = await tx.query(`SELECT ${PLACE_SELECT},
+        EXISTS (SELECT 1 FROM season_places sp WHERE sp.place_id = places.id AND sp.season_id = app.current_season()) AS in_season
+      FROM places ORDER BY kind, lower(name)`);
     const parkings = await tx.query(
       `SELECT p.id, p.name, t.name AS territory_name, ${geomOut('p.geom', 'geom')}
          FROM parkings p JOIN territories t ON t.id = p.territory_id
+        WHERE EXISTS (SELECT 1 FROM season_territories st WHERE st.territory_id = t.id AND st.season_id = app.current_season())
         ORDER BY lower(t.name), lower(p.name)`,
     );
     return c.json({ places, parkings });

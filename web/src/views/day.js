@@ -106,7 +106,7 @@ async function dayConsole(main, dayId) {
     if (!dv.huntPlans.has(territoryId)) {
       dv.huntPlans.set(territoryId, null);
       api.get(`/territories/${territoryId}/hunt-plans`)
-        .then((r) => { dv.huntPlans.set(territoryId, r.hunt_plans); render(); })
+        .then((r) => { dv.huntPlans.set(territoryId, r.hunt_plans.filter((hp) => hp.in_season !== false)); render(); })
         .catch(() => dv.huntPlans.delete(territoryId));
     }
     return dv.huntPlans.get(territoryId) ?? null; // null : en cours de chargement
@@ -299,7 +299,8 @@ async function dayConsole(main, dayId) {
     // Liste longue : une section par catégorie (chasseurs, traqueurs, autres), cocher / décocher tout.
     const save = (ids) => act(() => api.put(`/days/${dayId}/convocations`, { user_ids: [...ids] }));
     const groups = [['chasseur', 'Chasseurs'], ['traqueur', 'Traqueurs'], ['autre', 'Autres']]
-      .map(([k, label]) => ({ label, members: dv.members.filter((m) => (m.usual_role ?? 'chasseur') === k) }))
+      // Membres inscrits pour la saison (et ceux déjà convoqués).
+      .map(([k, label]) => ({ label, members: dv.members.filter((m) => (m.usual_role ?? 'chasseur') === k && (m.in_season !== false || convoked.has(m.id))) }))
       .filter((g) => g.members.length);
     const section = (g) => {
       const n = g.members.filter((m) => convoked.has(m.id)).length;
@@ -688,7 +689,7 @@ async function dayConsole(main, dayId) {
     return step('especes', '3. Espèces', rows.length ? rows.map((r) => `${r.species}${r.quota != null ? ` ${r.quota}` : ''}`).join(', ') : 'aucune précisée', false,
       rows.length
         ? h('table.list.compact', h('tbody', rows.map((r, i) => h('tr',
-            h('td', r.species),
+            h('td', r.species, seasonLeft(r.species)),
             h('td', h('input', { type: 'number', min: 0, max: 999, placeholder: 'sans limite', value: r.quota ?? '', disabled: !editable, 'aria-label': `Nombre ${r.species}`,
               onchange: (e) => { r.quota = e.target.value === '' ? null : Number(e.target.value); save(); } })),
             editable ? h('td', h('button.link.danger', { onclick: () => { rows.splice(i, 1); save(); } }, '✕')) : null))))
@@ -699,7 +700,15 @@ async function dayConsole(main, dayId) {
         rows.push({ species: name.value.trim(), quota: quota.value === '' ? null : Number(quota.value) });
         save();
       } }, name, quota, h('button', { type: 'submit' }, 'Ajouter'),
-      h('datalist', { id: 'species-list' }, COMMON_SPECIES.map((x) => h('option', { value: x })))) : null);
+      h('datalist', { id: 'species-list' }, [...new Set([...(dv.hunt.season_species ?? []).map((x) => x.species), ...COMMON_SPECIES])].map((x) => h('option', { value: x })))) : null);
+  }
+
+  /** Reste du quota de la saison pour une espèce (« reste 12/40 »). */
+  function seasonLeft(species) {
+    const ss = (dv.hunt.season_species ?? []).find((x) => x.species === species);
+    if (!ss || ss.season_quota == null) return null;
+    const left = ss.season_quota - ss.harvested;
+    return h('span.small', { class: left <= 0 ? 'warn-text' : 'muted', title: `Saison : ${ss.harvested} prélevé(s) sur ${ss.season_quota}` }, ` · reste ${Math.max(0, left)}/${ss.season_quota}`);
   }
 
   function carpoolSection() {
@@ -789,7 +798,7 @@ async function dayConsole(main, dayId) {
     const [members, territories, places] = await Promise.all([api.get('/members'), api.get('/territories'), api.get('/places')]);
     dv.members = members.members;
     dv.places = places;
-    dv.territories = territories.territories;
+    dv.territories = territories.territories.filter((t) => t.in_season !== false); // saison en cours
     await load();
   } catch (err) {
     fill(box, h('p.error', errorMessage(err)));

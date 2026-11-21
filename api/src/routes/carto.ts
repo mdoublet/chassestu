@@ -151,7 +151,9 @@ cartoRoutes.get('/territories', (c) =>
               (SELECT count(*)::int FROM posts p WHERE p.territory_id = t.id AND p.invalid_reason IS NOT NULL) AS invalid_posts,
               (SELECT count(*)::int FROM parkings x WHERE x.territory_id = t.id) AS parkings_count,
               (SELECT count(*)::int FROM reserve_zones x WHERE x.territory_id = t.id) AS reserves_count,
-              (SELECT count(*)::int FROM hunt_plans x WHERE x.territory_id = t.id) AS plans_count
+              (SELECT count(*)::int FROM hunt_plans x WHERE x.territory_id = t.id
+                 AND EXISTS (SELECT 1 FROM season_hunt_plans sp WHERE sp.hunt_plan_id = x.id AND sp.season_id = app.current_season())) AS plans_count,
+              EXISTS (SELECT 1 FROM season_territories st WHERE st.territory_id = t.id AND st.season_id = app.current_season()) AS in_season
          FROM territories t ORDER BY name`,
     );
     return c.json({ territories });

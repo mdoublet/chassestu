@@ -11,6 +11,7 @@ import { invitationRoutes } from './routes/invitations';
 import { cartoRoutes } from './routes/carto';
 import { dwellingRoutes } from './routes/dwellings';
 import { planRoutes } from './routes/plans';
+import { seasonRoutes } from './routes/seasons';
 import { huntRoutes } from './routes/hunts';
 import { dayRoutes } from './routes/days';
 import { placeRoutes } from './routes/places';
@@ -82,6 +83,7 @@ export function createApp(getPool: PoolProvider, options: AppOptions = {}) {
   app.route('/api', cartoRoutes);
   app.route('/api', dwellingRoutes);
   app.route('/api', planRoutes);
+  app.route('/api', seasonRoutes);
   app.route('/api', dayRoutes);
   app.route('/api', placeRoutes);
   app.route('/api', huntRoutes);

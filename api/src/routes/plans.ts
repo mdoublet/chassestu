@@ -53,7 +53,8 @@ export async function loadPlans(tx: Tx, huntPlanId: string | null) {
 }
 
 const HUNT_PLAN_SELECT = `id, territory_id, name, notes, ${geomOut('start_point')}, ${geomOut('drive_path')}, ${geomOut('exit_point')},
-  round(ST_Length(drive_path::geography))::int AS drive_length_m, updated_at`;
+  round(ST_Length(drive_path::geography))::int AS drive_length_m, updated_at,
+  EXISTS (SELECT 1 FROM season_hunt_plans sp WHERE sp.hunt_plan_id = hunt_plans.id AND sp.season_id = app.current_season()) AS in_season`;
 
 export async function loadHuntPlan(tx: Tx, id: string) {
   const hp = notFoundIfNull(await tx.maybeOne<Record<string, any>>(`SELECT ${HUNT_PLAN_SELECT} FROM hunt_plans WHERE id = $1`, [id]), 'Plan de chasse');

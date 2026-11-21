@@ -2,6 +2,8 @@ import { api } from '../api.js';
 import { state } from '../state.js';
 import { h, fill, copyText, errorMessage, formatDate, modal, toast, confirmDialog, fold, ROLE_LABELS } from '../ui.js';
 
+import { setInSeason } from '../lib/season.js';
+
 const CATEGORY = { chasseur: 'Chasseur', traqueur: 'Traqueur', autre: 'Autre' };
 
 export async function membersView(main) {
@@ -88,6 +90,7 @@ export async function membersView(main) {
           onchange: (e) => save({ car_seats: e.target.value === '' ? null : Number(e.target.value) }) }))),
       [m.email, m.phone].filter(Boolean).length ? h('p.small.muted', [m.email, m.phone].filter(Boolean).join(' · ')) : null,
       deputy,
+      isPresident && m.id !== state.user.id ? h('button.link', { onclick: () => seasonLink(m, false), title: 'Il reste membre ; il ne sera plus proposé dans les convocations de la saison.' }, 'Retirer de la saison') : null,
       isTitular && m.id !== state.user.id
         ? h('button.link.danger', { onclick: async () => {
             if (!(await confirmDialog('Retirer', `Retirer ${m.display_name} de l’association ?`, 'Retirer', true))) return;
@@ -101,9 +104,23 @@ export async function membersView(main) {
         : null);
   }
 
+  async function seasonLink(m, inSeason) {
+    try {
+      await setInSeason('members', m.id, inSeason);
+      toast(inSeason ? `${m.display_name} inscrit pour la saison.` : `${m.display_name} retiré de la saison.`);
+      loadMembers();
+    } catch (err) {
+      toast(errorMessage(err), 'error');
+    }
+  }
+
   async function loadMembers() {
     const { members } = await api.get('/members');
-    fill(membersBox, h('div.card.member-list', members.map(memberRow)));
+    const off = members.filter((m) => m.in_season === false);
+    fill(membersBox, h('div.card.member-list', members.filter((m) => m.in_season !== false).map(memberRow)),
+      off.length ? fold('Pas inscrits cette saison', { key: 'members.off', extra: String(off.length) },
+        h('ul.plain', off.map((m) => h('li.off-row', h('span', m.display_name || '(sans nom)'),
+          isPresident ? h('button.link', { onclick: () => seasonLink(m, true) }, 'Inscrire pour la saison') : null)))) : null);
   }
 
   async function loadInvites() {

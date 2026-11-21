@@ -222,6 +222,16 @@ aucune réserve de l'association ne peut contenir un poste.
 
 Accès : Territoires → « 📋 Plans de chasse » sur la carte du territoire (`#/plans/<id>[/<plan>]`) ; plus d'entrée dans le menu du haut.
 
+**Saisons** (migration 0021) : l'association a une saison en cours
+(Paramètres → Saison). Une saison porte ses espèces (quota sur la saison,
+nombre par défaut par battue, repris à la première battue de chaque journée)
+et le récapitulatif des prélèvements. Territoires, plans de chasse, lieux et
+membres y sont rattachés (liens, sans copie ; un élément créé est rattaché à la
+saison en cours ; « Retirer de la saison » ne supprime rien) ; les journées
+appartiennent à la saison en cours à leur création. Une nouvelle saison
+reprend espèces et rattachements de la précédente. Les listes montrent la
+saison en cours, le reste est replié dans « Hors saison ».
+
 **Lignes et chefs de ligne** (migration 0019) : une ligne est un groupe nommé
 de postes d'un territoire (éditeur : section « Lignes », champ « Ligne » de la
 fiche poste) ; un poste peut n'appartenir à aucune ligne. Le chef de ligne est

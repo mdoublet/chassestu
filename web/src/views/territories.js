@@ -7,6 +7,7 @@ import { toLatLng, escapeHtml, postIcon, ensureHatchPattern } from '../map/shape
 import { api } from '../api.js';
 import { state } from '../state.js';
 import { h, fill, toast, errorMessage, confirmDialog, fold } from '../ui.js';
+import { setInSeason } from '../lib/season.js';
 
 export async function territoriesView(main) {
   const canEdit = state.role === 'president';
@@ -22,6 +23,7 @@ export async function territoriesView(main) {
   addBasemaps(map);
   const layer = L.featureGroup().addTo(map);
   let territories = [];
+  let offSeason = [];
   let overview = null;
   let highlighted = null;
   // Territoires masqués sur la vue globale (préférence de l'appareil).
@@ -32,9 +34,23 @@ export async function territoriesView(main) {
 
   async function load() {
     const [list, ov] = await Promise.all([api.get('/territories'), api.get('/territories/overview')]);
-    territories = list.territories;
+    // Saison en cours ; les autres territoires sont repliés dans « Hors saison ».
+    territories = list.territories.filter((t) => t.in_season !== false);
+    offSeason = list.territories.filter((t) => t.in_season === false);
+    const ids = new Set(territories.map((t) => t.id));
+    for (const k of ['posts', 'reserves', 'exclusions']) ov[k] = (ov[k] ?? []).filter((x) => ids.has(x.territory_id));
     overview = ov;
     render();
+  }
+
+  async function season(t, inSeason) {
+    try {
+      await setInSeason('territories', t.id, inSeason);
+      toast(inSeason ? `${t.name} rattaché à la saison.` : `${t.name} retiré de la saison (rien n’est supprimé).`);
+      await load();
+    } catch (err) {
+      toast(errorMessage(err), 'error');
+    }
   }
 
   async function patch(t, body, msg) {
@@ -89,6 +105,9 @@ export async function territoriesView(main) {
       h('div.buttons.territory-actions',
         h('a.button', { href: `#/carte/${t.id}` }, '🗺 Carte'),
         state.role === 'president' || state.role === 'responsable' ? h('a.button', { href: `#/plans/${t.id}` }, `📋 Plans de chasse (${t.plans_count})`) : null,
+        canEdit ? h('button.icon', { title: 'Retirer de la saison (sans le supprimer)', 'aria-label': 'Retirer de la saison', onclick: async () => {
+          if (await confirmDialog('Retirer de la saison', `Retirer « ${t.name} » de la saison en cours ? Il n’est pas supprimé et peut être rattaché à nouveau.`, 'Retirer')) season(t, false);
+        } }, '📤') : null,
         canEdit ? h('button.icon.danger', { title: 'Supprimer le territoire', 'aria-label': 'Supprimer le territoire', onclick: async () => {
           if (!(await confirmDialog('Supprimer le territoire', `Supprimer « ${t.name} » avec ses réserves, parkings, postes, chemins et plans ? Cette suppression ne peut pas être annulée.`, 'Supprimer', true))) return;
           try {
@@ -126,7 +145,10 @@ export async function territoriesView(main) {
   function render() {
     renderToggles();
     fill(list, territories.length ? territories.map(card)
-      : h('div.card', h('p', 'Aucun territoire pour l’instant.'), canEdit ? h('a.button.primary', { href: '#/carte/nouveau' }, 'Créer le premier territoire') : null));
+      : h('div.card', h('p', 'Aucun territoire pour cette saison.'), canEdit ? h('a.button.primary', { href: '#/carte/nouveau' }, 'Créer un territoire') : null),
+      offSeason.length ? fold('Hors saison', { key: 'territories.off', extra: String(offSeason.length) },
+        h('ul.plain', offSeason.map((t) => h('li.off-row', h('span', t.name),
+          canEdit ? h('button.link', { onclick: () => season(t, true) }, 'Rattacher à la saison') : null)))) : null);
     drawMap();
     if (!fitted && territories.length) {
       fitted = true;

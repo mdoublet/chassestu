@@ -25,8 +25,11 @@ export async function daysView(main) {
 
   async function loadList() {
     const { days } = await api.get('/days');
-    const upcoming = days.filter((x) => OPEN.includes(x.status)).reverse();
-    const past = days.filter((x) => !OPEN.includes(x.status));
+    // Saison en cours ; les journées des autres saisons sont repliées à la fin.
+    const otherSeasons = days.filter((x) => x.in_season === false && !OPEN.includes(x.status));
+    const mine = days.filter((x) => x.in_season !== false || OPEN.includes(x.status));
+    const upcoming = mine.filter((x) => OPEN.includes(x.status)).reverse();
+    const past = mine.filter((x) => !OPEN.includes(x.status));
     // Une ligne par journée : date courte, état, l'essentiel du moment.
     const item = (x) => {
       const b = x.current_battue;
@@ -45,7 +48,8 @@ export async function daysView(main) {
     fill(listBox,
       upcoming.length ? h('div.day-list', upcoming.map(item)) : h('p.muted', canManage ? 'Aucune journée prévue.' : 'Aucune journée à laquelle vous êtes convoqué.'),
       done.length ? fold('Passées', { key: 'days.past', extra: String(done.length) }, h('div.day-list', done.slice(0, 30).map(item))) : null,
-      cancelled.length && canManage ? fold('Annulées', { key: 'days.cancelled', extra: String(cancelled.length) }, h('div.day-list', cancelled.slice(0, 30).map(item))) : null);
+      cancelled.length && canManage ? fold('Annulées', { key: 'days.cancelled', extra: String(cancelled.length) }, h('div.day-list', cancelled.slice(0, 30).map(item))) : null,
+      otherSeasons.length ? fold('Saisons précédentes', { key: 'days.other', extra: String(otherSeasons.length) }, h('div.day-list', otherSeasons.slice(0, 60).map(item))) : null);
   }
 
   /**

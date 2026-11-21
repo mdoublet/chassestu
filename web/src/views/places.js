@@ -6,6 +6,8 @@ import { escapeHtml, toLatLng } from '../map/shapes.js';
 import { api } from '../api.js';
 import { h, fill, toast, errorMessage, confirmDialog } from '../ui.js';
 import { PLACE_KINDS } from './place-picker.js';
+import { setInSeason } from '../lib/season.js';
+import { fold } from '../ui.js';
 
 const ICON = { cabane: '🛖', restaurant: '🍽', autre: '📍' };
 
@@ -24,7 +26,8 @@ export async function placesView(main) {
 
   async function load() {
     const res = await api.get('/places');
-    st.places = res.places;
+    st.places = res.places.filter((p) => p.in_season !== false);
+    st.off = res.places.filter((p) => p.in_season === false);
     st.parkings = res.parkings;
     render();
   }
@@ -79,6 +82,17 @@ export async function placesView(main) {
     }, () => toast('Position indisponible.', 'error'), { enableHighAccuracy: true, timeout: 15000 }) }, 'Ma position'),
   ];
 
+  async function seasonLink(p, inSeason) {
+    try {
+      await setInSeason('places', p.id, inSeason);
+      st.editing = null;
+      toast(inSeason ? `${p.name} rattaché à la saison.` : `${p.name} retiré de la saison.`);
+      await load();
+    } catch (err) {
+      toast(errorMessage(err), 'error');
+    }
+  }
+
   function render() {
     const draft = st.draft;
     const form = draft
@@ -105,6 +119,7 @@ export async function placesView(main) {
                   kindSelect(p.kind, (e) => save(p.id, { kind: e.target.value }, 'Type enregistré.')),
                   h('input', { value: p.notes, maxlength: 500, placeholder: 'Note', 'aria-label': 'Note', onchange: (e) => save(p.id, { notes: e.target.value }, 'Note enregistrée.') }),
                   h('div.buttons', placeHere(p.id),
+                    h('button.link', { onclick: () => seasonLink(p, false), title: 'Sans le supprimer' }, 'Retirer de la saison'),
                     h('button.link.danger', { onclick: async () => {
                       if (!(await confirmDialog('Supprimer', `Supprimer « ${p.name} » ?`, 'Supprimer', true))) return;
                       try { await api.del(`/places/${p.id}`); st.editing = null; await load(); } catch (err) { toast(errorMessage(err), 'error'); }
@@ -113,8 +128,10 @@ export async function placesView(main) {
               : h('button.link.place-name', { onclick: () => { st.editing = p.id; st.draft = null; map.setView(toLatLng(p.geom.coordinates), 15); render(); } },
                   `${ICON[p.kind]} ${p.name}`, h('span.small.muted', ` · ${PLACE_KINDS[p.kind]}${p.notes ? ` · ${p.notes}` : ''}`)))))
         : h('p.muted', 'Aucun lieu pour l’instant.'),
-      st.parkings.length ? h('details', h('summary', `Parkings des territoires (${st.parkings.length})`),
-        h('ul.plain.small', st.parkings.map((p) => h('li', `🅿 ${p.name} · ${p.territory_name}`)))) : null);
+      st.parkings.length ? fold('Parkings des territoires', { key: 'places.parkings', extra: String(st.parkings.length) },
+        h('ul.plain.small', st.parkings.map((p) => h('li', `🅿 ${p.name} · ${p.territory_name}`)))) : null,
+      st.off?.length ? fold('Hors saison', { key: 'places.off', extra: String(st.off.length) },
+        h('ul.plain', st.off.map((p) => h('li.off-row', h('span', `${ICON[p.kind]} ${p.name}`), h('button.link', { onclick: () => seasonLink(p, true) }, 'Rattacher à la saison'))))) : null);
     drawMap();
   }
 

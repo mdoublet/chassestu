@@ -15,6 +15,7 @@ import { loadHuntPlan, loadPlans } from './plans';
 import { drawAssignments, proposePosts, rotationWeight, type PlacementHistory } from '../proposal';
 import { planCarpool, type CarpoolPlan } from '../carpool';
 import { notifyUsers } from './notifications';
+import { seasonSpecies } from './seasons';
 
 export const huntRoutes = new Hono<AppEnv>();
 
@@ -87,7 +88,9 @@ export async function huntDetail(tx: Tx, id: string) {
   }
   // Traque du plan de chasse (affichée sur la carte de gestion).
   const huntPlan = hunt.hunt_plan_id ? await loadHuntPlan(tx, hunt.hunt_plan_id) : null;
-  return { hunt, participants, day_post_ids: dayPosts, proposal, species, harvests, hunt_plan: huntPlan };
+  // Espèces de la saison de la journée : quota de saison et prélèvements déjà faits.
+  const seasonId = (await tx.maybeOne<{ s: string | null }>('SELECT season_id AS s FROM hunt_days WHERE id = $1', [hunt.day_id]))?.s ?? null;
+  return { hunt, participants, day_post_ids: dayPosts, proposal, species, harvests, hunt_plan: huntPlan, season_species: await seasonSpecies(tx, seasonId) };
 }
 
 // ---------------------------------------------------------------------------

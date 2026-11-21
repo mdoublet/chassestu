@@ -11,9 +11,10 @@ import { addBasemaps } from '../map/basemap.js';
 import { escapeHtml, toLatLng, ensureHatchPattern, postIcon, traqueIcon, traqueLayers } from '../map/shapes.js';
 import { api } from '../api.js';
 import { state } from '../state.js';
-import { h, fill, toast, errorMessage, confirmDialog, promptDialog } from '../ui.js';
+import { h, fill, toast, errorMessage, confirmDialog, promptDialog, fold } from '../ui.js';
 import { freeCounts, previousCount, rowStatus, sameSet, selectable } from '../lib/plans.js';
 import { panelResizer } from '../map/resizer.js';
+import { setInSeason } from '../lib/season.js';
 
 const TERRITORY_KEY = 'chassestu.plansTerritory';
 
@@ -78,7 +79,9 @@ export async function plansView(main, territoryId, huntPlanId) {
       api.get(`/territories/${ps.territoryId}/hunt-plans`),
     ]);
     ps.data = detail;
-    ps.huntPlans = hps.hunt_plans;
+    // Plans de la saison en cours ; les autres sont proposés à la fin (« Hors saison »).
+    ps.huntPlans = hps.hunt_plans.filter((x) => x.in_season !== false);
+    ps.offSeason = hps.hunt_plans.filter((x) => x.in_season === false);
     if (!ps.huntPlans.some((x) => x.id === ps.huntPlanId)) ps.huntPlanId = ps.huntPlans[0]?.id ?? null;
     if (ps.huntPlanId) history.replaceState(null, '', `#/plans/${ps.territoryId}/${ps.huntPlanId}`);
     ps.plans = huntPlan()?.coverage ?? [];
@@ -277,6 +280,10 @@ export async function plansView(main, territoryId, huntPlanId) {
                     }
                   } }, 'Effacer la traque')
                 : null,
+              h('button.link', { onclick: async () => {
+                if (!(await confirmDialog('Retirer de la saison', `Retirer « ${hp.name} » de la saison en cours ? Il n’est pas supprimé.`, 'Retirer'))) return;
+                try { await setInSeason('hunt-plans', hp.id, false); ps.huntPlanId = null; ps.rows = new Map(); await load(); } catch (err) { toast(errorMessage(err), 'error'); }
+              } }, 'Retirer de la saison'),
               h('button.link.danger', { onclick: deleteHuntPlan }, 'Supprimer ce plan de chasse'))
           : null,
       canEdit && !ps.placing && (hp.start_point || hp.exit_point) ? h('p.small.muted', 'Glissez D ou S sur la carte pour les déplacer.') : null));
@@ -449,7 +456,12 @@ export async function plansView(main, territoryId, huntPlanId) {
     fill(listBox,
       blocks,
       ps.data && !ps.huntPlans.length ? traqueBox : null, // « aucun plan » : explication et bouton de création
-      canEdit && ps.huntPlans.length ? h('button.link.new-hunt-plan', { onclick: createHuntPlan }, '+ Nouveau plan de chasse') : null);
+      canEdit && ps.huntPlans.length ? h('button.link.new-hunt-plan', { onclick: createHuntPlan }, '+ Nouveau plan de chasse') : null,
+      ps.offSeason?.length ? fold('Hors saison', { key: 'plans.off', extra: String(ps.offSeason.length) },
+        h('ul.plain', ps.offSeason.map((hp) => h('li.off-row', h('span', hp.name),
+          canEdit ? h('button.link', { onclick: async () => {
+            try { await setInSeason('hunt-plans', hp.id, true); ps.huntPlanId = hp.id; await load(); toast(`${hp.name} rattaché à la saison.`); } catch (err) { toast(errorMessage(err), 'error'); }
+          } }, 'Rattacher à la saison') : null)))) : null);
   }
 
   function renderAll() {
