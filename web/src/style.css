@@ -419,10 +419,10 @@ h2.editor-title { font-size: 1.2rem; margin: 0.25rem 0 0.5rem; }
 details.fold { border-top: 1px solid var(--border); padding: 0.35rem 0; }
 details.fold > summary { display: flex; align-items: baseline; gap: 0.4rem; flex-wrap: wrap; list-style: none; }
 details.fold > summary::-webkit-details-marker { display: none; }
-details.fold > summary::before { content: '▸'; color: var(--muted); width: 0.9rem; flex: none; }
-details.fold[open] > summary::before { content: '▾'; }
+details.fold > summary::before, details.card > summary::before { content: '▶'; color: var(--text); font-size: 0.8em; width: 1.1rem; flex: none; display: inline-block; transition: transform 0.15s; }
+details.fold[open] > summary::before, details.card[open] > summary::before { transform: rotate(90deg); }
 .fold-extra { font-size: 0.85rem; font-weight: 400; color: var(--muted); }
-.fold-body { padding: 0.25rem 0 0.25rem 0.9rem; }
+.fold-body { padding: 0.25rem 0 0.25rem 1.1rem; }
 .card > details.fold:first-child { border-top: 0; }
 details.fold > summary { cursor: pointer; font-weight: 600; padding: 0.25rem 0; }
 details.fold[open] > summary { margin-bottom: 0.25rem; }
@@ -483,8 +483,6 @@ details.fold.hunt-plan[open] { padding-bottom: 0.75rem; }
 /* Même modèle pour tous les blocs dépliables (cartes de la journée) */
 details.card > summary, .step details.fold > summary { display: flex; align-items: baseline; gap: 0.4rem; flex-wrap: wrap; list-style: none; cursor: pointer; font-weight: 600; }
 details.card > summary::-webkit-details-marker { display: none; }
-details.card > summary::before { content: '▸'; color: var(--muted); width: 0.9rem; flex: none; }
-details.card[open] > summary::before { content: '▾'; }
 .card.step { padding-top: 0.6rem; padding-bottom: 0.6rem; }
 .card.step > details.fold { border-top: 0; padding: 0; }
 .card.step .fold-body { padding-left: 0; padding-top: 0.5rem; }
