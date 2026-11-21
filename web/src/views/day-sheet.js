@@ -214,13 +214,22 @@ export function createDaySheet(container, opts = {}) {
     if (line.chief) {
       if (!line.name) return h('section.card.line-card', h('h3', '★ Chef de ligne'), h('p.small.muted', 'Votre poste ne fait partie d’aucune ligne : voyez le responsable de la battue.'));
       const ready = line.members.filter((m) => m.in_place_at).length;
+      const huntId = cur.hunt?.id;
+      const set = (participantId, inPlace) => opts.onLineInPlace?.(huntId, participantId, inPlace);
+      // Le chef confirme un chasseur (bouton de la ligne) ou toute sa ligne ; chacun peut aussi se déclarer lui-même ou par le GPS.
       return h('section.card.line-card',
         h('h3', `★ Chef de ligne · ${line.name}`),
-        h('p.small', `${ready}/${line.members.length} chasseur(s) en place. Vous êtes responsable de leur placement.`),
-        h('ul.plain.readiness', line.members.map((m) => h('li', { class: m.in_place_at ? 'ok' : '' },
+        h('p.small', `${ready}/${line.members.length} chasseur(s) en place.`),
+        h('ul.plain.readiness.line-members', line.members.map((m) => h('li', { class: m.in_place_at ? 'ok' : '' },
           h('span.light', m.in_place_at ? '●' : '○'),
           h('strong', `Poste ${m.post_number}${m.post_name ? ` · ${m.post_name}` : ''}`),
-          h('span', `${m.name}${m.me ? ' (vous)' : ''} ${m.in_place_at ? `✅ ${hm(m.in_place_at)}` : '⏳'}`)))));
+          h('span', `${m.name}${m.me ? ' (vous)' : ''} ${m.in_place_at ? `✅ ${hm(m.in_place_at)}${m.by_chief ? ' (par vous)' : ''}` : '⏳'}`),
+          opts.onLineInPlace && !cur.hunt?.started_at
+            ? h('button.small', { onclick: () => set(m.participant_id, !m.in_place_at), title: m.in_place_at ? 'Annuler' : 'Confirmer qu’il est en place' }, m.in_place_at ? 'Annuler' : 'En place')
+            : null))),
+        opts.onLineInPlace && ready < line.members.length && !cur.hunt?.started_at
+          ? h('button.primary', { onclick: () => set(null, true) }, '✅ Toute ma ligne est en place')
+          : null);
     }
     const chiefs = line.chiefs.filter((c) => !c.me);
     return h('p.line-info',
@@ -470,6 +479,8 @@ export async function memberDayView(main, dayId) {
     canSeeAll: ['president', 'responsable'].includes(state.role),
     onRespond: (response, lunch) => act(() => api.post(`/days/${dayId}/respond`, { response, lunch: !!lunch }), 'Réponse enregistrée.'),
     onDeclare: (huntId, body) => act(() => api.post(`/hunts/${huntId}/harvests`, body), `${body.species} ${OUTCOME_LABELS[body.outcome ?? 'tue'].toLowerCase()} : les participants sont prévenus.`),
+    onLineInPlace: (huntId, participantId, inPlace) => act(() => api.put(`/hunts/${huntId}/line-in-place`, { participant_id: participantId, in_place: inPlace }),
+      participantId ? (inPlace ? 'Chasseur confirmé en place.' : 'Confirmation annulée.') : 'Toute la ligne est en place : le responsable le voit.'),
     onWithdraw: (huntId, x) => act(() => api.del(`/hunts/${huntId}/harvests/${x.id}`), 'Déclaration retirée.'),
     onChanged: () => load().then(() => watcher?.sync()).catch(() => {}),
   });

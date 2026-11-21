@@ -70,5 +70,17 @@ describe('lignes de postes', () => {
     // Invité : son chef de ligne.
     const g = (await (await app.request(`/api/guest/${guest.url.split('/').pop()}`, {}, env)).json()) as any;
     expect(g.view.current.line).toMatchObject({ name: 'Ligne du haut', chiefs: [{ post_number: 1 }] });
+
+    // Le chef de ligne confirme sa ligne ; chacun peut toujours se confirmer lui-même.
+    expect((await as('lg2', 'PUT', `/api/hunts/${huntId}/line-in-place`, { in_place: true })).status).toBe(403); // pas chef
+    expect((await as('lg1', 'PUT', `/api/hunts/${huntId}/line-in-place`, { participant_id: by('lg3').id, in_place: true })).status).toBe(403); // hors de sa ligne
+    expect((await as('lg2', 'PUT', `/api/hunts/${huntId}/in-place`, { in_place: true })).status).toBe(200); // lg2 se déclare lui-même
+    expect((await as('lg1', 'PUT', `/api/hunts/${huntId}/line-in-place`, { in_place: true })).body.updated).toBe(2); // chef + invité
+    const after = (await as('lg1', 'GET', `/api/days/${dayId}/view`)).body.view.current.line.members;
+    expect(after.map((m: any) => [m.post_number, !!m.in_place_at, m.by_chief])).toEqual([[1, true, false], [2, true, false], [3, true, true]]);
+    expect((await as('lg3', 'GET', `/api/days/${dayId}/view`)).body.view.current.me.in_place).toBe(false); // hors ligne : intact
+    // Annuler pour un chasseur précis.
+    expect((await as('lg1', 'PUT', `/api/hunts/${huntId}/line-in-place`, { participant_id: by('Invité Léon').id, in_place: false })).body.updated).toBe(1);
+    expect((await as('lg1', 'GET', `/api/days/${dayId}/view`)).body.view.current.line.members[2].in_place_at).toBeNull();
   });
 });

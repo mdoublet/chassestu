@@ -589,6 +589,16 @@ huntRoutes.post('/hunts/:id/position', async (c) => {
 });
 
 // « Je suis en place » (confirmation manuelle, transmise au responsable).
+/** Chef de ligne : un chasseur de sa ligne (participant_id) ou toute la ligne (sans) est en place. */
+huntRoutes.put('/hunts/:id/line-in-place', async (c) => {
+  const id = parseId(c.req.param('id'));
+  const body = z.object({ participant_id: z.uuid().nullable().optional(), in_place: z.boolean() }).strict().parse(await c.req.json());
+  return tenantTx(c, null, async (tx) => {
+    const { n } = await tx.one<{ n: number }>('SELECT app.chief_set_in_place($1, $2, $3) AS n', [id, body.participant_id ?? null, body.in_place]);
+    return c.json({ updated: n });
+  });
+});
+
 huntRoutes.put('/hunts/:id/in-place', async (c) => {
   const id = parseId(c.req.param('id'));
   const { in_place } = z.object({ in_place: z.boolean() }).strict().parse(await c.req.json());
