@@ -10,7 +10,7 @@ import { AppError } from '../errors';
 import { randomToken, sha256Hex } from '../auth';
 import { geomOut, geomParam, pointSchema } from '../geo';
 import { notifyUsers } from './notifications';
-import { MANAGERS, carpoolFor, setHuntPlan, setSelection } from './hunts';
+import { MANAGERS, carpoolFor, setHuntPlan, setSelection, withOutcomes } from './hunts';
 import { defaultHuntPlanId } from './plans';
 
 export const dayRoutes = new Hono<AppEnv>();
@@ -428,6 +428,7 @@ dayRoutes.get('/days/:id/view', (c) => {
     const cur = v.current?.hunt;
     // Ligne de postes : chef de ligne du chasseur ; pour un chef, les chasseurs de sa ligne.
     if (cur?.id && v.current) v.current.line = (await tx.one<{ l: unknown }>('SELECT app.my_line($1) AS l', [cur.id])).l;
+    await withOutcomes(tx, v);
     const carpool = cur && cur.status === 'en_cours' && cur.assignments_published && !cur.started_at
       ? await carpoolFor(tx, cur.id) : null;
     return c.json({ view: v, carpool });

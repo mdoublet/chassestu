@@ -49,6 +49,10 @@ export function postedSummary(participants) {
   return { posted: posted.length, unassigned: posted.filter((p) => !p.post_id) };
 }
 
+/** État d'un animal déclaré : seuls les tués comptent dans les prélèvements. */
+export const OUTCOME_LABELS = { tue: 'Tué', blesse: 'Blessé', vu: 'Vu' };
+export const OUTCOME_ICONS = { tue: '🎯', blesse: '⚠️', vu: '👁' };
+
 export const CATEGORY_LABELS = { male: 'mâle', femelle: 'femelle', jeune: 'jeune', indetermine: 'indéterminé' };
 export const COMMON_SPECIES = ['Sanglier', 'Chevreuil', 'Cerf élaphe', 'Daim', 'Mouflon', 'Chamois', 'Renard'];
 

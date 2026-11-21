@@ -25,7 +25,7 @@ export async function seasonSpecies(tx: Tx, seasonId: string | null) {
   return tx.query(
     `SELECT ss.species, ss.season_quota, ss.battue_quota,
             (SELECT count(*)::int FROM hunt_harvests hh JOIN hunts h ON h.id = hh.hunt_id JOIN hunt_days d ON d.id = h.day_id
-              WHERE d.season_id = ss.season_id AND hh.species = ss.species) AS harvested
+              WHERE d.season_id = ss.season_id AND hh.species = ss.species AND hh.outcome = 'tue') AS harvested
        FROM season_species ss WHERE ss.season_id = $1 ORDER BY ss.position, ss.species`,
     [seasonId],
   );
@@ -36,11 +36,14 @@ async function recap(tx: Tx, seasonId: string) {
   const rows = await tx.query<{ species: string; category: string; n: number }>(
     `SELECT hh.species, hh.category, count(*)::int AS n
        FROM hunt_harvests hh JOIN hunts h ON h.id = hh.hunt_id JOIN hunt_days d ON d.id = h.day_id
-      WHERE d.season_id = $1 GROUP BY 1, 2`,
+      WHERE d.season_id = $1 AND hh.outcome = 'tue' GROUP BY 1, 2`,
     [seasonId],
   );
+  const wounded = new Map((await tx.query<{ species: string; n: number }>(
+    `SELECT hh.species, count(*)::int AS n FROM hunt_harvests hh JOIN hunts h ON h.id = hh.hunt_id JOIN hunt_days d ON d.id = h.day_id
+      WHERE d.season_id = $1 AND hh.outcome = 'blesse' GROUP BY 1`, [seasonId])).map((r) => [r.species, r.n]));
   const species = await seasonSpecies(tx, seasonId);
-  const names = [...new Set([...species.map((s: any) => s.species as string), ...rows.map((r) => r.species)])];
+  const names = [...new Set([...species.map((s: any) => s.species as string), ...rows.map((r) => r.species), ...wounded.keys()])];
   const days = await tx.one<{ days: number; battues: number }>(
     `SELECT count(DISTINCT d.id)::int AS days, count(h.id)::int AS battues
        FROM hunt_days d LEFT JOIN hunts h ON h.day_id = d.id WHERE d.season_id = $1 AND d.status <> 'annulee'`,
@@ -52,7 +55,7 @@ async function recap(tx: Tx, seasonId: string) {
       const sp: any = species.find((s: any) => s.species === name);
       const by = Object.fromEntries(rows.filter((r) => r.species === name).map((r) => [r.category, r.n]));
       const total = Object.values(by).reduce((a: number, b: any) => a + b, 0);
-      return { species: name, season_quota: sp?.season_quota ?? null, total, by_category: by };
+      return { species: name, season_quota: sp?.season_quota ?? null, total, by_category: by, wounded: wounded.get(name) ?? 0 };
     }),
   };
 }

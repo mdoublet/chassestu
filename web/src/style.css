@@ -521,3 +521,13 @@ ul.recap li { padding: 0.35rem 0; border-bottom: 1px solid var(--border); }
 .bar span { display: block; height: 100%; background: var(--primary); }
 .bar.full span { background: var(--danger); }
 .off-row { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; padding: 0.25rem 0; }
+.outcome-choice { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.35rem; width: 100%; }
+.outcome-choice button { min-height: 44px; }
+.outcome-choice button.active { background: var(--primary); color: var(--primary-text); border-color: var(--primary); }
+li.outcome-blesse { color: var(--warn); }
+li.outcome-vu { color: var(--muted); }
+.map-toggle { display: none; }
+@media (max-width: 760px) {
+  .map-toggle { display: block; width: 100%; margin-bottom: 0.5rem; min-height: 40px; }
+  .hunt-layout.map-hidden > .hunt-map { display: none; }
+}

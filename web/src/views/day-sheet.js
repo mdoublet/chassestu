@@ -14,7 +14,7 @@ import { state } from '../state.js';
 import { h, fill, toast, errorMessage, confirmDialog } from '../ui.js';
 import { watchRevision, every } from '../lib/live.js';
 import {
-  DAY_STATUS_LABELS, ROLE_LABELS, CATEGORY_LABELS, COMMON_SPECIES, NAV_APPS,
+  DAY_STATUS_LABELS, ROLE_LABELS, CATEGORY_LABELS, OUTCOME_LABELS, OUTCOME_ICONS, COMMON_SPECIES, NAV_APPS,
   formatHuntDate, formatTime, navigationLinks, dayPhase,
 } from '../lib/hunts.js';
 import { positionPanel } from './positions.js';
@@ -149,12 +149,22 @@ export function createDaySheet(container, opts = {}) {
     const allowed = (cur.species ?? []).map((s) => s.s);
     const species = h('select', { 'aria-label': 'Espèce' }, (allowed.length ? allowed : COMMON_SPECIES).map((s) => h('option', { value: s }, s)));
     const category = h('select', { 'aria-label': 'Catégorie' }, Object.entries(CATEGORY_LABELS).map(([v, l]) => h('option', { value: v, selected: v === 'indetermine' }, l)));
+    // Tué, blessé (recherche au sang) ou vu : tous les participants sont alertés.
+    let outcome = 'tue';
+    const choice = h('div.outcome-choice', { role: 'radiogroup', 'aria-label': 'Tué, blessé ou vu' }, Object.entries(OUTCOME_LABELS).map(([v, l]) => {
+      const b = h('button', { type: 'button', class: v === outcome ? 'active' : '', 'aria-pressed': String(v === outcome), onclick: () => {
+        outcome = v;
+        for (const x of choice.children) { x.classList.toggle('active', x === b); x.setAttribute('aria-pressed', String(x === b)); }
+      } }, `${OUTCOME_ICONS[v]} ${l}`);
+      return b;
+    }));
+    const killed = cur.harvests.filter((x) => (x.outcome ?? 'tue') === 'tue').length;
     return h('section.card',
-      h('h3', `Animaux tués (${cur.harvests.length})`),
+      h('h3', `Animaux · ${killed} tué(s)${cur.harvests.length > killed ? ` · ${cur.harvests.length - killed} blessé(s) ou vu(s)` : ''}`),
       canDeclare ? speciesList(cur) : null,
       cur.harvests.length
         ? h('ul.plain.harvests', cur.harvests.map((x) => h('li',
-            h('span', h('strong', x.species), ` ${CATEGORY_LABELS[x.category]}`, x.shooter ? ` — ${x.shooter}${x.post_number ? ` (poste ${x.post_number})` : ''}` : '', x.notes ? ` · ${x.notes}` : ''),
+            h('span', `${OUTCOME_ICONS[x.outcome ?? 'tue']} `, h('strong', x.species), ` ${OUTCOME_LABELS[x.outcome ?? 'tue'].toLowerCase()}${x.category !== 'indetermine' ? ` · ${CATEGORY_LABELS[x.category]}` : ''}`, x.shooter ? ` — ${x.shooter}${x.post_number ? ` (poste ${x.post_number})` : ''}` : '', x.notes ? ` · ${x.notes}` : ''),
             h('span.small.muted', time(x.at)),
             x.mine && canDeclare && opts.onWithdraw ? h('button.link.danger', { onclick: () => opts.onWithdraw(cur.hunt.id, x) }, 'Retirer') : null)))
         : null,
@@ -162,9 +172,9 @@ export function createDaySheet(container, opts = {}) {
         ? h('form.row.declare', {
             onsubmit: (e) => {
               e.preventDefault();
-              opts.onDeclare(cur.hunt.id, { species: species.value, category: category.value });
+              opts.onDeclare(cur.hunt.id, { species: species.value, category: category.value, outcome });
             },
-          }, species, category, h('button.primary', { type: 'submit' }, 'Déclarer un animal tué'))
+          }, choice, species, category, h('button.primary', { type: 'submit' }, 'Déclarer'))
         : null);
   }
 
@@ -420,7 +430,8 @@ export async function memberDayView(main, dayId) {
       act(() => api.post(`/hunts/${hunt.id}/actions/${action}`), msg);
     };
     return h('section.card.lead-card',
-      h('h3', `🎯 Vous êtes responsable de la battue n° ${hunt.number}`),
+      h('h3', lead.as_leader ? `🎯 Vous êtes responsable de la battue n° ${hunt.number}` : `🎯 Battue n° ${hunt.number} · responsable : ${hunt.leader_name ?? '—'}`),
+      lead.as_leader ? null : h('p.small.muted', 'Vous pouvez lancer et terminer la battue à sa place.'),
       !hunt.assignments_published_at
         ? h('p.small.muted', 'Les postes ne sont pas encore publiés : vous pourrez lancer la battue une fois les chasseurs placés.')
         : hunt.started_at
@@ -458,7 +469,7 @@ export async function memberDayView(main, dayId) {
     leadCard,
     canSeeAll: ['president', 'responsable'].includes(state.role),
     onRespond: (response, lunch) => act(() => api.post(`/days/${dayId}/respond`, { response, lunch: !!lunch }), 'Réponse enregistrée.'),
-    onDeclare: (huntId, body) => act(() => api.post(`/hunts/${huntId}/harvests`, body), `${body.species} déclaré.`),
+    onDeclare: (huntId, body) => act(() => api.post(`/hunts/${huntId}/harvests`, body), `${body.species} ${OUTCOME_LABELS[body.outcome ?? 'tue'].toLowerCase()} : les participants sont prévenus.`),
     onWithdraw: (huntId, x) => act(() => api.del(`/hunts/${huntId}/harvests/${x.id}`), 'Déclaration retirée.'),
     onChanged: () => load().then(() => watcher?.sync()).catch(() => {}),
   });

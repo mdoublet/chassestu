@@ -161,7 +161,7 @@ export async function settingsView(main, { refreshMe }) {
             return h('li',
               h('div.recap-head', h('strong', x.species), h('span', x.season_quota != null ? `${x.total} / ${x.season_quota}` : String(x.total))),
               pct != null ? h('div.bar', { class: x.total >= x.season_quota ? 'full' : '' }, h('span', { style: `width:${pct}%` })) : null,
-              cats ? h('span.small.muted', cats) : null);
+              cats || x.wounded ? h('span.small.muted', [cats, x.wounded ? `⚠️ ${x.wounded} blessé(s)` : ''].filter(Boolean).join(' · ')) : null);
           }))
         : h('p.muted', 'Aucun prélèvement.')));
   }

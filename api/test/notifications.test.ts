@@ -127,7 +127,7 @@ describe('alertes des battues', () => {
     pushService.calls = [];
 
     const pub = await as(P, 'POST', `/api/hunts/${id}/publish-assignments`);
-    expect(pub.body.notified).toBe(1); // n_ch2 non volontaire : pas d'alerte
+    expect(pub.body.notified).toBe(2); // n_ch1 et le responsable (président, non participant) ; n_ch2 non volontaire : rien
     const n1 = (await api('n_ch1', 'GET', '/api/notifications')).body.notifications[0];
     expect(n1).toMatchObject({ kind: 'attributions', title: 'Votre poste : 1 · Le hêtre' });
     expect(JSON.parse(decrypt(ch1, await bodyOf(pushService.calls[0].init))).title).toBe('Votre poste : 1 · Le hêtre');

@@ -75,7 +75,7 @@ export async function huntDetail(tx: Tx, id: string) {
   const dayPosts = (await tx.query<{ post_id: string }>('SELECT post_id FROM hunt_posts WHERE hunt_id = $1', [id])).map((r) => r.post_id);
   const species = await tx.query('SELECT species, quota FROM hunt_species WHERE hunt_id = $1 ORDER BY species', [id]);
   const harvests = await tx.query(
-    `SELECT hh.id, hh.species, hh.category, hh.notes, hh.created_at, coalesce(u.display_name, x.guest_name) AS shooter
+    `SELECT hh.id, hh.species, hh.category, hh.outcome, hh.notes, hh.created_at, coalesce(u.display_name, x.guest_name) AS shooter
        FROM hunt_harvests hh LEFT JOIN hunt_participants x ON x.id = hh.participant_id LEFT JOIN users u ON u.id = x.user_id
       WHERE hh.hunt_id = $1 ORDER BY hh.created_at DESC`,
     [id],
@@ -122,6 +122,10 @@ async function notifyHunt(c: Context<AppEnv>, tx: Tx, huntId: string, event: Hun
         return { user_id: u.user_id, title: 'Fin de battue', body: `${what} : déchargez vos armes. Le point de regroupement va vous être indiqué.` };
     }
   });
+  // Le responsable désigné est prévenu même s'il ne participe pas : c'est lui qui lance et arrête.
+  if (event === 'attributions' && hunt.leader_user_id && !people.some((u) => u.user_id === hunt.leader_user_id)) {
+    items.push({ user_id: hunt.leader_user_id, title: 'Postes publiés', body: `${what} : vous en êtes responsable, lancez-la depuis votre vue chasseur.` });
+  }
   return notifyUsers(c, tx, { huntId, dayId: hunt.day_id }, event, items);
 }
 
@@ -259,9 +263,10 @@ huntRoutes.get('/hunts/:id/lead', (c) => {
     const lead = await tx.one<{ ok: boolean }>('SELECT app.can_lead_hunt($1) AS ok', [id]);
     const me = c.get('user').id;
     const hunt = lead.ok ? await tx.maybeOne<Record<string, any>>(`SELECT ${HUNT_SELECT} FROM ${HUNT_FROM} WHERE h.id = $1`, [id]) : null;
-    if (!hunt || hunt.leader_user_id !== me) return c.json({ lead: false }); // seulement le responsable désigné
+    // Le responsable désigné ; le président (et l'organisateur) peut agir à sa place.
+    if (!hunt) return c.json({ lead: false });
     const readiness = await tx.query('SELECT * FROM app.hunt_readiness($1)', [id]);
-    return c.json({ lead: true, hunt, readiness });
+    return c.json({ lead: true, as_leader: hunt.leader_user_id === me, hunt, readiness });
   });
 });
 
@@ -485,12 +490,33 @@ huntRoutes.put('/hunts/:id/species', async (c) => {
 const harvestSchema = z.object({
   species: speciesSchema,
   category: z.enum(['male', 'femelle', 'jeune', 'indetermine']).default('indetermine'),
+  outcome: z.enum(['tue', 'blesse', 'vu']).default('tue'),
   notes: z.string().trim().max(500).default(''),
   participant_id: z.uuid().nullable().optional(), // responsable : tireur au choix
 }).strict();
 
 async function viewOfHuntDay(tx: Tx, huntId: string) {
-  return (await tx.one<{ v: unknown }>('SELECT app.view_day(h.day_id) AS v FROM hunts h WHERE h.id = $1', [huntId])).v;
+  return withOutcomes(tx, (await tx.one<{ v: any }>('SELECT app.view_day(h.day_id) AS v FROM hunts h WHERE h.id = $1', [huntId])).v);
+}
+
+/** Complète les déclarations d'une vue chasseur avec leur état (tué, blessé, vu). */
+export async function withOutcomes(tx: Tx, view: any) {
+  const list = view?.current?.harvests;
+  if (!Array.isArray(list) || !list.length) return view;
+  const rows = await tx.query<{ id: string; outcome: string }>('SELECT * FROM app.harvest_outcomes($1::uuid[])', [list.map((x: any) => x.id)]);
+  const by = new Map(rows.map((r) => [r.id, r.outcome]));
+  for (const x of list) x.outcome = by.get(x.id) ?? 'tue';
+  return view;
+}
+
+/** Alerte « animal tué / blessé / vu » aux participants de la battue (cloche + push). */
+async function notifyHarvest(c: Context<AppEnv>, tx: Tx, harvestId: string) {
+  const tenantId = c.req.header('X-Tenant-Id') ?? '';
+  const rows = await tx.query<{ user_id: string; title: string; body: string; endpoint: string | null; p256dh: string; auth: string }>(
+    'SELECT n.*, (SELECT h.day_id FROM hunt_harvests hh JOIN hunts h ON h.id = hh.hunt_id WHERE hh.id = $1) AS day_id FROM app.notify_harvest($1) n', [harvestId]);
+  for (const r of rows as any[]) {
+    if (r.endpoint) c.get('pushQueue').push({ endpoint: r.endpoint, p256dh: r.p256dh, auth: r.auth, title: r.title, body: r.body, url: `/?tenant=${encodeURIComponent(tenantId)}#/journees/${r.day_id}` });
+  }
 }
 
 /** Déclarer un prélèvement : le participant pour lui-même, le responsable pour n'importe qui. */
@@ -498,17 +524,19 @@ huntRoutes.post('/hunts/:id/harvests', async (c) => {
   const id = parseId(c.req.param('id'));
   const body = harvestSchema.parse(await c.req.json());
   return tenantTx(c, null, async (tx, { role }) => {
+    let harvestId: string;
     if (MANAGERS.includes(role) && body.participant_id !== undefined) {
       const hunt = await loadHunt(tx, id);
       if (!['en_cours', 'terminee'].includes(hunt.status)) throw new AppError(409, 'HUNT_BAD_STATUS', 'Saisie impossible.');
-      await tx.execute(
-        `INSERT INTO hunt_harvests (hunt_id, species, category, notes, participant_id, recorded_by)
-         VALUES ($1, $2, $3, $4, $5, app.current_user_id())`,
-        [id, body.species, body.category, body.notes, body.participant_id],
-      );
+      harvestId = (await tx.one<{ id: string }>(
+        `INSERT INTO hunt_harvests (hunt_id, species, category, notes, participant_id, recorded_by, outcome)
+         VALUES ($1, $2, $3, $4, $5, app.current_user_id(), $6) RETURNING id`,
+        [id, body.species, body.category, body.notes, body.participant_id, body.outcome],
+      )).id;
     } else {
-      await tx.query('SELECT app.declare_harvest($1, $2, $3, $4)', [id, body.species, body.category, body.notes]);
+      harvestId = (await tx.one<{ id: string }>('SELECT app.declare_harvest($1, $2, $3, $4, $5) AS id', [id, body.species, body.category, body.notes, body.outcome])).id;
     }
+    await notifyHarvest(c, tx, harvestId);
     return c.json({ view: await viewOfHuntDay(tx, id) }, 201);
   });
 });
@@ -620,6 +648,7 @@ huntRoutes.get('/guest/:token', async (c: Context<AppEnv>) => {
     const { v } = await tx.one<{ v: any }>('SELECT app.guest_day_view($1) AS v', [hash]);
     if (!v) throw expired();
     if (v.current?.hunt?.id) v.current.line = (await tx.one<{ l: unknown }>('SELECT app.guest_line($1, $2) AS l', [hash, v.current.hunt.id])).l;
+    await withOutcomes(tx, v);
     return c.json({ view: v });
   });
 });

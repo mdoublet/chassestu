@@ -12,7 +12,7 @@ import { api } from '../api.js';
 import { state } from '../state.js';
 import { h, fill, toast, errorMessage, confirmDialog, copyText, modal, fold } from '../ui.js';
 import {
-  DAY_STATUS_LABELS, ROLE_LABELS, CATEGORY_LABELS, COMMON_SPECIES, DIFFICULTY_LABELS,
+  DAY_STATUS_LABELS, ROLE_LABELS, CATEGORY_LABELS, OUTCOME_LABELS, OUTCOME_ICONS, COMMON_SPECIES, DIFFICULTY_LABELS,
   formatHuntDate, formatTime, postedSummary,
 } from '../lib/hunts.js';
 import { canReach } from '../lib/mobility.js';
@@ -74,7 +74,18 @@ async function dayConsole(main, dayId) {
   const box = h('div.hunt-console');
   const mapEl = h('div.hunt-map');
   const resizer = panelResizer(box, { key: 'chassestu.dayPanelWidth', side: 'left', onResize: () => map.invalidateSize() });
-  main.append(h('div.hunt-layout', box, resizer, mapEl));
+  // Téléphone : la carte (en haut) se replie pour laisser la place aux réglages.
+  const MAP_KEY = 'chassestu.dayMapHidden';
+  const layout = h('div.hunt-layout', box, resizer, mapEl);
+  try { if (localStorage.getItem(MAP_KEY) === '1') layout.classList.add('map-hidden'); } catch { /* rien */ }
+  const mapToggle = h('button.map-toggle', { type: 'button', onclick: () => {
+    layout.classList.toggle('map-hidden');
+    const hidden = layout.classList.contains('map-hidden');
+    try { localStorage.setItem(MAP_KEY, hidden ? '1' : '0'); } catch { /* rien */ }
+    mapToggle.textContent = hidden ? '🗺 Afficher la carte' : '🗺 Masquer la carte';
+    if (!hidden) setTimeout(() => map.invalidateSize(), 50);
+  } }, layout.classList.contains('map-hidden') ? '🗺 Afficher la carte' : '🗺 Masquer la carte');
+  main.append(layout);
   let watcher = null;
   const map = L.map(mapEl, { zoomControl: true }).setView([46.6, 2.4], 6);
   addBasemaps(map);
@@ -540,7 +551,11 @@ async function dayConsole(main, dayId) {
       if (confirmText && !(await confirmDialog(`Battue n° ${hunt.number}`, confirmText, 'Confirmer'))) return;
       await act(() => api.post(`/hunts/${hunt.id}/actions/${action}`), msg);
     };
+    const leader = hunt.leader_user_id === state.user.id ? null : hunt.leader_name;
     return h('section.card.battue-actions',
+      hunt.assignments_published_at && leader
+        ? h('p.small.muted', `${leader} lance et termine la battue depuis sa vue chasseur ; vous pouvez le faire à sa place.`)
+        : null,
       h('div.buttons',
         !hunt.started_at
           ? [h('button.primary', { onclick: go('debut', 'Début de battue : les chasseurs sont prévenus.'), disabled: !hunt.assignments_published_at, title: hunt.assignments_published_at ? '' : 'Publiez d’abord les postes' }, 'Lancer la battue'),
@@ -752,14 +767,16 @@ async function dayConsole(main, dayId) {
       participants.map((p) => h('option', { value: p.id }, p.name)));
     const sp = h('select', { 'aria-label': 'Espèce' }, [...new Set([...species.map((x) => x.species), ...COMMON_SPECIES])].map((x) => h('option', { value: x }, x)));
     const cat = h('select', { 'aria-label': 'Catégorie' }, Object.entries(CATEGORY_LABELS).map(([v, l]) => h('option', { value: v, selected: v === 'indetermine' }, l)));
-    return step('prelev', `Prélèvements · battue ${hunt.number}`, String(harvests.length), true,
-      harvests.length ? h('ul.plain', harvests.map((x) => h('li',
-        `${x.species} ${CATEGORY_LABELS[x.category]}${x.shooter ? ` — ${x.shooter}` : ''} · ${timeOf(x.created_at)} `,
+    const outcome = h('select', { 'aria-label': 'Tué, blessé ou vu' }, Object.entries(OUTCOME_LABELS).map(([v, l]) => h('option', { value: v }, `${OUTCOME_ICONS[v]} ${l}`)));
+    const killed = harvests.filter((x) => (x.outcome ?? 'tue') === 'tue').length;
+    return step('prelev', `Animaux · battue ${hunt.number}`, `${killed} tué(s)${harvests.length > killed ? ` · ${harvests.length - killed} autre(s)` : ''}`, true,
+      harvests.length ? h('ul.plain', harvests.map((x) => h('li', { class: `outcome-${x.outcome ?? 'tue'}` },
+        `${OUTCOME_ICONS[x.outcome ?? 'tue']} ${x.species} ${OUTCOME_LABELS[x.outcome ?? 'tue'].toLowerCase()} ${x.category !== 'indetermine' ? CATEGORY_LABELS[x.category] : ''}${x.shooter ? ` — ${x.shooter}` : ''} · ${timeOf(x.created_at)} `,
         h('button.link.danger', { onclick: () => act(() => api.del(`/hunts/${hunt.id}/harvests/${x.id}`)) }, 'Supprimer')))) : null,
       h('form.row', { onsubmit: (e) => {
         e.preventDefault();
-        act(() => api.post(`/hunts/${hunt.id}/harvests`, { species: sp.value, category: cat.value, participant_id: shooter.value || null }), 'Prélèvement enregistré.');
-      } }, shooter, sp, cat, h('button', { type: 'submit' }, 'Ajouter')));
+        act(() => api.post(`/hunts/${hunt.id}/harvests`, { species: sp.value, category: cat.value, outcome: outcome.value, participant_id: shooter.value || null }), 'Enregistré : les participants sont prévenus.');
+      } }, outcome, sp, cat, shooter, h('button', { type: 'submit' }, 'Déclarer')));
   }
 
   function render() {
@@ -786,6 +803,7 @@ async function dayConsole(main, dayId) {
       sections = [battuesList(), last && dv.hunt ? harvestSection() : null];
     }
     fill(box,
+      mapToggle,
       h('h1', `Journée du ${formatHuntDate(day.date)}`),
       h('p', `Rendez-vous à ${formatTime(day.meeting_time)}${day.meeting_place ? `, ${day.meeting_place}` : ''} · `, h('span.status', { class: `status-${day.status}` }, DAY_STATUS_LABELS[day.status])),
       // En préparation : on règle d'abord, les boutons (envoyer, supprimer…) viennent en bas.

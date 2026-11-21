@@ -52,9 +52,9 @@ describe('saisons', () => {
     const recap = (await as('sai1', 'GET', `/api/seasons/${first}/recap`)).body;
     expect(recap).toMatchObject({ days: 1, battues: 1 });
     expect(recap.species).toEqual(expect.arrayContaining([
-      { species: 'Sanglier', season_quota: 40, total: 2, by_category: { male: 1, femelle: 1 } },
-      { species: 'Chevreuil', season_quota: 12, total: 0, by_category: {} },
-      { species: 'Renard', season_quota: null, total: 1, by_category: { indetermine: 1 } },
+      { species: 'Sanglier', season_quota: 40, total: 2, by_category: { male: 1, femelle: 1 }, wounded: 0 },
+      { species: 'Chevreuil', season_quota: 12, total: 0, by_category: {}, wounded: 0 },
+      { species: 'Renard', season_quota: null, total: 1, by_category: { indetermine: 1 }, wounded: 0 },
     ]));
     expect((await as(P, 'GET', '/api/days')).body.days.find((d: any) => d.id === dayId)).toMatchObject({ season_id: first, in_season: true });
   });
@@ -85,5 +85,26 @@ describe('saisons', () => {
     expect((await as(P, 'DELETE', `/api/seasons/${next}`)).status).toBe(409);
     expect((await as(P, 'DELETE', `/api/seasons/${first}`)).status).toBe(409);
     expect((await as('sai1', 'PUT', '/api/seasons/current', { season_id: first })).status).toBe(403);
+  });
+});
+
+describe('animal tué, blessé, vu', () => {
+  it('blessé et vu : alerte aux participants, non comptés dans les prélèvements', async () => {
+    const t = (await as(P, 'POST', '/api/territories', { name: 'Bois des alertes', geom: square(4.95, 44.95, 0.005) })).body.territory.id;
+    const { dayId } = await runningDay(as, P, ['sai1'], { date: '2027-01-09' });
+    const { huntId } = await newBattue(as, P, dayId, t);
+    const before = (await as('sai1', 'GET', '/api/notifications')).body.notifications.length;
+    // Le chasseur déclare lui-même : il n'est pas alerté de sa propre déclaration ; le président (responsable) l'est.
+    expect((await as('sai1', 'POST', `/api/hunts/${huntId}/harvests`, { species: 'Sanglier', category: 'male', outcome: 'blesse' })).status).toBe(201);
+    const v = (await as('sai1', 'POST', `/api/hunts/${huntId}/harvests`, { species: 'Chevreuil', outcome: 'vu' })).body.view;
+    expect(v.current.harvests.map((x: any) => x.outcome).sort()).toEqual(['blesse', 'vu']);
+    expect((await as('sai1', 'GET', '/api/notifications')).body.notifications.length).toBe(before);
+    const bell = (await as(P, 'GET', '/api/notifications')).body.notifications;
+    expect(bell.find((n: any) => n.kind === 'animal' && n.title === '⚠ Sanglier blessé (mâle)')).toBeTruthy();
+    expect(bell.find((n: any) => n.kind === 'animal' && n.title === 'Chevreuil vu')).toBeTruthy();
+    const sp = (await as(P, 'GET', `/api/hunts/${huntId}`)).body.season_species.find((x: any) => x.species === 'Sanglier');
+    const recap = (await as(P, 'GET', `/api/seasons/${sp ? (await as(P, 'GET', '/api/seasons')).body.current.id : ''}/recap`)).body;
+    expect(recap.species.find((x: any) => x.species === 'Sanglier').wounded).toBe(1);
+    expect((await as(P, 'POST', `/api/hunts/${huntId}/harvests`, { species: 'Sanglier', outcome: 'perdu' })).status).toBe(400);
   });
 });
