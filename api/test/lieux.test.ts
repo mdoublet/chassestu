@@ -1,6 +1,6 @@
 // Lieux de l'association (rendez-vous, regroupement) et parkings.
 import { beforeAll, describe, expect, it } from 'vitest';
-import { api, createTenant, point, square } from './helpers';
+import { api, app, createTenant, env, point, square } from './helpers';
 
 const P = 'pres_lieux';
 let tenant: string;
@@ -38,5 +38,27 @@ describe('marche et voiture des membres', () => {
     expect((await as(P, 'GET', '/api/members')).body.members.find((x: any) => x.id === 'dev_l_ch')).toMatchObject({ walking_ability: 2, car_seats: null });
     expect((await as('l_ch', 'PATCH', `/api/members/dev_${P}/mobility`, { has_car: false })).status).toBe(403);
     expect((await as(P, 'PATCH', '/api/members/dev_inconnu/mobility', { has_car: false })).status).toBe(404);
+  });
+});
+
+describe('photo d’un lieu et appli de navigation', () => {
+  it('photo : envoi (président), lecture par un membre, suppression ; appli préférée dans le profil', async () => {
+    const place = (await as(P, 'POST', '/api/places', { name: 'Cabane photo', kind: 'cabane', geom: point(3.5, 44.02) })).body.place;
+    expect(place.has_photo).toBe(false);
+    const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+    expect((await as('l_ch', 'PUT', `/api/places/${place.id}/photo`, { type: 'image/png', data: png })).status).toBe(403);
+    const up = await as(P, 'PUT', `/api/places/${place.id}/photo`, { type: 'image/png', data: png });
+    expect(up.body.place).toMatchObject({ has_photo: true });
+    const res = await app.request(`/api/places/${place.id}/photo`, { headers: { Authorization: 'Bearer dev:l_ch:Chasseur', 'X-Tenant-Id': tenant } }, env);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toBe('image/png');
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    expect(Buffer.from(bytes).toString('base64')).toBe(png);
+    expect((await as(P, 'DELETE', `/api/places/${place.id}/photo`)).status).toBe(204);
+    expect((await app.request(`/api/places/${place.id}/photo`, { headers: { Authorization: 'Bearer dev:l_ch:Chasseur', 'X-Tenant-Id': tenant } }, env)).status).toBe(404);
+
+    expect((await api('l_ch', 'PATCH', '/api/me', { body: { nav_app: 'waze' } })).body.user.nav_app).toBe('waze');
+    expect((await api('l_ch', 'GET', '/api/me')).body.user.nav_app).toBe('waze');
+    expect((await api('l_ch', 'PATCH', '/api/me', { body: { nav_app: 'bing' } })).status).toBe(400);
   });
 });

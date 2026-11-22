@@ -21,7 +21,7 @@ meRoutes.get('/me', (c) =>
       [u.id, u.name ?? null, u.email ?? null],
     );
     const user = await tx.one(
-      'SELECT id, display_name, email, phone, is_super_admin, walking_ability, has_car, car_seats FROM users WHERE id = $1',
+      'SELECT id, display_name, email, phone, is_super_admin, walking_ability, has_car, car_seats, nav_app FROM users WHERE id = $1',
       [u.id],
     );
     const tenants = await tx.query(
@@ -43,6 +43,8 @@ const profileSchema = z.object({
   walking_ability: z.number().int().min(1).max(5).nullable().optional(),
   has_car: z.boolean().nullable().optional(),
   car_seats: z.number().int().min(0).max(8).nullable().optional(),
+  // Application de navigation préférée (boutons « y aller »).
+  nav_app: z.enum(['google', 'waze', 'apple']).nullable().optional(),
 }).strict();
 
 meRoutes.patch('/me', async (c) => {
@@ -53,13 +55,15 @@ meRoutes.patch('/me', async (c) => {
                         phone = CASE WHEN $3::boolean THEN $4 ELSE phone END,
                         walking_ability = CASE WHEN $5::boolean THEN $6::smallint ELSE walking_ability END,
                         has_car = CASE WHEN $7::boolean THEN $8::boolean ELSE has_car END,
-                        car_seats = CASE WHEN $9::boolean THEN $10::smallint ELSE car_seats END
+                        car_seats = CASE WHEN $9::boolean THEN $10::smallint ELSE car_seats END,
+                        nav_app = CASE WHEN $11::boolean THEN $12 ELSE nav_app END
         WHERE id = $1
-        RETURNING id, display_name, email, phone, is_super_admin, walking_ability, has_car, car_seats`,
+        RETURNING id, display_name, email, phone, is_super_admin, walking_ability, has_car, car_seats, nav_app`,
       [c.get('user').id, body.display_name ?? null, body.phone !== undefined, body.phone ?? null,
        body.walking_ability !== undefined, body.walking_ability ?? null,
        body.has_car !== undefined, body.has_car ?? null,
-       body.car_seats !== undefined, body.car_seats ?? null],
+       body.car_seats !== undefined, body.car_seats ?? null,
+       body.nav_app !== undefined, body.nav_app ?? null],
     );
     return c.json({ user });
   });

@@ -9,7 +9,7 @@ import { geomOut, geomParam, pointSchema } from '../geo';
 
 export const placeRoutes = new Hono<AppEnv>();
 
-const PLACE_SELECT = `id, name, kind, notes, ${geomOut('geom')}`;
+const PLACE_SELECT = `id, name, kind, notes, ${geomOut('geom')}, photo IS NOT NULL AS has_photo, photo_updated_at`;
 const placeFields = z.object({
   name: z.string().trim().min(1, 'Le nom du lieu est obligatoire.').max(200),
   kind: z.enum(['cabane', 'restaurant', 'autre']),
@@ -65,5 +65,48 @@ placeRoutes.delete('/places/:id', (c) => {
     const n = await tx.execute('DELETE FROM places WHERE id = $1', [id]);
     if (!n) throw new AppError(404, 'NOT_FOUND', 'Lieu introuvable.');
     return c.body(null, 204);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Photo d'un lieu (réduite par l'application : JPEG de quelques centaines de ko)
+// ---------------------------------------------------------------------------
+
+const photoSchema = z.object({
+  type: z.enum(['image/jpeg', 'image/png', 'image/webp']),
+  data: z.string().max(2_000_000), // base64
+}).strict();
+
+placeRoutes.put('/places/:id/photo', async (c) => {
+  const id = parseId(c.req.param('id'));
+  const { type, data } = photoSchema.parse(await c.req.json());
+  const bytes = Uint8Array.from(atob(data), (ch) => ch.charCodeAt(0));
+  if (bytes.length > 1_500_000) throw new AppError(413, 'PHOTO_TOO_LARGE', 'Photo trop lourde (1,5 Mo au plus).');
+  return tenantTx(c, ['president'], async (tx) => {
+    const place = notFoundIfNull(await tx.maybeOne(
+      `UPDATE places SET photo = decode($2, 'base64'), photo_type = $3, photo_updated_at = now() WHERE id = $1 RETURNING ${PLACE_SELECT}`,
+      [id, data, type]), 'Lieu');
+    return c.json({ place });
+  });
+});
+
+placeRoutes.delete('/places/:id/photo', (c) => {
+  const id = parseId(c.req.param('id'));
+  return tenantTx(c, ['president'], async (tx) => {
+    notFoundIfNull(await tx.maybeOne('UPDATE places SET photo = NULL, photo_type = NULL, photo_updated_at = NULL WHERE id = $1 RETURNING id', [id]), 'Lieu');
+    return c.body(null, 204);
+  });
+});
+
+/** Photo (tout membre) : l'application la charge avec son jeton, puis l'affiche. */
+placeRoutes.get('/places/:id/photo', (c) => {
+  const id = parseId(c.req.param('id'));
+  return tenantTx(c, null, async (tx) => {
+    // En base64 : même résultat quel que soit le pilote PostgreSQL (Node ou Neon).
+    const p = notFoundIfNull(await tx.maybeOne<{ b64: string | null; photo_type: string | null }>(
+      `SELECT encode(photo, 'base64') AS b64, photo_type FROM places WHERE id = $1`, [id]), 'Lieu');
+    if (!p.b64) throw new AppError(404, 'NOT_FOUND', 'Pas de photo pour ce lieu.');
+    const bytes = Uint8Array.from(atob(p.b64.replace(/\s/g, '')), (ch) => ch.charCodeAt(0));
+    return c.body(bytes as any, 200, { 'Content-Type': p.photo_type ?? 'image/jpeg', 'Cache-Control': 'private, max-age=3600' });
   });
 });

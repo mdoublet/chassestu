@@ -3815,4 +3815,25 @@ GRANT EXECUTE ON FUNCTION app.chief_set_in_place(uuid, uuid, boolean) TO app_rls
 
 INSERT INTO schema_migrations (name, checksum) VALUES ('0023_chef_de_ligne_en_place.sql', '9b917d425f8f8bff0ec0f3203eaf587dd321f03bf20c2be672b1764a808f0a56');
 
+DO $guard$
+BEGIN
+  IF EXISTS (SELECT 1 FROM schema_migrations WHERE name = '0024_photo_lieu_appli_navigation.sql') THEN
+    RAISE EXCEPTION 'La migration % est déjà appliquée : rien à faire.', '0024_photo_lieu_appli_navigation.sql';
+  END IF;
+END $guard$;
+
+-- ==================== 0024_photo_lieu_appli_navigation.sql ====================
+-- Photo d'un lieu (cabane, restaurant…), réduite par l'application avant
+-- l'envoi (JPEG, quelques centaines de ko au plus). Application de navigation
+-- préférée de chaque utilisateur (Google Maps, Waze, Plans d'Apple).
+
+ALTER TABLE places ADD COLUMN photo bytea CHECK (octet_length(photo) <= 1500000);
+ALTER TABLE places ADD COLUMN photo_type text CHECK (photo_type IN ('image/jpeg', 'image/png', 'image/webp'));
+ALTER TABLE places ADD COLUMN photo_updated_at timestamptz;
+
+ALTER TABLE users ADD COLUMN nav_app text CHECK (nav_app IN ('google', 'waze', 'apple'));
+GRANT UPDATE (nav_app) ON users TO app_rls;
+
+INSERT INTO schema_migrations (name, checksum) VALUES ('0024_photo_lieu_appli_navigation.sql', '16472ce0a687c4f0100fdf91a303fc12e16e880f1deb6554f240f7eb3b879fb0');
+
 COMMIT;

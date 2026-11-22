@@ -7,6 +7,8 @@ import { api } from '../api.js';
 import { h, fill, toast, errorMessage, confirmDialog } from '../ui.js';
 import { PLACE_KINDS } from './place-picker.js';
 import { setInSeason } from '../lib/season.js';
+import { navIcon } from '../lib/navigation.js';
+import { shrinkPhoto, photoThumb } from '../lib/photo.js';
 import { fold } from '../ui.js';
 
 const ICON = { cabane: '🛖', restaurant: '🍽', autre: '📍' };
@@ -83,6 +85,29 @@ export async function placesView(main) {
     }, () => toast('Position indisponible.', 'error'), { enableHighAccuracy: true, timeout: 15000 }) }, 'Ma position'),
   ];
 
+  /** Photo du lieu : prendre / choisir (réduite avant l'envoi), remplacer, retirer. */
+  function photoEditor(p) {
+    const input = h('input', { type: 'file', accept: 'image/*', hidden: true, onchange: async () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      try {
+        toast('Envoi de la photo…');
+        await api.put(`/places/${p.id}/photo`, await shrinkPhoto(file));
+        toast('Photo enregistrée.');
+        await load();
+      } catch (err) {
+        toast(errorMessage(err), 'error');
+      }
+    } });
+    return h('div.place-photo',
+      p.has_photo ? photoThumb(h, p.id, p.photo_updated_at, p.name) : null,
+      input,
+      h('button', { type: 'button', onclick: () => input.click() }, p.has_photo ? '📷 Changer la photo' : '📷 Ajouter une photo'),
+      p.has_photo ? h('button.link.danger', { type: 'button', onclick: async () => {
+        try { await api.del(`/places/${p.id}/photo`); await load(); } catch (err) { toast(errorMessage(err), 'error'); }
+      } }, 'Retirer la photo') : null);
+  }
+
   async function seasonLink(p, inSeason) {
     try {
       await setInSeason('places', p.id, inSeason);
@@ -119,6 +144,7 @@ export async function placesView(main) {
                   h('input', { value: p.name, maxlength: 200, 'aria-label': 'Nom', onchange: (e) => save(p.id, { name: e.target.value }, 'Nom enregistré.') }),
                   kindSelect(p.kind, (e) => save(p.id, { kind: e.target.value }, 'Type enregistré.')),
                   h('input', { value: p.notes, maxlength: 500, placeholder: 'Note', 'aria-label': 'Note', onchange: (e) => save(p.id, { notes: e.target.value }, 'Note enregistrée.') }),
+                  photoEditor(p),
                   h('div.buttons', placeHere(p.id),
                     h('button.link', { onclick: () => seasonLink(p, false), title: 'Sans le supprimer' }, 'Retirer de la saison'),
                     h('button.link.danger', { onclick: async () => {
@@ -126,8 +152,11 @@ export async function placesView(main) {
                       try { await api.del(`/places/${p.id}`); st.editing = null; await load(); } catch (err) { toast(errorMessage(err), 'error'); }
                     } }, 'Supprimer'),
                     h('button.link', { onclick: () => { st.editing = null; render(); } }, 'Fermer')))
-              : h('button.link.place-name', { onclick: () => { st.editing = p.id; st.draft = null; map.setView(toLatLng(p.geom.coordinates), 15); render(); } },
-                  `${ICON[p.kind]} ${p.name}`, h('span.small.muted', ` · ${PLACE_KINDS[p.kind]}${p.notes ? ` · ${p.notes}` : ''}`)))))
+              : h('div.place-row',
+                  p.has_photo ? photoThumb(h, p.id, p.photo_updated_at, p.name) : null,
+                  h('button.link.place-name', { onclick: () => { st.editing = p.id; st.draft = null; map.setView(toLatLng(p.geom.coordinates), 15); render(); } },
+                    `${ICON[p.kind]} ${p.name}`, h('span.small.muted', ` · ${PLACE_KINDS[p.kind]}${p.notes ? ` · ${p.notes}` : ''}`)),
+                  navIcon(p.geom.coordinates, p.name)))))
         : h('p.muted', 'Aucun lieu pour l’instant.'),
       st.parkings.length ? fold('Parkings des territoires', { key: 'places.parkings', extra: String(st.parkings.length) },
         h('ul.plain.small', st.parkings.map((p) => h('li', `🅿 ${p.name} · ${p.territory_name}`)))) : null,

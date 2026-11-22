@@ -2,7 +2,8 @@
 import { api } from '../api.js';
 import { state } from '../state.js';
 import { h, toast, errorMessage, confirmDialog, fold } from '../ui.js';
-import { WALK_LABELS } from '../lib/hunts.js';
+import { WALK_LABELS, NAV_APPS } from '../lib/hunts.js';
+import { preferredNavApp } from '../lib/navigation.js';
 import { signOut } from '../auth.js';
 
 export function profileView(main, { refreshMe }) {
@@ -11,6 +12,7 @@ export function profileView(main, { refreshMe }) {
   const walk = h('select', h('option', { value: '' }, 'Non renseigné'),
     Object.entries(WALK_LABELS).map(([v, l]) => h('option', { value: v, selected: String(u.walking_ability ?? '') === v }, l)));
   const car = h('input', { type: 'checkbox', checked: !!u.has_car });
+  const nav = h('select', Object.entries(NAV_APPS).map(([k, v]) => h('option', { value: k, selected: k === preferredNavApp() }, v)));
   const seats = h('input', { type: 'number', min: 0, max: 8, value: u.car_seats ?? '', style: 'width:6rem' });
   const sync = () => { seats.disabled = !car.checked; };
   car.addEventListener('change', sync);
@@ -24,6 +26,7 @@ export function profileView(main, { refreshMe }) {
           walking_ability: walk.value ? Number(walk.value) : null,
           has_car: car.checked,
           car_seats: car.checked ? (seats.value === '' ? null : Number(seats.value)) : 0,
+          nav_app: nav.value,
         }, { tenant: false });
         await refreshMe();
         toast('Profil enregistré.');
@@ -35,6 +38,7 @@ export function profileView(main, { refreshMe }) {
   h('label', 'Nom', name),
   h('label', 'Marche jusqu’au poste', walk),
   h('div.row', h('label.check', car, 'Ma voiture'), h('label', 'Places libres', seats)),
+  h('label', 'Application de navigation (🚗)', nav),
   h('button.primary', { type: 'submit' }, 'Enregistrer')),
   h('section.card', fold('Mon compte', { key: 'profile.account', extra: u.email ?? '' },
     h('button', { onclick: async () => { await signOut(); location.hash = '#/'; location.reload(); } }, 'Se déconnecter'),

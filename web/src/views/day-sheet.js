@@ -14,46 +14,15 @@ import { state } from '../state.js';
 import { h, fill, toast, errorMessage, confirmDialog } from '../ui.js';
 import { watchRevision, every } from '../lib/live.js';
 import {
-  DAY_STATUS_LABELS, ROLE_LABELS, CATEGORY_LABELS, OUTCOME_LABELS, OUTCOME_ICONS, COMMON_SPECIES, NAV_APPS,
-  formatHuntDate, formatTime, navigationLinks, dayPhase,
+  DAY_STATUS_LABELS, ROLE_LABELS, CATEGORY_LABELS, OUTCOME_LABELS, OUTCOME_ICONS, COMMON_SPECIES,
+  formatHuntDate, formatTime, dayPhase,
 } from '../lib/hunts.js';
 import { positionPanel } from './positions.js';
+import { navLine } from '../lib/navigation.js';
+import { photoThumb } from '../lib/photo.js';
 
-// Appli de navigation choisie une fois, mémorisée sur ce téléphone.
-const NAV_KEY = 'chassestu.navApp';
-function preferredNavApp() {
-  try {
-    const v = localStorage.getItem(NAV_KEY);
-    if (v && NAV_APPS[v]) return v;
-  } catch {
-    /* stockage indisponible */
-  }
-  return /iPhone|iPad|Macintosh/.test(navigator.userAgent) ? 'apple' : 'google';
-}
-
-/** « Y aller en voiture » vers l'appli choisie, avec choix modifiable. */
-function navButtons(label, coords) {
-  const links = navigationLinks(coords);
-  const go = h('a.button.primary', { target: '_blank', rel: 'noopener' });
-  const select = h('select', {
-    'aria-label': 'Application de navigation',
-    onchange: () => {
-      try {
-        localStorage.setItem(NAV_KEY, select.value);
-      } catch {
-        /* rien */
-      }
-      sync();
-    },
-  }, Object.entries(NAV_APPS).map(([k, v]) => h('option', { value: k }, v)));
-  function sync() {
-    go.href = links[select.value];
-    go.textContent = `🚗 Y aller en voiture (${NAV_APPS[select.value]})`;
-  }
-  select.value = preferredNavApp();
-  sync();
-  return h('div.nav-links', h('span', label), go, select);
-}
+/** Destination + icône de navigation (appli choisie dans le profil). */
+const navButtons = (label, coords) => navLine(label, coords, '');
 
 const time = (iso) => new Date(iso).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
 
@@ -122,8 +91,15 @@ export function createDaySheet(container, opts = {}) {
     return h('section.card',
       h('h3', 'Rendez-vous'),
       h('p', `${formatHuntDate(day.date)} à ${formatTime(day.meeting_time)}${day.meeting_place ? ` · ${day.meeting_place}` : ''}`),
-      day.meeting_point ? navButtons('Rendez-vous :', day.meeting_point.coordinates) : null,
+      placePhoto(day.meeting_place),
+      day.meeting_point ? navButtons('Itinéraire jusqu’au rendez-vous', day.meeting_point.coordinates) : null,
       day.lunch_offered ? h('p.small', `🍽 Déjeuner proposé${day.lunch_info ? ` : ${day.lunch_info}` : ''}.`) : null);
+  }
+
+  /** Photo d'un lieu de l'association (cabane…) reconnu par son nom. */
+  function placePhoto(name) {
+    const pl = name ? opts.placeOf?.(name) : null;
+    return pl?.has_photo ? h('div.place-photo', photoThumb(h, pl.id, pl.photo_updated_at, pl.name), h('span.small.muted', 'Touchez pour agrandir')) : null;
   }
 
   function speciesList(cur) {
@@ -285,7 +261,7 @@ export function createDaySheet(container, opts = {}) {
         top = [harvestBox(cur, false), panel.el];
         break;
       case 'regroupement':
-        top = [day.regroup?.point ? navButtons('Itinéraire', day.regroup.point.coordinates) : null, panel.el];
+        top = [placePhoto(day.regroup?.place), day.regroup?.point ? navButtons('Itinéraire jusqu’au regroupement', day.regroup.point.coordinates) : null, panel.el];
         break;
       default:
         top = [];
@@ -410,7 +386,11 @@ export async function memberDayView(main, dayId) {
   let view = null;
   let watcher = null;
   let lead = null; // { hunt, readiness } si je suis responsable de la battue en cours
+  // Lieux de l'association (photos du rendez-vous / regroupement).
+  let places = [];
+  const placesLoaded = api.get('/places').then((r) => { places = r.places ?? []; }).catch(() => {});
   const load = async () => {
+    await placesLoaded;
     const res = await api.get(`/days/${dayId}/view`);
     const running = (res.view.battues ?? []).find((b) => b.status === 'en_cours');
     lead = null;
@@ -475,6 +455,7 @@ export async function memberDayView(main, dayId) {
   };
   view = createDaySheet(main, {
     dayId,
+    placeOf: (name) => places.find((p) => p.name === name) ?? null,
     leadCard,
     canSeeAll: ['president', 'responsable'].includes(state.role),
     onRespond: (response, lunch) => act(() => api.post(`/days/${dayId}/respond`, { response, lunch: !!lunch }), 'Réponse enregistrée.'),
