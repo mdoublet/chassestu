@@ -2,6 +2,7 @@ import pg from 'pg';
 import { createApp } from '../src/app';
 import { withTx, type Tx } from '../src/db';
 import type { Env } from '../src/env';
+import { memoryStore } from '../src/storage';
 import { TEST_DATABASE_URL } from './global-setup';
 
 // Connexion avec le rôle propriétaire (comme neondb_owner sur Neon, qui a
@@ -26,8 +27,11 @@ export const pushService = {
   calls: [] as { url: string; init: RequestInit }[],
   status: 201,
 };
+/** Faux stockage d'objets (photos). */
+export const photoStore = memoryStore();
 export const app = createApp(() => ({ pool }), {
   skipMigrations: true, // la base de test est migrée par global-setup
+  objectStore: photoStore,
   pushFetch: async (url, init) => {
     pushService.calls.push({ url, init: init ?? {} });
     return new Response(null, { status: pushService.status });

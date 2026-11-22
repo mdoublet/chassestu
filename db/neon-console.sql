@@ -3893,4 +3893,33 @@ CREATE POLICY places_delete ON places FOR DELETE TO app_rls
 
 INSERT INTO schema_migrations (name, checksum) VALUES ('0026_lieux_des_chasseurs.sql', '988b291d372dae97cb858e43da403d5a2230c4c8a776afd7315567fe6777469c');
 
+DO $guard$
+BEGIN
+  IF EXISTS (SELECT 1 FROM schema_migrations WHERE name = '0027_photos_stockage_objets.sql') THEN
+    RAISE EXCEPTION 'La migration % est déjà appliquée : rien à faire.', '0027_photos_stockage_objets.sql';
+  END IF;
+END $guard$;
+
+-- ==================== 0027_photos_stockage_objets.sql ====================
+-- Photos des lieux dans le stockage d'objets (Neon Object Storage) : la base
+-- ne garde que la clé de l'objet. La colonne `photo` reste en repli (stockage
+-- non configuré) et le temps de recopier les photos existantes, ce que l'API
+-- fait à leur première lecture.
+ALTER TABLE places ADD COLUMN photo_key text CHECK (length(photo_key) BETWEEN 1 AND 300);
+
+-- Recopie d'une photo vers le stockage : tout membre qui la lit peut la
+-- déplacer (sans droit de modifier le lieu), seulement si elle est encore en base.
+CREATE FUNCTION app.move_place_photo(p_place uuid, p_key text) RETURNS boolean
+  LANGUAGE sql SECURITY DEFINER SET search_path = public, pg_temp AS $$
+  WITH u AS (
+    UPDATE places SET photo_key = p_key, photo = NULL
+     WHERE id = p_place AND tenant_id = app.current_tenant_id() AND photo IS NOT NULL AND photo_key IS NULL
+    RETURNING 1)
+  SELECT EXISTS (SELECT 1 FROM u)
+$$;
+REVOKE ALL ON FUNCTION app.move_place_photo(uuid, text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION app.move_place_photo(uuid, text) TO app_rls;
+
+INSERT INTO schema_migrations (name, checksum) VALUES ('0027_photos_stockage_objets.sql', '3780d38cbc99df1157abb8c0c5e173f13b603be9fe057ef3cfb305ba8f982443');
+
 COMMIT;

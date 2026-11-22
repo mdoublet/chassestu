@@ -16,6 +16,7 @@ import { huntRoutes } from './routes/hunts';
 import { dayRoutes } from './routes/days';
 import { placeRoutes } from './routes/places';
 import { fetchBuildingPages, type Bbox } from './bdtopo';
+import { objectStore, type ObjectStore } from './storage';
 import { ensureMigrated } from './migrate';
 import { flushPushQueue } from './routes/notifications';
 import { notificationRoutes } from './routes/notifications';
@@ -31,6 +32,8 @@ export interface AppOptions {
   pushFetch?: (input: string, init?: RequestInit) => Promise<Response>;
   /** Ne pas appliquer les migrations embarquées (tests qui gèrent leur base). */
   skipMigrations?: boolean;
+  /** Stockage d'objets (tests) ; par défaut, d'après les variables AWS_*. */
+  objectStore?: ObjectStore | null;
 }
 
 export function createApp(getPool: PoolProvider, options: AppOptions = {}) {
@@ -58,6 +61,7 @@ export function createApp(getPool: PoolProvider, options: AppOptions = {}) {
     c.set('pool', pool);
     c.set('fetchBuildingPages', options.fetchBuildingPages ?? ((bbox) => fetchBuildingPages(bbox)));
     c.set('pushQueue', []);
+    c.set('objectStore', options.objectStore !== undefined ? options.objectStore : objectStore(c.env));
     c.set('pushFetch', options.pushFetch ?? ((input, init) => fetch(input, init)));
     try {
       // Schéma à jour avant de servir (migrations embarquées, une fois par instance).

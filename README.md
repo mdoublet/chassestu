@@ -341,6 +341,12 @@ avec une photo prise ou importée depuis son téléphone : ils restent visibles
 de lui seul. Le président les voit dans « Proposés par les chasseurs » et
 peut les rendre publics ; un lieu public n'est plus modifiable que par lui.
 
+Photos : rangées dans Neon Object Storage (bucket `uploads`, clé
+`<association>/places/<lieu>/<version>.jpg`), la base ne garde que la clé.
+L'API les sert elle-même (bucket privé). Une photo encore en base est
+recopiée dans le stockage à sa première lecture. Sans les secrets
+`AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` du Worker, tout reste en base.
+
 Conversion : chaque ancienne battue est devenue une journée de même
 identifiant (les anciens liens fonctionnent) ; l'accord de partage GPS est
 donné pour la journée.

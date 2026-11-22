@@ -1,6 +1,7 @@
 import type { DbPool } from './db';
 import type { Bbox } from './bdtopo';
 import type { PushTarget } from './push';
+import type { ObjectStore } from './storage';
 
 export interface Env {
   /** Chaîne de connexion Neon (secret). */
@@ -16,6 +17,14 @@ export interface Env {
   CLERK_AUTHORIZED_PARTIES?: string;
   /** Origine du front, pour CORS et les liens d'invitation. */
   APP_ORIGIN: string;
+  /** Stockage d'objets (Neon Object Storage, compatible S3) pour les photos. */
+  AWS_ACCESS_KEY_ID?: string;
+  /** Secret. */
+  AWS_SECRET_ACCESS_KEY?: string;
+  AWS_ENDPOINT_URL_S3?: string;
+  AWS_REGION?: string;
+  /** Bucket des téléversements (« uploads » par défaut). */
+  STORAGE_BUCKET?: string;
 }
 
 export interface AuthUser {
@@ -33,6 +42,8 @@ export type AppVariables = {
   pushQueue: PushTarget[];
   /** fetch utilisé pour les envois push (remplaçable dans les tests). */
   pushFetch: (input: string, init?: RequestInit) => Promise<Response>;
+  /** Stockage des photos ; null : photos en base. */
+  objectStore: ObjectStore | null;
 };
 
 export type AppEnv = { Bindings: Env; Variables: AppVariables };

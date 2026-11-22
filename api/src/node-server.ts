@@ -30,6 +30,11 @@ const env: Env = {
   CLERK_SECRET_KEY: process.env.CLERK_SECRET_KEY,
   CLERK_JWT_KEY: process.env.CLERK_JWT_KEY,
   CLERK_AUTHORIZED_PARTIES: process.env.CLERK_AUTHORIZED_PARTIES,
+  AWS_ACCESS_KEY_ID: process.env.AWS_ACCESS_KEY_ID,
+  AWS_SECRET_ACCESS_KEY: process.env.AWS_SECRET_ACCESS_KEY,
+  AWS_ENDPOINT_URL_S3: process.env.AWS_ENDPOINT_URL_S3,
+  AWS_REGION: process.env.AWS_REGION,
+  STORAGE_BUCKET: process.env.STORAGE_BUCKET,
 };
 
 const port = Number(process.env.PORT ?? 8787);

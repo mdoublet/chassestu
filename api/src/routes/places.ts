@@ -1,6 +1,6 @@
 // Lieux de l'association (cabane, restaurant, autre) et, pour les choisir
 // comme rendez-vous ou regroupement, les parkings de tous les territoires.
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import type { AppEnv } from '../env';
 import type { Tx } from '../db';
@@ -10,7 +10,7 @@ import { geomOut, geomParam, pointSchema } from '../geo';
 
 export const placeRoutes = new Hono<AppEnv>();
 
-const PLACE_SELECT = `id, name, kind, notes, ${geomOut('geom')}, photo IS NOT NULL AS has_photo, photo_updated_at,
+const PLACE_SELECT = `id, name, kind, notes, ${geomOut('geom')}, (photo IS NOT NULL OR photo_key IS NOT NULL) AS has_photo, photo_updated_at,
   visibility, created_by IS NOT DISTINCT FROM app.current_user_id() AS mine,
   (SELECT display_name FROM users WHERE id = places.created_by) AS author`;
 
@@ -88,8 +88,9 @@ placeRoutes.delete('/places/:id', (c) => {
   const id = parseId(c.req.param('id'));
   return tenantTx(c, null, async (tx, { role }) => {
     await assertCanEdit(tx, id, role);
-    const n = await tx.execute('DELETE FROM places WHERE id = $1', [id]);
-    if (!n) throw new AppError(404, 'NOT_FOUND', 'Lieu introuvable.');
+    const gone = await tx.maybeOne<{ photo_key: string | null }>('DELETE FROM places WHERE id = $1 RETURNING photo_key', [id]);
+    if (!gone) throw new AppError(404, 'NOT_FOUND', 'Lieu introuvable.');
+    dropObject(c, gone.photo_key);
     return c.body(null, 204);
   });
 });
@@ -103,16 +104,43 @@ const photoSchema = z.object({
   data: z.string().max(2_000_000), // base64
 }).strict();
 
+const b64ToBytes = (b64: string) => Uint8Array.from(atob(b64.replace(/\s/g, '')), (ch) => ch.charCodeAt(0));
+const EXT: Record<string, string> = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' };
+/** Clé de l'objet : une par version, pour ne jamais servir une ancienne photo en cache. */
+const photoKey = (tenantId: string, placeId: string, type: string) =>
+  `${tenantId}/places/${placeId}/${Date.now().toString(36)}.${EXT[type] ?? 'jpg'}`;
+
+/** Supprime un objet sans faire échouer la requête (un orphelin n'est pas grave). */
+function dropObject(c: Context<AppEnv>, key: string | null | undefined) {
+  const store = c.get('objectStore');
+  if (!store || !key) return;
+  const work = store.del(key).catch((err) => console.error('Suppression de photo :', err));
+  try { c.executionCtx.waitUntil(work); } catch { /* hors Worker */ }
+}
+
 placeRoutes.put('/places/:id/photo', async (c) => {
   const id = parseId(c.req.param('id'));
   const { type, data } = photoSchema.parse(await c.req.json());
-  const bytes = Uint8Array.from(atob(data), (ch) => ch.charCodeAt(0));
+  const bytes = b64ToBytes(data);
   if (bytes.length > 1_500_000) throw new AppError(413, 'PHOTO_TOO_LARGE', 'Photo trop lourde (1,5 Mo au plus).');
-  return tenantTx(c, null, async (tx, { role }) => {
+  const store = c.get('objectStore');
+  return tenantTx(c, null, async (tx, { role, tenantId }) => {
     await assertCanEdit(tx, id, role);
-    const place = notFoundIfNull(await tx.maybeOne(
-      `UPDATE places SET photo = decode($2, 'base64'), photo_type = $3, photo_updated_at = now() WHERE id = $1 RETURNING ${PLACE_SELECT}`,
-      [id, data, type]), 'Lieu');
+    const old = notFoundIfNull(await tx.maybeOne<{ photo_key: string | null }>('SELECT photo_key FROM places WHERE id = $1', [id]), 'Lieu');
+    let place;
+    if (store) {
+      // Objet d'abord : si la base échoue ensuite, il ne reste qu'un orphelin.
+      const key = photoKey(tenantId, id, type);
+      await store.put(key, bytes, type);
+      place = await tx.one(
+        `UPDATE places SET photo_key = $2, photo = NULL, photo_type = $3, photo_updated_at = now() WHERE id = $1 RETURNING ${PLACE_SELECT}`,
+        [id, key, type]);
+    } else {
+      place = await tx.one(
+        `UPDATE places SET photo = decode($2, 'base64'), photo_key = NULL, photo_type = $3, photo_updated_at = now() WHERE id = $1 RETURNING ${PLACE_SELECT}`,
+        [id, data, type]);
+    }
+    if (old.photo_key) dropObject(c, old.photo_key);
     return c.json({ place });
   });
 });
@@ -121,20 +149,42 @@ placeRoutes.delete('/places/:id/photo', (c) => {
   const id = parseId(c.req.param('id'));
   return tenantTx(c, null, async (tx, { role }) => {
     await assertCanEdit(tx, id, role);
-    notFoundIfNull(await tx.maybeOne('UPDATE places SET photo = NULL, photo_type = NULL, photo_updated_at = NULL WHERE id = $1 RETURNING id', [id]), 'Lieu');
+    const old = notFoundIfNull(await tx.maybeOne<{ photo_key: string | null }>('SELECT photo_key FROM places WHERE id = $1', [id]), 'Lieu');
+    await tx.query('UPDATE places SET photo = NULL, photo_key = NULL, photo_type = NULL, photo_updated_at = NULL WHERE id = $1', [id]);
+    dropObject(c, old.photo_key);
     return c.body(null, 204);
   });
 });
 
-/** Photo (tout membre) : l'application la charge avec son jeton, puis l'affiche. */
+/**
+ * Photo (tout membre) : l'application la charge avec son jeton, puis l'affiche.
+ * Une photo encore en base est recopiée dans le stockage à sa première lecture.
+ */
 placeRoutes.get('/places/:id/photo', (c) => {
   const id = parseId(c.req.param('id'));
-  return tenantTx(c, null, async (tx) => {
+  const store = c.get('objectStore');
+  return tenantTx(c, null, async (tx, { tenantId }) => {
     // En base64 : même résultat quel que soit le pilote PostgreSQL (Node ou Neon).
-    const p = notFoundIfNull(await tx.maybeOne<{ b64: string | null; photo_type: string | null }>(
-      `SELECT encode(photo, 'base64') AS b64, photo_type FROM places WHERE id = $1`, [id]), 'Lieu');
+    const p = notFoundIfNull(await tx.maybeOne<{ b64: string | null; photo_type: string | null; photo_key: string | null }>(
+      `SELECT encode(photo, 'base64') AS b64, photo_type, photo_key FROM places WHERE id = $1`, [id]), 'Lieu');
+    const headers = { 'Content-Type': p.photo_type ?? 'image/jpeg', 'Cache-Control': 'private, max-age=86400' };
+    if (p.photo_key) {
+      const obj = store ? await store.get(p.photo_key) : null;
+      if (!obj) throw new AppError(404, 'NOT_FOUND', 'Photo introuvable.');
+      return c.body(obj.bytes as any, 200, headers);
+    }
     if (!p.b64) throw new AppError(404, 'NOT_FOUND', 'Pas de photo pour ce lieu.');
-    const bytes = Uint8Array.from(atob(p.b64.replace(/\s/g, '')), (ch) => ch.charCodeAt(0));
-    return c.body(bytes as any, 200, { 'Content-Type': p.photo_type ?? 'image/jpeg', 'Cache-Control': 'private, max-age=3600' });
+    const bytes = b64ToBytes(p.b64);
+    if (store) {
+      const type = p.photo_type ?? 'image/jpeg';
+      const key = photoKey(tenantId, id, type);
+      try {
+        await store.put(key, bytes, type);
+        if (!(await tx.one<{ moved: boolean }>('SELECT app.move_place_photo($1, $2) AS moved', [id, key])).moved) dropObject(c, key);
+      } catch (err) {
+        console.error('Recopie de photo vers le stockage :', err); // la photo reste servie depuis la base
+      }
+    }
+    return c.body(bytes as any, 200, headers);
   });
 });

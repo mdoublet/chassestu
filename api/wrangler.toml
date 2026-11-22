@@ -13,10 +13,16 @@ keep_vars = true
 
 # À définir dans le tableau de bord (Settings → Variables and Secrets) :
 #   variables : APP_ORIGIN, CLERK_AUTHORIZED_PARTIES (adresse du site Pages)
-#   secrets   : DATABASE_URL, CLERK_SECRET_KEY
+#   secrets   : DATABASE_URL, CLERK_SECRET_KEY,
+#               AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY (identifiant Neon
+#               « storage:read + storage:write » de la branche production)
 [vars]
 ENVIRONMENT = "production"
 AUTH_MODE = "clerk"
+# Neon Object Storage (photos des lieux), bucket « uploads » de la branche
+# production. Sans les deux secrets AWS_*, les photos restent en base.
+AWS_ENDPOINT_URL_S3 = "https://br-fragrant-wind-baw3qyr2.storage.c-8.eu-central-1.aws.neon.tech"
+AWS_REGION = "eu-central-1"
 
 # Développement local : `npm run dev:api` lit api/.dev.vars (ignoré par git).
 

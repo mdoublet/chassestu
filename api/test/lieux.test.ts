@@ -1,6 +1,6 @@
 // Lieux de l'association (rendez-vous, regroupement) et parkings.
 import { beforeAll, describe, expect, it } from 'vitest';
-import { api, app, createTenant, env, point, square } from './helpers';
+import { api, app, createTenant, env, photoStore, point, pool, square } from './helpers';
 
 const P = 'pres_lieux';
 let tenant: string;
@@ -29,6 +29,23 @@ describe('lieux', () => {
     expect((await as(P, 'GET', '/api/places')).body.kinds).toEqual(['Salle des fêtes']);
     expect((await as(P, 'PATCH', `/api/places/${c.body.place.id}`, { kind: 'x'.repeat(41) })).status).toBe(400);
     expect((await as(P, 'DELETE', `/api/places/${c.body.place.id}`)).status).toBe(204);
+  });
+});
+
+describe('photos encore en base', () => {
+  it('recopiées dans le stockage à la première lecture, par un simple membre', async () => {
+    const place = (await as(P, 'POST', '/api/places', { name: 'Ancienne photo', geom: point(3.5, 44.05) })).body.place;
+    const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+    await pool.query(`UPDATE places SET photo = decode($2, 'base64'), photo_type = 'image/png', photo_updated_at = now() WHERE id = $1`, [place.id, png]);
+    const read = () => app.request(`/api/places/${place.id}/photo`, { headers: { Authorization: 'Bearer dev:l_ch:Chasseur', 'X-Tenant-Id': tenant } }, env);
+    const first = await read();
+    expect(Buffer.from(await first.arrayBuffer()).toString('base64')).toBe(png);
+    const row = (await pool.query('SELECT photo_key, photo IS NULL AS moved FROM places WHERE id = $1', [place.id])).rows[0];
+    expect(row.moved).toBe(true);
+    expect(photoStore.objects.has(row.photo_key)).toBe(true);
+    expect(Buffer.from(await (await read()).arrayBuffer()).toString('base64')).toBe(png);
+    expect((await as(P, 'DELETE', `/api/places/${place.id}`)).status).toBe(204);
+    expect(photoStore.objects.has(row.photo_key)).toBe(false);
   });
 });
 
@@ -85,7 +102,13 @@ describe('photo d’un lieu et appli de navigation', () => {
     expect(res.headers.get('content-type')).toBe('image/png');
     const bytes = new Uint8Array(await res.arrayBuffer());
     expect(Buffer.from(bytes).toString('base64')).toBe(png);
+    // Rangée dans le stockage d'objets, pas en base.
+    const key = (await pool.query('SELECT photo_key, photo IS NULL AS no_bytes FROM places WHERE id = $1', [place.id])).rows[0];
+    expect(key.no_bytes).toBe(true);
+    expect(key.photo_key).toMatch(new RegExp(`^${tenant}/places/${place.id}/\\w+\\.png$`));
+    expect(photoStore.objects.has(key.photo_key)).toBe(true);
     expect((await as(P, 'DELETE', `/api/places/${place.id}/photo`)).status).toBe(204);
+    expect(photoStore.objects.has(key.photo_key)).toBe(false);
     expect((await app.request(`/api/places/${place.id}/photo`, { headers: { Authorization: 'Bearer dev:l_ch:Chasseur', 'X-Tenant-Id': tenant } }, env)).status).toBe(404);
 
     expect((await api('l_ch', 'PATCH', '/api/me', { body: { nav_app: 'waze' } })).body.user.nav_app).toBe('waze');
