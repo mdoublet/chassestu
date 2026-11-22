@@ -62,12 +62,28 @@ export async function signOut() {
   else localStorage.removeItem(DEV_KEY);
 }
 
-export function mountSignIn(container) {
+/**
+ * Formulaire de connexion. `returnHash` : page de l'application à afficher
+ * ensuite (jamais une étape interne de Clerk comme « #/factor-one »).
+ * `onSignedIn` est appelé dès que la session existe : l'application
+ * s'affiche sans rafraîchir, même si Clerk ne redirige pas.
+ */
+export function mountSignIn(container, { returnHash = '#/', onSignedIn = null } = {}) {
   if (clerk) {
     const el = h('div');
     container.append(el);
-    clerk.mountSignIn(el, { forceRedirectUrl: location.href, signUpForceRedirectUrl: location.href });
-    return () => clerk.unmountSignIn(el);
+    const url = `${location.origin}${location.pathname}${location.search}${returnHash}`;
+    clerk.mountSignIn(el, { forceRedirectUrl: url, signUpForceRedirectUrl: url });
+    const timer = setInterval(() => {
+      if (clerk.user && onSignedIn) {
+        clearInterval(timer);
+        onSignedIn();
+      }
+    }, 500);
+    return () => {
+      clearInterval(timer);
+      clerk.unmountSignIn(el);
+    };
   }
   const id = h('input', { name: 'id', required: true, pattern: '[A-Za-z0-9_\\-]{1,64}', placeholder: 'ex. marc' });
   const name = h('input', { name: 'name', required: true, maxlength: 120, placeholder: 'ex. Marc Dupont' });

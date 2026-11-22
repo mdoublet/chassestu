@@ -153,9 +153,20 @@ async function render() {
     app.append(header());
     const main = h('main.page.narrow', h('h1', 'Connexion'), h('p', 'Un code vous sera envoyé par e-mail : pas de mot de passe à retenir.'));
     app.append(main);
-    cleanup = mountSignIn(main);
+    // Page demandée (une étape interne de Clerk, elle, ne correspond à aucune route).
+    if (routes.slice(0, -1).some((r) => r.re.test(hash)) || hash === '#/') returnHash = hash;
+    signInShown = true;
+    cleanup = mountSignIn(main, {
+      returnHash,
+      onSignedIn: () => {
+        state.user = null;
+        if (location.hash !== returnHash) location.hash = returnHash; // déclenche le rendu
+        else render();
+      },
+    });
     return;
   }
+  signInShown = false;
 
   try {
     if (!state.user) await refreshMe();
@@ -215,7 +226,16 @@ async function render() {
   }
 }
 
-window.addEventListener('hashchange', render);
+// Pendant la connexion, Clerk change lui-même l'adresse (#/factor-one…) :
+// on ne redessine pas la page, sinon le formulaire repartirait de zéro.
+let signInShown = false;
+let returnHash = '#/';
+window.addEventListener('hashchange', () => {
+  const hash = location.hash || '#/';
+  const appRoute = hash === '#/' || routes.slice(0, -1).some((r) => r.re.test(hash));
+  if (signInShown && !isSignedIn() && !appRoute) return;
+  render();
+});
 
 // Ouverture depuis une notification : « /?tenant=…#/battues/… » sélectionne l'association.
 {
