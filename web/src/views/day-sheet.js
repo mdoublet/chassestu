@@ -19,7 +19,7 @@ import {
 } from '../lib/hunts.js';
 import { positionPanel } from './positions.js';
 import { navLine } from '../lib/navigation.js';
-import { photoThumb } from '../lib/photo.js';
+import { photoIcon } from '../lib/photo.js';
 
 /** Destination + icône de navigation (appli choisie dans le profil). */
 const navButtons = (label, coords) => navLine(label, coords, '');
@@ -99,7 +99,7 @@ export function createDaySheet(container, opts = {}) {
   /** Photo d'un lieu de l'association (cabane…) reconnu par son nom. */
   function placePhoto(name) {
     const pl = name ? opts.placeOf?.(name) : null;
-    return pl?.has_photo ? h('div.place-photo', photoThumb(h, pl.id, pl.photo_updated_at, pl.name), h('span.small.muted', 'Touchez pour agrandir')) : null;
+    return pl?.has_photo ? h('div.place-photo', photoIcon(h, pl.id, pl.photo_updated_at, pl.name), h('span.small.muted', 'Photo du lieu')) : null;
   }
 
   function speciesList(cur) {

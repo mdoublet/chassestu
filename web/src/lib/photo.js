@@ -46,3 +46,17 @@ export function photoThumb(h, placeId, version, alt) {
   });
   return img;
 }
+
+/** Petite icône 📷 : la photo n'est chargée qu'au toucher (listes longues). */
+export function photoIcon(h, placeId, version, alt) {
+  return h('button.photo-icon', { type: 'button', title: `Photo : ${alt}`, 'aria-label': `Voir la photo : ${alt}`, onclick: async (e) => {
+    e.stopPropagation();
+    const btn = e.currentTarget;
+    btn.classList.add('loading');
+    const src = await placePhotoUrl(placeId, version);
+    btn.classList.remove('loading');
+    if (!src) return;
+    const big = h('div.photo-viewer', { onclick: () => big.remove() }, h('img', { src, alt }));
+    document.body.append(big);
+  } }, '📷');
+}

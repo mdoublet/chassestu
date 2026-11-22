@@ -2,13 +2,35 @@
 // parkings des territoires ; option « Autre » au besoin.
 import { h } from '../ui.js';
 
-export const PLACE_KINDS = { cabane: 'Cabane', restaurant: 'Restaurant', autre: 'Autre lieu' };
-const ICON = { cabane: '🛖', restaurant: '🍽', autre: '📍' };
+// Types usuels ; le président peut en saisir d'autres (texte libre, reproposé ensuite).
+export const PLACE_KINDS = { cabane: 'Cabane', restaurant: 'Restaurant', parking: 'Parking', autre: 'Autre lieu' };
+const ICON = { cabane: '🛖', restaurant: '🍽', parking: '🅿', autre: '📍' };
+export const kindIcon = (k) => ICON[k] ?? '📍';
+export const kindLabel = (k) => PLACE_KINDS[k] ?? k;
+
+/**
+ * Choix du type : types usuels, types déjà utilisés par l'association, puis
+ * « Nouveau type… » (saisie). `onchange(kind)` reçoit le type choisi.
+ */
+export function kindSelect(value, usedKinds, onchange, ask) {
+  const custom = [...new Set([...(usedKinds ?? []), value].filter((k) => k && !PLACE_KINDS[k]))].sort((a, b) => a.localeCompare(b, 'fr'));
+  const el = h('select', { 'aria-label': 'Type de lieu', onchange: async () => {
+    if (el.value !== '__new') return onchange(el.value);
+    el.value = value ?? 'autre';
+    const k = (await ask())?.trim();
+    if (k) onchange(k.slice(0, 40));
+    return undefined;
+  } },
+  Object.entries(PLACE_KINDS).map(([k, l]) => h('option', { value: k, selected: k === value }, `${ICON[k]} ${l}`)),
+  custom.length ? h('optgroup', { label: 'Vos types' }, custom.map((k) => h('option', { value: k, selected: k === value }, `📍 ${k}`))) : null,
+  h('option', { value: '__new' }, '+ Nouveau type…'));
+  return el;
+}
 
 /** Liste des choix possibles : { key, label, name, point }. */
 export function placeChoices({ places = [], parkings = [] }) {
   return [
-    ...places.filter((p) => p.in_season !== false).map((p) => ({ key: `place:${p.id}`, group: 'Lieux de l’association', label: `${ICON[p.kind] ?? '📍'} ${p.name}`, name: p.name, point: p.geom })),
+    ...places.filter((p) => p.in_season !== false).map((p) => ({ key: `place:${p.id}`, group: 'Lieux de l’association', label: `${kindIcon(p.kind)} ${p.name}`, name: p.name, point: p.geom })),
     ...parkings.map((p) => ({ key: `parking:${p.id}`, group: 'Parkings', label: `🅿 ${p.name} (${p.territory_name})`, name: /^parking\b/i.test(p.name) ? p.name : `Parking ${p.name}`, point: p.geom })),
   ];
 }

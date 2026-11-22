@@ -14,11 +14,11 @@ export function preferredNavApp() {
   return /iPhone|iPad|Macintosh/.test(navigator.userAgent) ? 'apple' : 'google';
 }
 
-/** Icône « y aller en voiture » vers des coordonnées [lon, lat]. */
+/** Icône boussole « y aller » vers des coordonnées [lon, lat]. */
 export function navIcon(coords, what = '') {
   const app = preferredNavApp();
   const title = `Y aller${what ? ` (${what})` : ''} avec ${NAV_APPS[app]}`;
-  return h('a.nav-icon', { href: navigationLinks(coords)[app], target: '_blank', rel: 'noopener', title, 'aria-label': title }, '🚗');
+  return h('a.nav-icon', { href: navigationLinks(coords)[app], target: '_blank', rel: 'noopener', title, 'aria-label': title }, '🧭');
 }
 
 /** Libellé + icône sur une ligne. */

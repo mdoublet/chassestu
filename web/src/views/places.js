@@ -4,14 +4,13 @@ import L from '../map/leaflet.js';
 import { addBasemaps } from '../map/basemap.js';
 import { escapeHtml, toLatLng } from '../map/shapes.js';
 import { api } from '../api.js';
-import { h, fill, toast, errorMessage, confirmDialog } from '../ui.js';
-import { PLACE_KINDS } from './place-picker.js';
+import { h, fill, toast, errorMessage, confirmDialog, promptDialog } from '../ui.js';
+import { kindIcon, kindLabel, kindSelect as pickKind } from './place-picker.js';
 import { setInSeason } from '../lib/season.js';
 import { navIcon } from '../lib/navigation.js';
-import { shrinkPhoto, photoThumb } from '../lib/photo.js';
+import { shrinkPhoto, photoThumb, photoIcon } from '../lib/photo.js';
 import { fold } from '../ui.js';
 
-const ICON = { cabane: '🛖', restaurant: '🍽', autre: '📍' };
 
 export async function placesView(main) {
   const st = { places: [], parkings: [], editing: null, placing: false, draft: null };
@@ -30,6 +29,7 @@ export async function placesView(main) {
   async function load() {
     const res = await api.get('/places');
     st.places = res.places.filter((p) => p.in_season !== false);
+    st.kinds = res.kinds ?? [];
     st.off = res.places.filter((p) => p.in_season === false);
     st.parkings = res.parkings;
     render();
@@ -41,7 +41,7 @@ export async function placesView(main) {
     const interactive = !st.placing;
     for (const p of st.parkings) layer.addLayer(L.marker(toLatLng(p.geom.coordinates), { icon: icon('P', 'parking'), interactive }).bindTooltip(escapeHtml(`Parking ${p.name} (${p.territory_name})`)));
     for (const p of st.places) {
-      const m = L.marker(toLatLng(p.geom.coordinates), { icon: icon(ICON[p.kind], st.editing === p.id ? 'selected' : ''), interactive }).bindTooltip(escapeHtml(p.name));
+      const m = L.marker(toLatLng(p.geom.coordinates), { icon: icon(kindIcon(p.kind), st.editing === p.id ? 'selected' : ''), interactive }).bindTooltip(escapeHtml(p.name));
       m.on('click', () => { st.editing = p.id; render(); });
       layer.addLayer(m);
     }
@@ -76,7 +76,7 @@ export async function placesView(main) {
     }
   }
 
-  const kindSelect = (value, onchange) => h('select', { onchange }, Object.entries(PLACE_KINDS).map(([k, l]) => h('option', { value: k, selected: k === value }, l)));
+  const kindSelect = (value, onchange) => pickKind(value, st.kinds, (k) => onchange({ target: { value: k } }), () => promptDialog('Nouveau type de lieu', 'Type (ex. salle des fêtes, carrefour)'));
   const placeHere = (target) => [
     h('button', { type: 'button', onclick: () => { st.placing = true; drawMap(); toast('Cliquez sur la carte à l’emplacement du lieu.'); } }, target ? 'Déplacer sur la carte' : 'Placer sur la carte'),
     h('button', { type: 'button', onclick: () => navigator.geolocation?.getCurrentPosition((p) => {
@@ -128,7 +128,7 @@ export async function placesView(main) {
           save(null, { name: draft.name, kind: draft.kind, geom: draft.geom, notes: draft.notes }, 'Lieu ajouté.');
         } },
         h('label', 'Nom', h('input', { required: true, maxlength: 200, value: draft.name, oninput: (e) => { draft.name = e.target.value; }, placeholder: 'ex. Cabane du Lampy' })),
-        h('label', 'Type', kindSelect(draft.kind, (e) => { draft.kind = e.target.value; })),
+        h('label', 'Type', kindSelect(draft.kind, (e) => { draft.kind = e.target.value; if (!st.kinds.includes(draft.kind)) { st.kinds = [...st.kinds, draft.kind]; render(); } })),
         h('label', 'Note (facultatif)', h('input', { maxlength: 500, value: draft.notes, oninput: (e) => { draft.notes = e.target.value; } })),
         h('div.buttons', placeHere(null)),
         h('p.small', draft.geom ? '✔ Emplacement choisi.' : 'Emplacement : à placer sur la carte.'),
@@ -153,15 +153,15 @@ export async function placesView(main) {
                     } }, 'Supprimer'),
                     h('button.link', { onclick: () => { st.editing = null; render(); } }, 'Fermer')))
               : h('div.place-row',
-                  p.has_photo ? photoThumb(h, p.id, p.photo_updated_at, p.name) : null,
                   h('button.link.place-name', { onclick: () => { st.editing = p.id; st.draft = null; map.setView(toLatLng(p.geom.coordinates), 15); render(); } },
-                    `${ICON[p.kind]} ${p.name}`, h('span.small.muted', ` · ${PLACE_KINDS[p.kind]}${p.notes ? ` · ${p.notes}` : ''}`)),
+                    `${kindIcon(p.kind)} ${p.name}`, h('span.small.muted', ` · ${kindLabel(p.kind)}${p.notes ? ` · ${p.notes}` : ''}`)),
+                  p.has_photo ? photoIcon(h, p.id, p.photo_updated_at, p.name) : null,
                   navIcon(p.geom.coordinates, p.name)))))
         : h('p.muted', 'Aucun lieu pour l’instant.'),
       st.parkings.length ? fold('Parkings des territoires', { key: 'places.parkings', extra: String(st.parkings.length) },
         h('ul.plain.small', st.parkings.map((p) => h('li', `🅿 ${p.name} · ${p.territory_name}`)))) : null,
       st.off?.length ? fold('Hors saison', { key: 'places.off', extra: String(st.off.length) },
-        h('ul.plain', st.off.map((p) => h('li.off-row', h('span', `${ICON[p.kind]} ${p.name}`), h('button.link', { onclick: () => seasonLink(p, true) }, 'Rattacher à la saison'))))) : null);
+        h('ul.plain', st.off.map((p) => h('li.off-row', h('span', `${kindIcon(p.kind)} ${p.name}`), h('button.link', { onclick: () => seasonLink(p, true) }, 'Rattacher à la saison'))))) : null);
     drawMap();
   }
 

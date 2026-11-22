@@ -38,7 +38,7 @@ export function profileView(main, { refreshMe }) {
   h('label', 'Nom', name),
   h('label', 'Marche jusqu’au poste', walk),
   h('div.row', h('label.check', car, 'Ma voiture'), h('label', 'Places libres', seats)),
-  h('label', 'Application de navigation (🚗)', nav),
+  h('label', 'Application de navigation (🧭)', nav),
   h('button.primary', { type: 'submit' }, 'Enregistrer')),
   h('section.card', fold('Mon compte', { key: 'profile.account', extra: u.email ?? '' },
     h('button', { onclick: async () => { await signOut(); location.hash = '#/'; location.reload(); } }, 'Se déconnecter'),

@@ -25,6 +25,10 @@ describe('lieux', () => {
     expect(seen.places.map((p: any) => p.name)).toEqual(['Chez Odette']);
     expect(seen.parkings).toMatchObject([{ name: 'Col', territory_name: 'Bois des lieux' }]);
     expect((await as('l_ch', 'POST', '/api/places', { name: 'X', geom: point(3.5, 44) })).status).toBe(403);
+    // Type saisi par le président : accepté et reproposé.
+    expect((await as(P, 'PATCH', `/api/places/${c.body.place.id}`, { kind: 'Salle des fêtes' })).body.place.kind).toBe('Salle des fêtes');
+    expect((await as(P, 'GET', '/api/places')).body.kinds).toEqual(['Salle des fêtes']);
+    expect((await as(P, 'PATCH', `/api/places/${c.body.place.id}`, { kind: 'x'.repeat(41) })).status).toBe(400);
     expect((await as(P, 'DELETE', `/api/places/${c.body.place.id}`)).status).toBe(204);
   });
 });

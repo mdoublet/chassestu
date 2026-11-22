@@ -12,7 +12,8 @@ export const placeRoutes = new Hono<AppEnv>();
 const PLACE_SELECT = `id, name, kind, notes, ${geomOut('geom')}, photo IS NOT NULL AS has_photo, photo_updated_at`;
 const placeFields = z.object({
   name: z.string().trim().min(1, 'Le nom du lieu est obligatoire.').max(200),
-  kind: z.enum(['cabane', 'restaurant', 'autre']),
+  // Types usuels (cabane, restaurant, parking, autre) ou type saisi par le président.
+  kind: z.string().trim().min(1).max(40),
   geom: pointSchema,
   notes: z.string().trim().max(500),
 });
@@ -29,7 +30,9 @@ placeRoutes.get('/places', (c) =>
         WHERE EXISTS (SELECT 1 FROM season_territories st WHERE st.territory_id = t.id AND st.season_id = app.current_season())
         ORDER BY lower(t.name), lower(p.name)`,
     );
-    return c.json({ places, parkings });
+    // Types déjà utilisés par l'association (proposés à côté des types usuels).
+    const kinds = (await tx.query<{ kind: string }>('SELECT DISTINCT kind FROM places ORDER BY kind')).map((r) => r.kind);
+    return c.json({ places, parkings, kinds });
   }),
 );
 
