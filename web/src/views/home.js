@@ -55,7 +55,7 @@ export async function homeView(main, { refreshMe, rerender }) {
     const tiles = [
       { href: '#/journees', icon: '🎯', title: 'Journées' },
       { href: '#/territoires', icon: '🗺️', title: 'Territoires' },
-      role === 'president' && { href: '#/lieux', icon: '📍', title: 'Lieux' },
+      { href: '#/lieux', icon: '📍', title: 'Lieux' },
       (role === 'president' || role === 'responsable') && { href: '#/membres', icon: '👥', title: 'Membres' },
       role === 'president' && { href: '#/parametres', icon: '⚙️', title: 'Paramètres' },
       { href: '#/profil', icon: '👤', title: 'Mon profil' },

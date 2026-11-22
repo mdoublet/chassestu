@@ -202,8 +202,8 @@ describe('menu principal', () => {
   it('entrées selon le rôle', () => {
     const labels = (who) => navItems(who).map((i) => i.label);
     expect(labels({ role: 'president', isSuperAdmin: true, hasTenant: true })).toEqual(['Journées', 'Territoires', 'Lieux', 'Membres', 'Paramètres', 'Mon profil', 'Administration']);
-    expect(labels({ role: 'responsable', isSuperAdmin: false, hasTenant: true })).toEqual(['Journées', 'Territoires', 'Membres', 'Mon profil']);
-    expect(labels({ role: 'chasseur', isSuperAdmin: false, hasTenant: true })).toEqual(['Journées', 'Territoires', 'Mon profil']);
+    expect(labels({ role: 'responsable', isSuperAdmin: false, hasTenant: true })).toEqual(['Journées', 'Territoires', 'Lieux', 'Membres', 'Mon profil']);
+    expect(labels({ role: 'chasseur', isSuperAdmin: false, hasTenant: true })).toEqual(['Journées', 'Territoires', 'Lieux', 'Mon profil']);
     expect(labels({ role: null, isSuperAdmin: false, hasTenant: false })).toEqual(['Accueil', 'Mon profil']);
   });
   it('entrée active, y compris pour les sous-pages', () => {

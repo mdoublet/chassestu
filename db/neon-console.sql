@@ -3852,4 +3852,45 @@ ALTER TABLE places ADD CONSTRAINT places_kind_check CHECK (length(btrim(kind)) B
 
 INSERT INTO schema_migrations (name, checksum) VALUES ('0025_types_de_lieux.sql', '42b6dccfeff5102729c18c5dad77490e6502a75244211cb3a95018c6b6ccc849');
 
+DO $guard$
+BEGIN
+  IF EXISTS (SELECT 1 FROM schema_migrations WHERE name = '0026_lieux_des_chasseurs.sql') THEN
+    RAISE EXCEPTION 'La migration % est déjà appliquée : rien à faire.', '0026_lieux_des_chasseurs.sql';
+  END IF;
+END $guard$;
+
+-- ==================== 0026_lieux_des_chasseurs.sql ====================
+-- Lieux ajoutés par les chasseurs : chacun peut enregistrer ses propres lieux
+-- (avec photo). Un lieu d'un chasseur est privé (visible de lui et du
+-- président) jusqu'à ce que le président le rende public pour tous.
+ALTER TABLE places ADD COLUMN created_by text REFERENCES users (id) ON DELETE SET NULL;
+ALTER TABLE places ADD COLUMN visibility text NOT NULL DEFAULT 'public' CHECK (visibility IN ('public', 'private'));
+
+-- Noms uniques parmi les lieux publics, et parmi les lieux privés d'un même auteur.
+ALTER TABLE places DROP CONSTRAINT places_tenant_id_name_key;
+CREATE UNIQUE INDEX places_public_name_key ON places (tenant_id, name) WHERE visibility = 'public';
+CREATE UNIQUE INDEX places_private_name_key ON places (tenant_id, created_by, name) WHERE visibility = 'private';
+
+DROP POLICY places_select ON places;
+DROP POLICY places_write ON places;
+-- Lecture : lieux publics ; les siens ; tous pour le président.
+CREATE POLICY places_select ON places FOR SELECT TO app_rls
+  USING (tenant_id = (SELECT app.current_tenant_id())
+         AND (visibility = 'public' OR created_by = (SELECT app.current_user_id()) OR app.has_role('president')));
+-- Création : tout membre ; un lieu public seulement par le président.
+CREATE POLICY places_insert ON places FOR INSERT TO app_rls
+  WITH CHECK (tenant_id = (SELECT app.current_tenant_id())
+              AND (app.has_role('president') OR (visibility = 'private' AND created_by = (SELECT app.current_user_id()))));
+-- Modification, suppression : le président ; l'auteur tant que son lieu est privé.
+CREATE POLICY places_update ON places FOR UPDATE TO app_rls
+  USING (tenant_id = (SELECT app.current_tenant_id())
+         AND (app.has_role('president') OR (visibility = 'private' AND created_by = (SELECT app.current_user_id()))))
+  WITH CHECK (tenant_id = (SELECT app.current_tenant_id())
+              AND (app.has_role('president') OR (visibility = 'private' AND created_by = (SELECT app.current_user_id()))));
+CREATE POLICY places_delete ON places FOR DELETE TO app_rls
+  USING (tenant_id = (SELECT app.current_tenant_id())
+         AND (app.has_role('president') OR (visibility = 'private' AND created_by = (SELECT app.current_user_id()))));
+
+INSERT INTO schema_migrations (name, checksum) VALUES ('0026_lieux_des_chasseurs.sql', '988b291d372dae97cb858e43da403d5a2230c4c8a776afd7315567fe6777469c');
+
 COMMIT;

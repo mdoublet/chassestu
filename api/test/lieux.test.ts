@@ -24,12 +24,39 @@ describe('lieux', () => {
     const seen = (await as('l_ch', 'GET', '/api/places')).body;
     expect(seen.places.map((p: any) => p.name)).toEqual(['Chez Odette']);
     expect(seen.parkings).toMatchObject([{ name: 'Col', territory_name: 'Bois des lieux' }]);
-    expect((await as('l_ch', 'POST', '/api/places', { name: 'X', geom: point(3.5, 44) })).status).toBe(403);
     // Type saisi par le président : accepté et reproposé.
     expect((await as(P, 'PATCH', `/api/places/${c.body.place.id}`, { kind: 'Salle des fêtes' })).body.place.kind).toBe('Salle des fêtes');
     expect((await as(P, 'GET', '/api/places')).body.kinds).toEqual(['Salle des fêtes']);
     expect((await as(P, 'PATCH', `/api/places/${c.body.place.id}`, { kind: 'x'.repeat(41) })).status).toBe(400);
     expect((await as(P, 'DELETE', `/api/places/${c.body.place.id}`)).status).toBe(204);
+  });
+});
+
+describe('lieux des chasseurs', () => {
+  it('un chasseur crée ses lieux privés ; le président les voit et les rend publics', async () => {
+    const inv = await as(P, 'POST', '/api/invitations', {});
+    await api('l_ch2', 'POST', `/api/invitation-links/${inv.body.invitation.url.split('/').pop()}/accept`);
+    const mine = await as('l_ch', 'POST', '/api/places', { name: 'Mon affût', kind: 'Affût', geom: point(3.5, 44.03) });
+    expect(mine.status).toBe(201);
+    expect(mine.body.place).toMatchObject({ visibility: 'private', mine: true });
+    const id = mine.body.place.id;
+    // Un autre chasseur ne le voit pas ; il peut prendre le même nom pour lui.
+    expect((await as('l_ch2', 'GET', '/api/places')).body.places.some((p: any) => p.id === id)).toBe(false);
+    expect((await as('l_ch2', 'POST', '/api/places', { name: 'Mon affût', geom: point(3.5, 44.04) })).status).toBe(201);
+    expect((await as('l_ch2', 'PATCH', `/api/places/${id}`, { notes: 'x' })).status).toBe(404);
+    // L'auteur modifie, ajoute une photo, mais ne publie pas lui-même.
+    expect((await as('l_ch', 'PATCH', `/api/places/${id}`, { notes: 'derrière le chêne' })).body.place.notes).toBe('derrière le chêne');
+    const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+    expect((await as('l_ch', 'PUT', `/api/places/${id}/photo`, { type: 'image/png', data: png })).body.place.has_photo).toBe(true);
+    expect((await as('l_ch', 'PATCH', `/api/places/${id}`, { visibility: 'public' })).status).toBe(403);
+    // Le président le voit, avec son auteur, et le publie.
+    const seen = (await as(P, 'GET', '/api/places')).body.places.find((p: any) => p.id === id);
+    expect(seen).toMatchObject({ visibility: 'private', mine: false, author: expect.any(String) });
+    expect((await as(P, 'PATCH', `/api/places/${id}`, { visibility: 'public' })).body.place.visibility).toBe('public');
+    // Public : visible de tous, plus modifiable par son auteur.
+    expect((await as('l_ch2', 'GET', '/api/places')).body.places.some((p: any) => p.id === id)).toBe(true);
+    expect((await as('l_ch', 'PATCH', `/api/places/${id}`, { notes: 'y' })).status).toBe(403);
+    expect((await as('l_ch', 'DELETE', `/api/places/${id}`)).status).toBe(403);
   });
 });
 

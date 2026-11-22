@@ -332,10 +332,14 @@ conducteur compris) ; un passager monte avec un conducteur qui va au même
 parking, sinon au plus proche (dépose en chemin) ; les chasseurs sans place et
 le nombre de voitures conseillé sont signalés à l'organisateur.
 
-*Lieux* (menu du président) : cabanes, restaurants et autres points placés
+*Lieux* (menu de tous les membres, gérés par le président) : cabanes, restaurants et autres points placés
 sur une carte, proposés avec les parkings des territoires pour le rendez-vous
 de la journée et pour le regroupement (« Immédiat » par défaut, ou à une
 heure précise ; « Autre : point sur la carte » en dépannage).
+Chaque chasseur y enregistre aussi ses propres lieux (affût, passage…),
+avec une photo prise ou importée depuis son téléphone : ils restent visibles
+de lui seul. Le président les voit dans « Proposés par les chasseurs » et
+peut les rendre publics ; un lieu public n'est plus modifiable que par lui.
 
 Conversion : chaque ancienne battue est devenue une journée de même
 identifiant (les anciens liens fonctionnent) ; l'accord de partage GPS est
