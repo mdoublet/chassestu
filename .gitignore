@@ -7,3 +7,4 @@ dist/
 .dev.vars
 *.log
 docs/*.mp4
+.neon
