@@ -1,0 +1,70 @@
+[
+ {
+  "id": "intro",
+  "text": "Bienvenue dans Chasses-tu ?, l'application des battues de votre association. Ce guide montre au président comment tout configurer, puis comment organiser une journée de chasse complète, avec une battue."
+ },
+ {
+  "id": "profil",
+  "text": "Commencez par votre profil. Ouvrez Mon profil. Indiquez votre nom, jusqu'où vous pouvez marcher pour rejoindre un poste, si vous venez avec votre voiture, et combien de places vous offrez. Ces informations servent à vous proposer des postes accessibles et à organiser le covoiturage. Enregistrez."
+ },
+ {
+  "id": "parametres",
+  "text": "Passons aux paramètres. La saison en cours est créée automatiquement. Vérifiez le nom de l'association, puis, dans Sécurité, la distance à respecter autour des habitations : cent cinquante mètres par défaut."
+ },
+ {
+  "id": "especes",
+  "text": "Dans Espèces et quotas, indiquez pour chaque espèce le nombre d'animaux autorisés sur la saison, et le nombre par défaut pour chaque battue. Ici, quarante sangliers sur la saison, quatre par battue, et douze chevreuils. Enregistrez. En bas, le récapitulatif suivra les prélèvements de toute la saison."
+ },
+ {
+  "id": "lieux",
+  "text": "Les lieux servent aux rendez-vous et aux regroupements. Ouvrez Lieux, puis Nouveau lieu. Donnez-lui un nom, par exemple la cabane de chasse, choisissez son type, placez-le sur la carte, puis ajoutez-le."
+ },
+ {
+  "id": "territoire",
+  "text": "Créons maintenant un territoire. Dans Territoires, cliquez sur Nouveau territoire et donnez-lui un nom. La carte s'ouvre sur la cabane. Dessinez le contour en cliquant sur chaque angle, puis sur le premier point pour le fermer. Les bâtiments de l'IGN sont importés automatiquement : la zone hachurée, trop proche d'une habitation, est non chassable."
+ },
+ {
+  "id": "postes",
+  "text": "Ajoutez un parking, puis vos postes, d'un clic sur la carte. Pour chaque nouveau poste, l'application trace le meilleur chemin à pied depuis le parking, par les routes et les sentiers. Vous pourrez l'ajuster en déplaçant ses points, ou le retracer."
+ },
+ {
+  "id": "fiche",
+  "text": "Un clic sur le crayon d'un poste ouvre sa fiche : son nom, sa ligne de postes, son parking, sa difficulté d'accès pour les chasseurs qui marchent peu, et ses consignes. Les listes repliables récapitulent les postes, avec un symbole pour le parking, le chemin et l'état du poste."
+ },
+ {
+  "id": "plans",
+  "text": "Un plan de chasse décrit une traque. Depuis la liste des territoires, ouvrez Plans de chasse, et créez un plan. Tracez la traque sur la carte, du départ vers la sortie."
+ },
+ {
+  "id": "grille",
+  "text": "Choisissez ensuite, pour chaque nombre de chasseurs, les postes à pourvoir. Ajoutez un effectif, cochez ses postes sur la grille ou sur la carte, et enregistrez. L'effectif suivant est prérempli à partir du précédent : il ne reste qu'à compléter."
+ },
+ {
+  "id": "journee",
+  "text": "Organisons une journée de chasse. Dans Journées, cliquez sur Nouvelle journée. Le brouillon reprend le rendez-vous de la dernière fois. Choisissez la date, l'heure et le lieu du rendez-vous, et proposez le déjeuner si besoin."
+ },
+ {
+  "id": "convocations",
+  "text": "Tous les membres sont convoqués, rangés en chasseurs et traqueurs. Décochez ceux qui ne viennent pas, puis cliquez sur Envoyer les convocations. Chacun est prévenu sur son téléphone, et répond présent ou absent."
+ },
+ {
+  "id": "jourj",
+  "text": "Le jour de la chasse, les réponses sont affichées. Cliquez sur Commencer la journée. Pour créer la battue, choisissez le territoire et le plan de chasse, puis cliquez sur Créer la battue."
+ },
+ {
+  "id": "placement",
+  "text": "Les postes du plan sont repris, et les chasseurs sont placés automatiquement : chacun change de poste d'une battue à l'autre, selon sa capacité de marche. Pour déplacer quelqu'un, touchez son nom, puis un poste. Désignez le responsable de la battue, puis publiez les postes : chaque chasseur reçoit son poste, l'itinéraire et le covoiturage."
+ },
+ {
+  "id": "traque",
+  "text": "Quand les chasseurs ont confirmé être en place, le responsable lance la battue depuis son téléphone, ou vous, à sa place. Un animal tué, blessé ou vu se déclare en quelques secondes, et tous les participants sont alertés."
+ },
+ {
+  "id": "fin",
+  "text": "À la fin de la traque, cliquez sur Fin de battue, puis annoncez le regroupement, à la cabane par exemple. Vous pouvez enchaîner une autre battue, ou terminer la journée."
+ },
+ {
+  "id": "recap",
+  "text": "Les animaux tués s'ajoutent au récapitulatif de la saison, dans les paramètres, avec le quota restant pour chaque espèce. Vous savez tout. Bonne chasse !"
+ }
+]

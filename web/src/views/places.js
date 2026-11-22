@@ -18,6 +18,7 @@ export async function placesView(main) {
   main.append(h('h1', 'Lieux'),
     h('div.places-layout', list, mapEl));
   const map = L.map(mapEl).setView([46.6, 2.4], 6);
+  if (import.meta.env.DEV) window.__placesMap = map; // tests et démonstrations (jamais en production)
   addBasemaps(map);
   const layer = L.featureGroup().addTo(map);
   let fitted = false;
