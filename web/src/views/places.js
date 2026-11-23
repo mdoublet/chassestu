@@ -1,5 +1,5 @@
-// Lieux de l'association : cabanes, restaurants, autres points de rendez-vous
-// ou de regroupement, en plus des parkings des territoires. Le président les
+// Lieux de l'association : cabanes, restaurants, parkings (d'où partent les
+// chemins des postes, communs à tous les territoires), autres points. Le président les
 // gère ; chaque chasseur enregistre ses propres lieux (privés), que le
 // président peut rendre publics.
 import L from '../map/leaflet.js';
@@ -16,7 +16,7 @@ import { state } from '../state.js';
 
 
 export async function placesView(main) {
-  const st = { places: [], parkings: [], editing: null, placing: false, draft: null };
+  const st = { places: [], editing: null, placing: false, draft: null };
   const isPres = state.role === 'president';
   const canEdit = (p) => isPres || (p.mine && p.visibility === 'private');
   const list = h('div');
@@ -36,7 +36,6 @@ export async function placesView(main) {
     st.places = res.places.filter((p) => p.in_season !== false);
     st.kinds = res.kinds ?? [];
     st.off = res.places.filter((p) => p.in_season === false);
-    st.parkings = res.parkings;
     render();
   }
 
@@ -44,10 +43,9 @@ export async function placesView(main) {
     layer.clearLayers();
     // Pendant le placement, les icônes laissent passer le clic jusqu'à la carte.
     const interactive = !st.placing;
-    for (const p of st.parkings) layer.addLayer(L.marker(toLatLng(p.geom.coordinates), { icon: icon('P', 'parking'), interactive }).bindTooltip(escapeHtml(`Parking ${p.name} (${p.territory_name})`)));
     for (const p of st.places) {
-      const cls = [st.editing === p.id ? 'selected' : '', p.visibility === 'private' ? 'private' : ''].join(' ');
-      const m = L.marker(toLatLng(p.geom.coordinates), { icon: icon(kindIcon(p.kind), cls), interactive }).bindTooltip(escapeHtml(p.visibility === 'private' ? `${p.name} (privé)` : p.name));
+      const cls = [st.editing === p.id ? 'selected' : '', p.visibility === 'private' ? 'private' : '', p.kind === 'parking' ? 'parking' : ''].join(' ');
+      const m = L.marker(toLatLng(p.geom.coordinates), { icon: icon(p.kind === 'parking' ? 'P' : kindIcon(p.kind), cls), interactive }).bindTooltip(escapeHtml(p.visibility === 'private' ? `${p.name} (privé)` : p.name));
       if (canEdit(p)) m.on('click', () => { st.editing = p.id; render(); });
       layer.addLayer(m);
     }
@@ -213,8 +211,6 @@ export async function placesView(main) {
       isPres && proposed.length ? fold('Proposés par les chasseurs', { key: 'places.proposed', open: true, extra: String(proposed.length) },
         h('p.small.muted', 'Visibles d’eux seuls tant que vous ne les rendez pas publics.'),
         placeList(proposed)) : null,
-      st.parkings.length ? fold('Parkings des territoires', { key: 'places.parkings', extra: String(st.parkings.length) },
-        h('ul.plain.small', st.parkings.map((p) => h('li', `🅿 ${p.name} · ${p.territory_name}`)))) : null,
       isPres && st.off?.length ? fold('Hors saison', { key: 'places.off', extra: String(st.off.length) },
         h('ul.plain', st.off.map((p) => h('li.off-row', h('span', `${kindIcon(p.kind)} ${p.name}`), h('button.link', { onclick: () => seasonLink(p, true) }, 'Rattacher à la saison'))))) : null);
     drawMap();

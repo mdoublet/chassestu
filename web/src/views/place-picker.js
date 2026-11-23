@@ -1,5 +1,5 @@
 // Choix d'un lieu : lieux de l'association (cabane, restaurant, autre) puis
-// parkings des territoires ; option « Autre » au besoin.
+// parkings (lieux de type « parking ») ; option « Autre » au besoin.
 import { h } from '../ui.js';
 
 // Types usuels ; le président peut en saisir d'autres (texte libre, reproposé ensuite).
@@ -28,10 +28,13 @@ export function kindSelect(value, usedKinds, onchange, ask) {
 }
 
 /** Liste des choix possibles : { key, label, name, point }. */
-export function placeChoices({ places = [], parkings = [] }) {
+export function placeChoices({ places = [] }) {
+  const usable = places.filter((p) => p.in_season !== false && p.visibility !== 'private');
+  const choice = (p) => ({ key: `place:${p.id}`, label: `${kindIcon(p.kind)} ${p.name}`, point: p.geom });
   return [
-    ...places.filter((p) => p.in_season !== false && p.visibility !== 'private').map((p) => ({ key: `place:${p.id}`, group: 'Lieux de l’association', label: `${kindIcon(p.kind)} ${p.name}`, name: p.name, point: p.geom })),
-    ...parkings.map((p) => ({ key: `parking:${p.id}`, group: 'Parkings', label: `🅿 ${p.name} (${p.territory_name})`, name: /^parking\b/i.test(p.name) ? p.name : `Parking ${p.name}`, point: p.geom })),
+    ...usable.filter((p) => p.kind !== 'parking').map((p) => ({ ...choice(p), group: 'Lieux de l’association', name: p.name })),
+    // Parkings : des lieux de type « parking », communs à tous les territoires.
+    ...usable.filter((p) => p.kind === 'parking').map((p) => ({ ...choice(p), group: 'Parkings', name: /^parking\b/i.test(p.name) ? p.name : `Parking ${p.name}` })),
   ];
 }
 

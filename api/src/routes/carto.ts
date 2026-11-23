@@ -23,6 +23,8 @@ interface FeatureKind {
   /** Colonnes renvoyées (hors géométries). */
   columns: string[];
   extraSelect?: string;
+  /** Objet de l'association (et non d'un territoire) : les parkings, rangés dans les lieux. */
+  tenantWide?: { where: string; insert: Record<string, string> };
   create: z.ZodType<Record<string, unknown>>;
   patch: z.ZodType<Record<string, unknown>>;
 }
@@ -71,10 +73,12 @@ const KINDS: Record<string, FeatureKind> = {
     patch: reserveFields.partial().strict(),
   },
   parkings: {
-    table: 'parkings',
+    // Parkings = lieux publics de type « parking », communs à tous les territoires.
+    table: 'places',
     label: 'Parking',
     geoms: { geom: 'Point' },
-    columns: ['id', 'territory_id', 'name', 'updated_at'],
+    columns: ['id', 'name', 'updated_at'],
+    tenantWide: { where: "kind = 'parking'", insert: { kind: "'parking'", visibility: "'public'", created_by: 'app.current_user_id()' } },
     create: parkingFields.strict(),
     patch: parkingFields.partial().strict(),
   },
@@ -100,6 +104,11 @@ const KINDS: Record<string, FeatureKind> = {
     patch: postFields.partial().strict(),
   },
 };
+
+function placeNameTaken(err: unknown): never {
+  if ((err as any)?.code === '23505') throw new AppError(409, 'PLACE_NAME_TAKEN', 'Un lieu porte déjà ce nom.');
+  throw err;
+}
 
 function selectList(kind: FeatureKind): string {
   return [...kind.columns, ...Object.keys(kind.geoms).map((g) => geomOut(g)), kind.extraSelect]
@@ -149,7 +158,7 @@ cartoRoutes.get('/territories', (c) =>
               (SELECT count(*)::int FROM posts p WHERE p.territory_id = t.id) AS posts_count,
               (SELECT count(*)::int FROM posts p WHERE p.territory_id = t.id AND p.parking_id IS NULL) AS posts_without_parking,
               (SELECT count(*)::int FROM posts p WHERE p.territory_id = t.id AND p.invalid_reason IS NOT NULL) AS invalid_posts,
-              (SELECT count(*)::int FROM parkings x WHERE x.territory_id = t.id) AS parkings_count,
+              (SELECT count(DISTINCT p.parking_id)::int FROM posts p WHERE p.territory_id = t.id) AS parkings_count,
               (SELECT count(*)::int FROM reserve_zones x WHERE x.territory_id = t.id) AS reserves_count,
               (SELECT count(*)::int FROM hunt_plans x WHERE x.territory_id = t.id
                  AND EXISTS (SELECT 1 FROM season_hunt_plans sp WHERE sp.hunt_plan_id = x.id AND sp.season_id = app.current_season())) AS plans_count,
@@ -168,23 +177,41 @@ cartoRoutes.get('/territories', (c) =>
  */
 cartoRoutes.get('/territories/overview', (c) =>
   tenantTx(c, null, async (tx) => {
-    const [territories, reserves, posts, exclusions] = await Promise.all([
+    const [territories, reserves, posts, exclusions, places] = await Promise.all([
       tx.query(`SELECT id, name, ${geomOut('geom')} FROM territories ORDER BY name`),
       tx.query(`SELECT territory_id, name, ${geomOut('geom')} FROM reserve_zones`),
       tx.query(`SELECT id, territory_id, number, name, active, invalid_reason, ${geomOut('geom')} FROM posts ORDER BY number`),
       tx.query(`SELECT territory_id, ${geomOut('geom')} FROM exclusion_zones WHERE geom IS NOT NULL`),
+      loadPlaces(tx, null),
     ]);
-    return c.json({ territories, reserves, posts, exclusions });
+    return c.json({ territories, reserves, posts, exclusions, places });
   }),
 );
+
+/**
+ * Lieux publics de l'association (parkings compris) de la saison en cours,
+ * plus les parkings des postes du territoire, même hors saison.
+ */
+export async function loadPlaces(tx: Tx, territoryId: string | null) {
+  return tx.query<{ id: string; kind: string }>(
+    `SELECT id, name, kind, ${geomOut('geom')}, updated_at FROM places
+      WHERE visibility = 'public'
+        AND (EXISTS (SELECT 1 FROM season_places sp WHERE sp.place_id = places.id AND sp.season_id = app.current_season())
+             OR id IN (SELECT parking_id FROM posts WHERE territory_id = $1))
+      ORDER BY kind <> 'parking', lower(name)`,
+    [territoryId],
+  );
+}
 
 async function loadTerritory(tx: Tx, id: string) {
   const territory = notFoundIfNull(
     await tx.maybeOne<Record<string, any>>(`SELECT ${TERRITORY_SELECT} FROM territories WHERE id = $1`, [id]),
     'Territoire',
   );
-  const [reserves, parkings, posts] = await Promise.all(
-    (['reserves', 'parkings', 'posts'] as const).map((slug) =>
+  const places = await loadPlaces(tx, id);
+  const parkings = places.filter((p) => p.kind === 'parking');
+  const [reserves, posts] = await Promise.all(
+    (['reserves', 'posts'] as const).map((slug) =>
       tx.query(
         `SELECT ${selectList(KINDS[slug])} FROM ${KINDS[slug].table} WHERE territory_id = $1
           ORDER BY ${slug === 'posts' ? 'number' : 'name'}`,
@@ -208,7 +235,7 @@ async function loadTerritory(tx: Tx, id: string) {
     [id],
   );
   const lines = await tx.query('SELECT id, name FROM post_lines WHERE territory_id = $1 ORDER BY lower(name)', [id]);
-  return { territory, reserves, parkings, posts, dwellings, exclusion, lines };
+  return { territory, reserves, parkings, places, posts, dwellings, exclusion, lines };
 }
 
 /** Importe les bâtiments si besoin, sans faire échouer l'action en cours (service IGN capricieux). */
@@ -296,7 +323,7 @@ cartoRoutes.get('/territories/:id/export', (c) => {
         ? [feature(exclusion.geom, { kind: 'zone_non_chassable', distance_m: exclusion.buffer_distance_m, area_ha: exclusion.area_ha })]
         : []),
       ...reserves.map((r) => feature(r.geom, { kind: 'reserve', name: r.name, reason: r.reason })),
-      ...parkings.map((p) => feature(p.geom, { kind: 'parking', id: p.id, name: p.name })),
+      ...parkings.filter((p: any) => posts.some((x) => x.parking_id === p.id)).map((p: any) => feature(p.geom, { kind: 'parking', id: p.id, name: p.name })),
       ...posts.map((p) =>
         feature(p.geom, { kind: 'poste', number: p.number, name: p.name, parking_id: p.parking_id, instructions: p.instructions, special_instructions: p.special_instructions, active: p.active }),
       ),
@@ -360,6 +387,15 @@ cartoRoutes.post('/territories/:id/:kind{reserves|parkings|posts}', async (c) =>
   const body = kind.create.parse(await c.req.json());
   return tenantTx(c, ['president'], async (tx) => {
     await validateGeoms(tx, kind.geoms, body, kind.label);
+    if (kind.tenantWide) {
+      // Parking : un lieu de l'association, sans territoire.
+      const { cols, exprs, params } = sqlValues(body, kind.geoms, 0);
+      for (const [col, expr] of Object.entries(kind.tenantWide.insert)) { cols.push(col); exprs.push(expr); }
+      const item = await tx.one(
+        `INSERT INTO ${kind.table} (${cols.join(', ')}) VALUES (${exprs.join(', ')}) RETURNING ${selectList(kind)}`, params,
+      ).catch(placeNameTaken);
+      return c.json({ item }, 201);
+    }
     const { cols, exprs, params } = sqlValues(body, kind.geoms, 1);
     cols.unshift('territory_id');
     exprs.unshift('$1');
@@ -387,9 +423,9 @@ cartoRoutes.patch('/:kind{reserves|parkings|posts}/:id', async (c) => {
     const item = notFoundIfNull(
       await tx.maybeOne(
         `UPDATE ${kind.table} SET ${cols.map((col, i) => `${col} = ${exprs[i]}`).join(', ')}
-          WHERE id = $1 RETURNING ${selectList(kind)}`,
+          WHERE id = $1 ${kind.tenantWide ? `AND ${kind.tenantWide.where}` : ''} RETURNING ${selectList(kind)}`,
         [id, ...params],
-      ),
+      ).catch(placeNameTaken),
       kind.label,
     );
     return c.json({ item });
@@ -401,7 +437,7 @@ cartoRoutes.delete('/:kind{reserves|parkings|posts}/:id', (c) => {
   const id = parseId(c.req.param('id'));
   return tenantTx(c, ['president'], async (tx) => {
     const item = notFoundIfNull(
-      await tx.maybeOne(`DELETE FROM ${kind.table} WHERE id = $1 RETURNING ${selectList(kind)}`, [id]),
+      await tx.maybeOne(`DELETE FROM ${kind.table} WHERE id = $1 ${kind.tenantWide ? `AND ${kind.tenantWide.where}` : ''} RETURNING ${selectList(kind)}`, [id]),
       kind.label,
     );
     // L'élément supprimé est renvoyé pour permettre l'annulation côté éditeur.

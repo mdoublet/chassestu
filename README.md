@@ -333,13 +333,20 @@ parking, sinon au plus proche (dépose en chemin) ; les chasseurs sans place et
 le nombre de voitures conseillé sont signalés à l'organisateur.
 
 *Lieux* (menu de tous les membres, gérés par le président) : cabanes, restaurants et autres points placés
-sur une carte, proposés avec les parkings des territoires pour le rendez-vous
+sur une carte, proposés (parkings compris) pour le rendez-vous
 de la journée et pour le regroupement (« Immédiat » par défaut, ou à une
 heure précise ; « Autre : point sur la carte » en dépannage).
 Chaque chasseur y enregistre aussi ses propres lieux (affût, passage…),
 avec une photo prise ou importée depuis son téléphone : ils restent visibles
 de lui seul. Le président les voit dans « Proposés par les chasseurs » et
 peut les rendre publics ; un lieu public n'est plus modifiable que par lui.
+
+Parkings : des lieux de type « Parking », communs à tous les territoires (un
+même parking peut desservir les postes de plusieurs territoires). On les crée
+depuis Lieux ou avec « + Parking » dans l'éditeur ; tous les lieux s'affichent
+sur les cartes des territoires (y compris pendant le tracé d'un nouveau
+territoire) et des plans de chasse. Un chemin d'accès qui part à moins de
+150 m d'un parking public y rattache le poste automatiquement.
 
 Photos : rangées dans Neon Object Storage (bucket `uploads`, clé
 `<association>/places/<lieu>/<version>.jpg`), la base ne garde que la clé.

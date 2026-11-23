@@ -15,7 +15,7 @@ const SPATIAL_MESSAGES: Record<string, string> = {
   POST_OUTSIDE_TERRITORY: 'Le poste doit être placé à l’intérieur du territoire.',
   POST_OUTSIDE_BUILDINGS: 'Les bâtiments n’ont pas été importés à cet endroit : cliquez sur « Actualiser les bâtiments » avant de poster hors du territoire.',
   POST_IN_RESERVE: 'Le poste ne peut pas être placé dans une zone de réserve.',
-  PARKING_OTHER_TERRITORY: 'Le parking choisi appartient à un autre territoire.',
+  PARKING_NOT_A_PARKING: 'Le parking choisi doit être un lieu public de type « Parking ».',
   RESERVE_OUTSIDE_TERRITORY: 'La zone de réserve doit recouper le territoire.',
 };
 

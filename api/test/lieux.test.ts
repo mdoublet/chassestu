@@ -16,17 +16,18 @@ beforeAll(async () => {
 
 describe('lieux', () => {
   it('le président crée, modifie et supprime ; les membres voient lieux et parkings', async () => {
+    // Les parkings sont des lieux (type « parking »), communs aux territoires.
     const c = await as(P, 'POST', '/api/places', { name: 'Cabane du Lampy', kind: 'cabane', geom: point(3.5, 44.01) });
     expect(c.status).toBe(201);
     expect(c.body.place).toMatchObject({ name: 'Cabane du Lampy', kind: 'cabane', geom: { type: 'Point' } });
     expect((await as(P, 'POST', '/api/places', { name: 'Cabane du Lampy', geom: point(3.5, 44) })).status).toBe(409); // nom en double
     expect((await as(P, 'PATCH', `/api/places/${c.body.place.id}`, { kind: 'restaurant', name: 'Chez Odette' })).body.place).toMatchObject({ kind: 'restaurant', name: 'Chez Odette' });
     const seen = (await as('l_ch', 'GET', '/api/places')).body;
-    expect(seen.places.map((p: any) => p.name)).toEqual(['Chez Odette']);
-    expect(seen.parkings).toMatchObject([{ name: 'Col', territory_name: 'Bois des lieux' }]);
+    expect(seen.places.map((p: any) => [p.name, p.kind])).toEqual([['Col', 'parking'], ['Chez Odette', 'restaurant']]);
+    expect(seen.parkings).toBeUndefined();
     // Type saisi par le président : accepté et reproposé.
     expect((await as(P, 'PATCH', `/api/places/${c.body.place.id}`, { kind: 'Salle des fêtes' })).body.place.kind).toBe('Salle des fêtes');
-    expect((await as(P, 'GET', '/api/places')).body.kinds).toEqual(['Salle des fêtes']);
+    expect((await as(P, 'GET', '/api/places')).body.kinds).toEqual(['Salle des fêtes', 'parking']);
     expect((await as(P, 'PATCH', `/api/places/${c.body.place.id}`, { kind: 'x'.repeat(41) })).status).toBe(400);
     expect((await as(P, 'DELETE', `/api/places/${c.body.place.id}`)).status).toBe(204);
   });
@@ -74,6 +75,34 @@ describe('lieux des chasseurs', () => {
     expect((await as('l_ch2', 'GET', '/api/places')).body.places.some((p: any) => p.id === id)).toBe(true);
     expect((await as('l_ch', 'PATCH', `/api/places/${id}`, { notes: 'y' })).status).toBe(403);
     expect((await as('l_ch', 'DELETE', `/api/places/${id}`)).status).toBe(403);
+  });
+});
+
+describe('parkings = lieux communs aux territoires', () => {
+  it('un parking sert à deux territoires ; un lieu privé ou non-parking est refusé', async () => {
+    const t1 = (await as(P, 'POST', '/api/territories', { name: 'Bois A', geom: square(3.6, 44, 0.01) })).body.territory.id;
+    const t2 = (await as(P, 'POST', '/api/territories', { name: 'Bois B', geom: square(3.63, 44, 0.01) })).body.territory.id;
+    // Créé depuis l'éditeur du territoire A : c'est un lieu de l'association.
+    const pk = (await as(P, 'POST', `/api/territories/${t1}/parkings`, { name: 'Carrefour', geom: point(3.615, 44) })).body.item;
+    expect((await as(P, 'GET', '/api/places')).body.places.find((p: any) => p.id === pk.id)).toMatchObject({ kind: 'parking', visibility: 'public' });
+    expect((await as(P, 'GET', `/api/territories/${t2}`)).body.parkings.map((p: any) => p.id)).toContain(pk.id);
+    // Lieux non-parkings aussi affichés sur la carte du territoire.
+    expect((await as(P, 'GET', `/api/territories/${t2}`)).body.places.some((p: any) => p.kind !== 'parking')).toBe(true);
+    const post = await as(P, 'POST', `/api/territories/${t2}/posts`, { geom: point(3.63, 44), parking_id: pk.id });
+    expect(post.status).toBe(201);
+    expect((await as(P, 'GET', '/api/territories')).body.territories.find((t: any) => t.id === t2).parkings_count).toBe(1);
+    // Chemin qui part d'un parking d'un autre territoire : rattaché automatiquement.
+    const auto = await as(P, 'POST', `/api/territories/${t2}/posts`, { geom: point(3.632, 44.001), access_path: { type: 'LineString', coordinates: [[3.6151, 44], [3.632, 44.001]] } });
+    expect(auto.body.item.parking_id).toBe(pk.id);
+    const resto = (await as(P, 'POST', '/api/places', { name: 'Resto B', kind: 'restaurant', geom: point(3.62, 44) })).body.place;
+    expect((await as(P, 'POST', `/api/territories/${t2}/posts`, { geom: point(3.631, 44.002), parking_id: resto.id })).status).toBe(422);
+    const privé = (await as('l_ch', 'POST', '/api/places', { name: 'Mon parking', kind: 'parking', geom: point(3.62, 44.001) })).body.place;
+    expect((await as(P, 'POST', `/api/territories/${t2}/posts`, { geom: point(3.631, 44.003), parking_id: privé.id })).status).toBe(422);
+    // Nom déjà pris par un lieu : 409.
+    expect((await as(P, 'POST', `/api/territories/${t1}/parkings`, { name: 'Resto B', geom: point(3.61, 44) })).status).toBe(409);
+    // Supprimer le lieu : les postes n'ont plus de parking.
+    expect((await as(P, 'DELETE', `/api/places/${pk.id}`)).status).toBe(204);
+    expect((await as(P, 'GET', `/api/territories/${t2}`)).body.posts.every((p: any) => p.parking_id === null)).toBe(true);
   });
 });
 

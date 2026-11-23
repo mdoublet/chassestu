@@ -8,7 +8,8 @@ import L from '../map/leaflet.js';
 import '@geoman-io/leaflet-geoman-free';
 import '@geoman-io/leaflet-geoman-free/dist/leaflet-geoman.css';
 import { addBasemaps } from '../map/basemap.js';
-import { escapeHtml, toLatLng, ensureHatchPattern, postIcon, traqueIcon, traqueLayers } from '../map/shapes.js';
+import { escapeHtml, toLatLng, ensureHatchPattern, postIcon, traqueIcon, traqueLayers, placeMarker } from '../map/shapes.js';
+import { kindIcon } from './place-picker.js';
 import { api } from '../api.js';
 import { state } from '../state.js';
 import { h, fill, toast, errorMessage, confirmDialog, promptDialog, fold } from '../ui.js';
@@ -118,6 +119,8 @@ export async function plansView(main, territoryId, huntPlanId) {
     layers.base.addLayer(tLayer);
     if (exclusion?.geom) layers.base.addLayer(L.geoJSON(exclusion.geom, { style: { color: '#d9480f', weight: 1, fillOpacity: 1, className: 'exclusion-shape' }, interactive: false }));
     for (const r of reserves) layers.base.addLayer(L.geoJSON(r.geom, { style: { color: '#c92a2a', weight: 1, fillOpacity: 1, className: 'reserve-shape' }, interactive: false }));
+    // Lieux de l'association, parkings compris (repères).
+    for (const p of ps.data.places ?? []) layers.base.addLayer(placeMarker(p, kindIcon(p.kind)));
     for (const p of posts()) {
       const m = L.marker(toLatLng(p.geom.coordinates), { icon: postIcon(p.number), title: `Poste ${p.number}` });
       m.bindTooltip(escapeHtml(`Poste ${p.number}${p.name ? ` · ${p.name}` : ''}${!selectable(p) ? ' — indisponible' : ''}`), { direction: 'top', offset: [0, -14] });

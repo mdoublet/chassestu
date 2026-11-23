@@ -67,7 +67,7 @@ async function dayConsole(main, dayId) {
   const dv = {
     detail: null, hunt: null, territory: null, territoryId: null, carpool: null,
     members: [], territories: [], allowDouble: false, placing: null,
-    picked: null, places: { places: [], parkings: [] }, regroup: { choice: null, place: '', time: '', point: null, when: 'now' }, newBattue: { territory_id: null, hunt_plan_id: undefined, excluded: new Set() },
+    picked: null, places: { places: [] }, regroup: { choice: null, place: '', time: '', point: null, when: 'now' }, newBattue: { territory_id: null, hunt_plan_id: undefined, excluded: new Set() },
     huntPlans: new Map(), // territoire → plans de chasse
     showPostNames: (() => { try { return localStorage.getItem(NAMES_KEY) !== '0'; } catch { return true; } })(),
   };

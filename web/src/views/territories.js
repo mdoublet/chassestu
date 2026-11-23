@@ -3,7 +3,8 @@
 // carte du territoire (« Ouvrir la carte »).
 import L from '../map/leaflet.js';
 import { addBasemaps } from '../map/basemap.js';
-import { toLatLng, escapeHtml, postIcon, ensureHatchPattern } from '../map/shapes.js';
+import { toLatLng, escapeHtml, postIcon, ensureHatchPattern, placeMarker } from '../map/shapes.js';
+import { kindIcon } from './place-picker.js';
 import { api } from '../api.js';
 import { state } from '../state.js';
 import { h, fill, toast, errorMessage, confirmDialog, fold } from '../ui.js';
@@ -72,6 +73,8 @@ export async function territoriesView(main) {
     for (const r of (overview?.reserves ?? []).filter((x) => visible(x.territory_id))) {
       layer.addLayer(L.geoJSON(r.geom, { style: { color: '#c92a2a', weight: 1, fillOpacity: 0.6, className: 'reserve-shape' }, interactive: false }));
     }
+    // Lieux de l'association, parkings compris : communs à tous les territoires.
+    for (const p of overview?.places ?? []) layer.addLayer(placeMarker(p, kindIcon(p.kind)));
     for (const p of (overview?.posts ?? []).filter((x) => visible(x.territory_id))) {
       const t = territories.find((x) => x.id === p.territory_id);
       layer.addLayer(L.marker(toLatLng(p.geom.coordinates), { icon: postIcon(p.number, p.invalid_reason ? 'invalid-static' : '') })
@@ -109,7 +112,7 @@ export async function territoriesView(main) {
           if (await confirmDialog('Retirer de la saison', `Retirer « ${t.name} » de la saison en cours ? Il n’est pas supprimé et peut être rattaché à nouveau.`, 'Retirer')) season(t, false);
         } }, '📤') : null,
         canEdit ? h('button.icon.danger', { title: 'Supprimer le territoire', 'aria-label': 'Supprimer le territoire', onclick: async () => {
-          if (!(await confirmDialog('Supprimer le territoire', `Supprimer « ${t.name} » avec ses réserves, parkings, postes, chemins et plans ? Cette suppression ne peut pas être annulée.`, 'Supprimer', true))) return;
+          if (!(await confirmDialog('Supprimer le territoire', `Supprimer « ${t.name} » avec ses réserves, postes, chemins et plans (les parkings restent dans les lieux) ? Cette suppression ne peut pas être annulée.`, 'Supprimer', true))) return;
           try {
             await api.del(`/territories/${t.id}`);
             toast('Territoire supprimé.');

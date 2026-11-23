@@ -6,7 +6,8 @@ import L from '../map/leaflet.js';
 import '@geoman-io/leaflet-geoman-free';
 import '@geoman-io/leaflet-geoman-free/dist/leaflet-geoman.css';
 import { addBasemaps } from '../map/basemap.js';
-import { escapeHtml, toLatLng, ensureHatchPattern, postIcon, parkingIcon } from '../map/shapes.js';
+import { escapeHtml, toLatLng, ensureHatchPattern, postIcon, parkingIcon, placeMarker } from '../map/shapes.js';
+import { kindIcon } from './place-picker.js';
 import { api } from '../api.js';
 import { state } from '../state.js';
 import { h, fill, toast, errorMessage, confirmDialog, promptDialog, modal, fold } from '../ui.js';
@@ -132,6 +133,7 @@ export async function editorView(main, start) {
     dwellings: L.featureGroup().addTo(map),
     reserves: L.featureGroup().addTo(map),
     paths: L.featureGroup().addTo(map),
+    places: L.featureGroup().addTo(map), // lieux de l'association (repères)
     parkings: L.featureGroup().addTo(map),
     posts: L.featureGroup().addTo(map),
   };
@@ -204,6 +206,19 @@ export async function editorView(main, start) {
     const layers = ed.territories.map((t) => L.geoJSON(t.geom));
     if (!layers.length) return;
     map.fitBounds(L.featureGroup(layers).getBounds(), { padding: [30, 30] });
+  }
+
+  /**
+   * Lieux de l'association (cabanes, restaurants…), affichés comme repères,
+   * y compris pendant le tracé d'un nouveau territoire. Les parkings sont
+   * modifiables ici quand un territoire est ouvert (dessinés plus bas).
+   */
+  function renderPlaces() {
+    const places = ed.data?.places ?? ed.places ?? [];
+    for (const p of places) {
+      if (ed.data && p.kind === 'parking') continue;
+      groups.places.addLayer(placeMarker(p, kindIcon(p.kind)));
+    }
   }
 
   /** Autres territoires : grisés, non modifiables ; un clic les rend actifs. */
@@ -358,6 +373,7 @@ export async function editorView(main, start) {
     for (const g of Object.values(groups)) g.clearLayers();
     renderPanel();
     renderOthers();
+    renderPlaces();
     if (!ed.data) return;
     const { territory, reserves, parkings, posts, dwellings = [], exclusion } = ed.data;
 
@@ -917,7 +933,7 @@ export async function editorView(main, start) {
         canEdit
           ? h('button.danger', {
               onclick: async () => {
-                if (!(await confirmDialog('Supprimer le territoire', `Supprimer « ${t.name} » avec ses réserves, parkings, postes et chemins ? Cette suppression ne peut pas être annulée.`, 'Supprimer', true))) return;
+                if (!(await confirmDialog('Supprimer le territoire', `Supprimer « ${t.name} » avec ses réserves, postes et chemins (les parkings restent dans les lieux) ? Cette suppression ne peut pas être annulée.`, 'Supprimer', true))) return;
                 try {
                   await api.del(itemPath('territories', t.id));
                   history.clear();
@@ -1161,7 +1177,7 @@ export async function editorView(main, start) {
     if (kind === 'parkings') {
       const linked = ed.data.posts.filter((p) => p.parking_id === item.id);
       return confirmDelete('parkings', item, 'Supprimer le parking',
-        `Supprimer le parking « ${item.name} » ?${linked.length ? ` Les postes ${linked.map((p) => p.number).join(', ')} n’auront plus de parking associé.` : ''} (Annulable avec ↶.)`);
+        `Supprimer le parking « ${item.name} » des lieux de l’association (pour tous les territoires) ?${linked.length ? ` Les postes ${linked.map((p) => p.number).join(', ')} n’auront plus de parking associé.` : ''} (Annulable avec ↶.)`);
     }
     if (kind === 'reserves') return confirmDelete('reserves', item, 'Supprimer la réserve', `Supprimer la réserve « ${item.name || 'Réserve'} » ? (Annulable avec ↶.)`);
     return confirmDelete(kind, item, 'Supprimer', 'Supprimer cet élément ? (Annulable avec ↶.)');
@@ -1354,8 +1370,10 @@ export async function editorView(main, start) {
       // sinon d'un lieu, d'un parking ou d'un territoire existant.
       render();
       try {
-        const [{ places, parkings }, { territories }] = await Promise.all([api.get('/places'), api.get('/territories')]);
-        const center = startCenter({ places, parkings, territories });
+        const [{ places }, { territories }] = await Promise.all([api.get('/places'), api.get('/territories')]);
+        ed.places = places.filter((p) => p.visibility !== 'private' && p.in_season !== false);
+        render();
+        const center = startCenter({ places: ed.places, territories });
         if (center) map.setView(center, CREATE_ZOOM, { animate: false });
       } catch { /* cadrage par défaut */ }
       if (canEdit) setTimeout(newTerritory, 300);

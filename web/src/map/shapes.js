@@ -51,6 +51,8 @@ export function ensureHatchPattern() {
 export function postIcon(number, cls = '') {
   return L.divIcon({ className: `post-icon ${cls}`, html: `<span>${Number(number) || '+'}</span>`, iconSize: [30, 30], iconAnchor: [15, 15] });
 }
+/** Lieu de l'association (cabane, restaurant…) : icône du type, non modifiable ici. */
+export const placeIcon = (symbol, cls = '') => L.divIcon({ className: `place-icon ${cls}`, html: `<span>${symbol}</span>`, iconSize: [26, 26], iconAnchor: [13, 13] });
 export const parkingIcon = (cls = '') => L.divIcon({ className: `parking-icon ${cls}`, html: '<span>P</span>', iconSize: [26, 26], iconAnchor: [13, 13] });
 
 /** Icônes de départ (D) et de sortie (S) d'une traque. */
@@ -80,4 +82,15 @@ export function traqueLayers(hp, { draggable = false, onMove = null } = {}) {
     out.push(m);
   }
   return out;
+}
+
+/**
+ * Repère non modifiable d'un lieu de l'association (parking compris) : icône
+ * « P » pour un parking, sinon `symbol` (icône du type), avec son nom au survol.
+ */
+export function placeMarker(p, symbol) {
+  return L.marker(toLatLng(p.geom.coordinates), {
+    icon: p.kind === 'parking' ? parkingIcon('other') : placeIcon(symbol, 'other'),
+    keyboard: false, bubblingMouseEvents: true,
+  }).bindTooltip(escapeHtml(p.name), { direction: 'top', offset: [0, -12] });
 }

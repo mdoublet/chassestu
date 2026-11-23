@@ -86,7 +86,7 @@ describe('isolation entre tenants (RLS)', () => {
   });
 
   it('couvre bien les tables métier attendues', () => {
-    for (const t of ['memberships', 'invitations', 'audit_log', 'territories', 'reserve_zones', 'parkings', 'posts', 'dwellings', 'exclusion_zones', 'coverage_plans', 'coverage_plan_posts', 'hunts', 'hunt_participants', 'hunt_posts', 'hunt_assignments', 'hunt_species', 'hunt_harvests', 'hunt_positions', 'hunt_days', 'day_participants', 'places']) {
+    for (const t of ['memberships', 'invitations', 'audit_log', 'territories', 'reserve_zones', 'posts', 'dwellings', 'exclusion_zones', 'coverage_plans', 'coverage_plan_posts', 'hunts', 'hunt_participants', 'hunt_posts', 'hunt_assignments', 'hunt_species', 'hunt_harvests', 'hunt_positions', 'hunt_days', 'day_participants', 'places']) {
       expect(tenantTables).toContain(t);
     }
   });
@@ -147,6 +147,8 @@ describe('isolation entre tenants (RLS)', () => {
       if ('id' in row && typeof row.id === 'string') row.id = crypto.randomUUID();
       if ('token_hash' in row) row.token_hash = `x${Date.now()}`;
       if ('number' in row) row.number = 900;
+      // Le parking (lieu de A) serait refusé par le contrôle du poste avant la RLS.
+      if (table === 'posts') Object.assign(row, { parking_id: null, access_path: null });
       const cols = Object.keys(row);
       await expect(
         asApp('alice', tenantA, (tx) =>

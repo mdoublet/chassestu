@@ -1,5 +1,5 @@
-// Lieux de l'association (cabane, restaurant, autre) et, pour les choisir
-// comme rendez-vous ou regroupement, les parkings de tous les territoires.
+// Lieux de l'association (cabane, restaurant, parking, autre) : rendez-vous,
+// regroupement, et parkings d'où partent les chemins des postes.
 import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import type { AppEnv } from '../env';
@@ -34,21 +34,15 @@ const placeFields = z.object({
   notes: z.string().trim().max(500),
 });
 
-/** Lieux et parkings (tous les membres). */
+/** Lieux, parkings compris (tous les membres). */
 placeRoutes.get('/places', (c) =>
   tenantTx(c, null, async (tx) => {
     const places = await tx.query(`SELECT ${PLACE_SELECT},
         EXISTS (SELECT 1 FROM season_places sp WHERE sp.place_id = places.id AND sp.season_id = app.current_season()) AS in_season
       FROM places ORDER BY kind, lower(name)`);
-    const parkings = await tx.query(
-      `SELECT p.id, p.name, t.name AS territory_name, ${geomOut('p.geom', 'geom')}
-         FROM parkings p JOIN territories t ON t.id = p.territory_id
-        WHERE EXISTS (SELECT 1 FROM season_territories st WHERE st.territory_id = t.id AND st.season_id = app.current_season())
-        ORDER BY lower(t.name), lower(p.name)`,
-    );
     // Types déjà utilisés par l'association (proposés à côté des types usuels).
     const kinds = (await tx.query<{ kind: string }>('SELECT DISTINCT kind FROM places ORDER BY kind')).map((r) => r.kind);
-    return c.json({ places, parkings, kinds });
+    return c.json({ places, kinds });
   }),
 );
 
