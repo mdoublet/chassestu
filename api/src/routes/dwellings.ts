@@ -7,7 +7,7 @@ import { assertValidGeometry, geomOut, geomParam, pointSchema, polygonSchema } f
 
 export const dwellingRoutes = new Hono<AppEnv>();
 
-export const DWELLING_SELECT = `id, territory_id, source, source_id, ${geomOut('geom')}, usage,
+export const DWELLING_SELECT = `id, territory_id, source, source_id, name, ${geomOut('geom')}, usage,
   likely_non_residential, comment, ignored, ignored_reason, ignored_at, missing_since`;
 
 export interface ImportReport {
@@ -118,6 +118,7 @@ const manualSchema = z
   .object({
     geom: z.union([pointSchema, polygonSchema]),
     comment: z.string().trim().max(1000).default(''),
+    name: z.string().trim().max(100).default(''),
   })
   .strict();
 
@@ -128,9 +129,9 @@ dwellingRoutes.post('/territories/:id/dwellings', async (c) => {
   return tenantTx(c, ['president'], async (tx) => {
     if (body.geom.type === 'Polygon') await assertValidGeometry(tx, body.geom, 'Habitation');
     const item = await tx.one(
-      `INSERT INTO dwellings (territory_id, source, geom, comment, usage)
-       VALUES ($1, 'manuel', ${geomParam(2)}, $3, 'Ajout manuel') RETURNING ${DWELLING_SELECT}`,
-      [territoryId, JSON.stringify(body.geom), body.comment],
+      `INSERT INTO dwellings (territory_id, source, geom, comment, name, usage)
+       VALUES ($1, 'manuel', ${geomParam(2)}, $3, $4, 'Ajout manuel') RETURNING ${DWELLING_SELECT}`,
+      [territoryId, JSON.stringify(body.geom), body.comment, body.name],
     );
     return c.json({ item }, 201);
   });
@@ -141,6 +142,7 @@ const patchSchema = z
     ignored: z.boolean(),
     ignored_reason: z.string().trim().max(500).nullable(),
     comment: z.string().trim().max(1000),
+    name: z.string().trim().max(100),
   })
   .partial()
   .strict()

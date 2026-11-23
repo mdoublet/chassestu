@@ -4165,4 +4165,18 @@ END $function$;
 
 INSERT INTO schema_migrations (name, checksum) VALUES ('0028_parkings_lieux.sql', 'aecb451375bf12b8bca67fb78f6f20f562a245e3219791127756f3af39d5ac38');
 
+DO $guard$
+BEGIN
+  IF EXISTS (SELECT 1 FROM schema_migrations WHERE name = '0029_nom_batiment.sql') THEN
+    RAISE EXCEPTION 'La migration % est déjà appliquée : rien à faire.', '0029_nom_batiment.sql';
+  END IF;
+END $guard$;
+
+-- ==================== 0029_nom_batiment.sql ====================
+-- Nom d'un bâtiment, saisi par le président (ex. « Ferme des Pujols »), pour
+-- le reconnaître dans la liste ; vide par défaut (libellé : usage IGN).
+ALTER TABLE dwellings ADD COLUMN name text NOT NULL DEFAULT '' CHECK (length(name) <= 100);
+
+INSERT INTO schema_migrations (name, checksum) VALUES ('0029_nom_batiment.sql', 'b43c7e965cd7dd0c9d09d462f321e85e8077480f41a390e484a51173b00822fc');
+
 COMMIT;

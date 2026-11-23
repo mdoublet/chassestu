@@ -26,7 +26,7 @@ const FIELDS = {
   reserves: ['name', 'reason', 'geom'],
   parkings: ['name', 'geom'],
   posts: ['number', 'name', 'geom', 'parking_id', 'line_id', 'access_path', 'instructions', 'special_instructions', 'active', 'access_difficulty'],
-  dwellings: ['geom', 'comment'],
+  dwellings: ['geom', 'comment', 'name'],
 };
 const LABEL = { territories: 'du territoire', reserves: 'de la réserve', parkings: 'du parking', posts: 'du poste', dwellings: 'de l’habitation' };
 
@@ -125,7 +125,8 @@ export async function editorView(main, start) {
   // clic), sous les postes. SVG : seuls les bâtiments captent le clic.
   map.createPane('dwellings');
   map.getPane('dwellings').style.zIndex = 450;
-  const dwellingRenderer = L.svg({ pane: 'dwellings', padding: 0.5 });
+  // Canvas avec tolérance : un bâtiment de quelques pixels reste facile à toucher.
+  const dwellingRenderer = L.canvas({ pane: 'dwellings', padding: 0.5, tolerance: 8 });
   const groups = {
     others: L.featureGroup().addTo(map), // autres territoires, sous le territoire actif
     territory: L.featureGroup().addTo(map),
@@ -209,14 +210,13 @@ export async function editorView(main, start) {
   }
 
   /**
-   * Lieux de l'association (cabanes, restaurants…), affichés comme repères,
-   * y compris pendant le tracé d'un nouveau territoire. Les parkings sont
-   * modifiables ici quand un territoire est ouvert (dessinés plus bas).
+   * Lieux de l'association (parkings compris), affichés comme repères non
+   * modifiables, y compris pendant le tracé d'un nouveau territoire : ils se
+   * gèrent dans la page Lieux.
    */
   function renderPlaces() {
     const places = ed.data?.places ?? ed.places ?? [];
     for (const p of places) {
-      if (ed.data && p.kind === 'parking') continue;
       groups.places.addLayer(placeMarker(p, kindIcon(p.kind)));
     }
   }
@@ -349,7 +349,12 @@ export async function editorView(main, start) {
   function select(kind, id, { zoom = false } = {}) {
     if (ed.mode || ed.recording) return;
     ed.selected = kind ? { kind, id } : null;
+    if (kind === 'dwellings') {
+      ed.open.add('dwellings');
+      if (!ed.allDwellings && dwellingRank(id) >= DWELLINGS_LIMIT) ed.allDwellings = true;
+    }
     render();
+    if (kind) panel.querySelector('.props')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
     if (zoom && kind) {
       const item = kind === 'territories' ? ed.data.territory : find(kind, id);
       const layer = L.geoJSON(item.geom);
@@ -436,29 +441,6 @@ export async function editorView(main, start) {
       }
     }
 
-    // Parkings
-    for (const pk of parkings) {
-      // Au-dessus des poignées du chemin (son départ est sur le parking) : glisser déplace le parking.
-      const m = L.marker(toLatLng(pk.geom.coordinates), { icon: parkingIcon(isSelected('parkings', pk.id) ? 'selected' : ''), draggable: canEdit, title: pk.name, bubblingMouseEvents: true, zIndexOffset: 1000 });
-      m.bindTooltip(escapeHtml(pk.name), { direction: 'top', offset: [0, -12] });
-      m.on('click', onPick('parkings', pk.id));
-      m.on('dragend', () => {
-        const { lat, lng } = m.getLatLng();
-        run(async () => {
-          await updateItem('parkings', pk, { geom: { type: 'Point', coordinates: [lng, lat] } });
-          // Les chemins qui partent de ce parking suivent (ou sont recalculés si le parking a beaucoup bougé).
-          const linked = ed.data.posts.filter((p) => p.parking_id === pk.id && p.access_path);
-          let recomputed = 0;
-          for (const p of linked) {
-            const r = await updatedPath(p.access_path.coordinates, { which: 'parking', from: pk.geom.coordinates, to: [lng, lat], post: p.geom.coordinates });
-            if (r.recomputed) recomputed += 1;
-            await updateItem('posts', p, { access_path: { type: 'LineString', coordinates: r.coords } });
-          }
-          if (linked.length) toast(`${linked.length} chemin(s) mis à jour${recomputed ? `, dont ${recomputed} recalculé(s)` : ''}.`);
-        });
-      });
-      groups.parkings.addLayer(m);
-    }
 
     // Postes : contrôle en direct pendant le glisser-déposer
     const reserveGeoms = allReserveGeoms();
@@ -601,7 +583,6 @@ export async function editorView(main, start) {
     const shape = { territory: 'Polygon', reserves: 'Polygon', parkings: 'Marker', posts: 'Marker', path: 'Line', dwellings: 'CircleMarker' }[mode];
     const options = { snappable: true, snapDistance: 20, allowSelfIntersection: false, continueDrawing: false };
     if (mode === 'posts') options.markerStyle = { icon: postIcon('+') };
-    if (mode === 'parkings') options.markerStyle = { icon: parkingIcon() };
     map.pm.enableDraw(shape, options);
     renderPanel();
   }
@@ -674,19 +655,11 @@ export async function editorView(main, start) {
         ed.selected = { kind: 'reserves', id: item.id };
       });
     }
-    if (mode === 'parkings') {
-      const name = await promptDialog('Nouveau parking', 'Nom du parking', `Parking ${ed.data.parkings.length + 1}`);
-      if (!name) return render();
-      return run(async () => {
-        const item = await createItem('parkings', { name, geom });
-        ed.selected = { kind: 'parkings', id: item.id };
-      });
-    }
     if (mode === 'dwellings') {
-      const comment = await promptDialog('Habitation manquante', 'Description (ex. maison récente, caravane habitée)', '');
-      if (comment === null) return render();
+      const name = await promptDialog('Habitation manquante', 'Nom (ex. maison récente, caravane habitée)', '');
+      if (name === null) return render();
       return run(async () => {
-        const item = await createItem('dwellings', { geom, comment });
+        const item = await createItem('dwellings', { geom, name: name.trim() });
         ed.selected = { kind: 'dwellings', id: item.id };
         toast('Habitation ajoutée : la zone non chassable est recalculée.');
       });
@@ -955,9 +928,6 @@ export async function editorView(main, start) {
       return h('section.props', h('h3', 'Zone de réserve'), field('Nom', bound(kind, item, 'name', { maxlength: 200 })), field('Motif', bound(kind, item, 'reason', { maxlength: 1000 })), h('p.small', `${item.area_ha.toLocaleString('fr-FR')} ha`), del);
     }
     if (kind === 'dwellings') return dwellingPanel(item);
-    if (kind === 'parkings') {
-      return h('section.props', h('h3', 'Parking'), field('Nom', bound(kind, item, 'name', { maxlength: 200, required: true })), h('p.small', 'Glissez l’icône pour déplacer le parking.'), del);
-    }
     // Poste
     const parkingSelect = bound(kind, item, 'parking_id', {}, 'select');
     parkingSelect.append(h('option', { value: '' }, '— aucun —'), ...ed.data.parkings.map((pk) => h('option', { value: pk.id, selected: pk.id === item.parking_id }, pk.name)));
@@ -1087,38 +1057,64 @@ export async function editorView(main, start) {
     const buffer = ed.data?.exclusion?.buffer_distance_m ?? 150;
     const facts = [
       ign ? `Bâtiment IGN (BD TOPO)${d.source_id ? ` · ${d.source_id}` : ''}` : 'Habitation ajoutée à la main',
-      d.usage ? `Usage : ${d.usage}` : ign ? 'Usage non renseigné par l’IGN' : null,
+      d.usage && d.usage !== 'Ajout manuel' ? `Usage : ${d.usage}` : ign ? 'Usage non renseigné par l’IGN' : null,
       d.comment ? `Note : ${d.comment}` : null,
       d.missing_since ? `Absent de la BD TOPO depuis le ${new Date(d.missing_since).toLocaleDateString('fr-FR')} (démoli ?).` : null,
       d.likely_non_residential && !d.ignored ? 'Probablement pas une habitation d’après l’IGN : à vérifier sur place.' : null,
     ].filter(Boolean);
-    const reason = h('input', { maxlength: 500, placeholder: 'Pourquoi ? ex. ruine, hangar sans logement' });
-    const remove = () => {
-      if (!ign) return confirmDelete('dwellings', d, 'Supprimer l’habitation', `Supprimer l’habitation ajoutée « ${d.comment || 'Habitation'} » ? (Annulable avec ↶.)`);
-      if (reason.value.trim().length < 3) {
-        toast('Indiquez pourquoi ce bâtiment n’est pas une habitation.', 'error');
-        reason.focus();
-        return undefined;
-      }
-      return run(() => updateItem('dwellings', d, { ignored: true, ignored_reason: reason.value.trim() }));
-    };
     return h('section.props',
       h('h3', d.ignored ? 'Bâtiment supprimé' : 'Bâtiment'),
+      field('Nom', bound('dwellings', d, 'name', { maxlength: 100, placeholder: dwellingLabel({ ...d, name: '' }) })),
       facts.map((f) => h('p.small', f)),
       d.ignored
         ? [
-            h('p.small.alert.muted', `Supprimé le ${new Date(d.ignored_at).toLocaleDateString('fr-FR')} (${d.ignored_reason}) : il ne compte plus dans la zone non chassable.`),
-            canEdit ? h('button', { onclick: () => run(() => updateItem('dwellings', d, { ignored: false })) }, 'Rétablir comme habitation') : null,
+            h('p.small.alert.muted', `Supprimé le ${new Date(d.ignored_at).toLocaleDateString('fr-FR')} : ${d.ignored_reason}. Il ne compte plus dans la zone non chassable.`),
+            canEdit ? h('button', { onclick: () => restoreDwelling(d) }, '↺ Rétablir (compté comme habitation)') : null,
           ]
         : [
             h('p.small', `Compté comme habitation : pas de poste ni de tir à moins de ${buffer} m.`),
-            canEdit ? [
-              ign ? reason : null,
-              h('button.danger', { onclick: remove }, 'Supprimer ce bâtiment'),
-              ign ? h('p.small.muted', 'À faire seulement si vous êtes sûr qu’il n’est pas habité. Il reste mémorisé pour ne pas revenir à la prochaine actualisation IGN, et peut être rétabli.') : null,
-            ] : null,
+            canEdit ? h('button.danger', { onclick: () => removeDwelling(d) }, 'Supprimer ce bâtiment…') : null,
           ]);
   }
+
+  /** Libellé d'un bâtiment : son nom, sinon l'usage IGN. */
+  const dwellingLabel = (d) => d.name || (d.source === 'manuel' ? d.comment || 'Habitation' : d.usage || 'Bâtiment');
+
+  /**
+   * Supprimer un bâtiment (IGN ou ajouté à la main) : raison obligatoire. Il
+   * reste mémorisé, barré, et peut être rétabli ; il ne compte plus dans la
+   * zone non chassable.
+   */
+  async function removeDwelling(d) {
+    const reason = await promptDialog('Supprimer ce bâtiment',
+      `« ${dwellingLabel(d)} » ne comptera plus comme habitation (zone non chassable recalculée). Pourquoi ? ex. ruine, hangar sans logement. Il reste rétablissable.`, '');
+    if (reason == null) return undefined;
+    if (reason.trim().length < 3) return toast('Indiquez la raison de la suppression (3 caractères au moins).', 'error');
+    return run(() => updateItem('dwellings', d, { ignored: true, ignored_reason: reason.trim() }));
+  }
+
+  function restoreDwelling(d) {
+    return run(() => updateItem('dwellings', d, { ignored: false }));
+  }
+
+  const DWELLINGS_LIMIT = 50;
+  /** Ordre de la liste : à vérifier, ajoutés à la main, IGN, supprimés ; puis près des postes. */
+  function sortedDwellings() {
+    const all = ed.data?.dwellings ?? [];
+    const rank = (d) => (d.ignored ? 3 : d.missing_since || d.likely_non_residential ? 0 : d.source === 'manuel' ? 1 : 2);
+    const anchor = (g) => (g.type === 'Point' ? g.coordinates : g.type === 'Polygon' ? g.coordinates[0][0] : g.coordinates[0][0][0]);
+    const near = new Map(all.map((d) => {
+      let best = null;
+      for (const p of ed.data.posts) {
+        const m = distanceMeters(anchor(d.geom), p.geom.coordinates);
+        if (!best || m < best.m) best = { p, m };
+      }
+      return [d.id, best];
+    }));
+    const sorted = [...all].sort((a, b) => rank(a) - rank(b) || (near.get(a.id)?.m ?? 0) - (near.get(b.id)?.m ?? 0));
+    return { all, sorted, near, rank };
+  }
+  const dwellingRank = (id) => sortedDwellings().sorted.findIndex((d) => d.id === id);
 
   async function refreshDwellings() {
     toast('Import des bâtiments IGN en cours… (jusqu’à une minute pour un grand territoire)');
@@ -1144,7 +1140,7 @@ export async function editorView(main, start) {
   const sym = (icon, ok, yes, no) => h('span.sym', { class: ok ? '' : 'off', title: ok ? yes : no, 'aria-label': ok ? yes : no }, icon);
 
   /** Ligne de liste : symboles, libellé (zoom), ✏️ éditer, 🗑 supprimer. */
-  function objectRow(kind, it, { symbols = [], label, note, onDelete, deleteTitle = 'Supprimer', dim = false }) {
+  function objectRow(kind, it, { symbols = [], label, note, onDelete, deleteTitle = 'Supprimer', deleteIcon = '🗑', dim = false }) {
     const edit = () => {
       select(kind, it.id, { zoom: true });
       panel.querySelector('.props')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
@@ -1155,7 +1151,7 @@ export async function editorView(main, start) {
         note ? h('span.small.muted', ` ${note}`) : null),
       h('span.obj-actions',
         h('button.icon', { onclick: edit, title: canEdit ? 'Modifier' : 'Détails', 'aria-label': canEdit ? 'Modifier' : 'Détails' }, '✏️'),
-        canEdit && onDelete ? h('button.icon.danger', { onclick: onDelete, title: deleteTitle, 'aria-label': deleteTitle }, '🗑') : null));
+        canEdit && onDelete ? h(deleteIcon === '🗑' ? 'button.icon.danger' : 'button.icon', { onclick: onDelete, title: deleteTitle, 'aria-label': deleteTitle }, deleteIcon) : null));
   }
 
   async function confirmDelete(kind, item, title, message) {
@@ -1174,11 +1170,7 @@ export async function editorView(main, start) {
       const plans = item.plan_uses ?? [];
       return confirmDelete('posts', item, 'Supprimer le poste', `Supprimer le poste ${postLabel(item)}${item.access_path ? ' et son chemin d’accès' : ''} ?${plans.length ? ` Il est utilisé dans les plans de chasse ${plans.join(', ')} chasseurs : ces grilles deviendront incomplètes.` : ''} (Annulable avec ↶.)`);
     }
-    if (kind === 'parkings') {
-      const linked = ed.data.posts.filter((p) => p.parking_id === item.id);
-      return confirmDelete('parkings', item, 'Supprimer le parking',
-        `Supprimer le parking « ${item.name} » des lieux de l’association (pour tous les territoires) ?${linked.length ? ` Les postes ${linked.map((p) => p.number).join(', ')} n’auront plus de parking associé.` : ''} (Annulable avec ↶.)`);
-    }
+    if (kind === 'dwellings') return removeDwelling(item);
     if (kind === 'reserves') return confirmDelete('reserves', item, 'Supprimer la réserve', `Supprimer la réserve « ${item.name || 'Réserve'} » ? (Annulable avec ↶.)`);
     return confirmDelete(kind, item, 'Supprimer', 'Supprimer cet élément ? (Annulable avec ↶.)');
   }
@@ -1206,21 +1198,6 @@ export async function editorView(main, start) {
       }))));
   }
 
-  function parkingsSection() {
-    const parkings = ed.data.parkings;
-    return foldSection('parkings', `Parkings (${parkings.length})`, '',
-      parkings.length ? null : h('p.small.muted', 'Aucun parking : « + Parking » pour en ajouter un.'),
-      h('ul.obj-list', parkings.map((pk) => {
-        const linked = ed.data.posts.filter((p) => p.parking_id === pk.id);
-        return objectRow('parkings', pk, {
-          symbols: [sym('🗺', booleanPointInPolygon(pk.geom.coordinates, ed.data.territory.geom), 'Dans le territoire', 'Hors du territoire')],
-          label: pk.name,
-          note: linked.length ? `· ${linked.length} poste(s)` : '· aucun poste',
-          onDelete: () => askDelete('parkings', pk),
-        });
-      })));
-  }
-
   function reservesSection() {
     const reserves = ed.data.reserves;
     return foldSection('reserves', `Réserves (${reserves.length})`, '',
@@ -1234,48 +1211,28 @@ export async function editorView(main, start) {
 
   /** Bâtiments IGN et habitations ajoutées à la main, dans une seule liste. */
   function dwellingsSection() {
-    const all = ed.data.dwellings ?? [];
-    const rank = (d) => (d.ignored ? 3 : d.missing_since || d.likely_non_residential ? 0 : d.source === 'manuel' ? 1 : 2);
-    // Repère pour distinguer des bâtiments au même libellé : le poste le plus proche.
-    const anchor = (g) => (g.type === 'Point' ? g.coordinates : g.type === 'Polygon' ? g.coordinates[0][0] : g.coordinates[0][0][0]);
-    const near = new Map(all.map((d) => {
-      let best = null;
-      for (const p of ed.data.posts) {
-        const m = distanceMeters(anchor(d.geom), p.geom.coordinates);
-        if (!best || m < best.m) best = { p, m };
-      }
-      return [d.id, best];
-    }));
+    const { all, sorted, near, rank } = sortedDwellings();
     const where = (d) => { const n = near.get(d.id); return n ? `à ${Math.round(n.m)} m du poste ${n.p.number}` : ''; };
-    const sorted = [...all].sort((a, b) => rank(a) - rank(b) || (near.get(a.id)?.m ?? 0) - (near.get(b.id)?.m ?? 0));
     const toCheck = all.filter((d) => rank(d) === 0).length;
-    const LIMIT = 50;
-    const shown = ed.allDwellings ? sorted : sorted.slice(0, LIMIT);
-    const removeDwelling = async (d) => {
-      if (d.source === 'manuel') {
-        return confirmDelete('dwellings', d, 'Supprimer l’habitation', `Supprimer l’habitation ajoutée « ${d.comment || 'Habitation'} » ? Elle ne comptera plus dans la zone non chassable. (Annulable avec ↶.)`);
-      }
-      const reason = await promptDialog('Supprimer ce bâtiment', `Bâtiment IGN${d.usage ? ` (${d.usage})` : ''} : pourquoi n’est-ce pas une habitation ? Il restera mémorisé (et rétablissable) pour ne pas revenir à la prochaine actualisation.`, '');
-      if (reason == null) return undefined;
-      if (reason.trim().length < 3) return toast('Indiquez pourquoi ce bâtiment n’est pas une habitation.', 'error');
-      return run(() => updateItem('dwellings', d, { ignored: true, ignored_reason: reason.trim() }));
-    };
+    const shown = ed.allDwellings ? sorted : sorted.slice(0, DWELLINGS_LIMIT);
     return foldSection('dwellings', `Bâtiments (${all.filter((d) => !d.ignored).length})`, toCheck ? `· ⚠ ${toCheck} à vérifier` : '',
-      all.length ? h('details.legend.small.muted', h('summary', 'ⓘ Légende'), '🏛 IGN · ✍ ajoutée à la main · ⚠ à vérifier · 🚫 supprimé (ne compte plus)') : h('p.small.muted', 'Aucun bâtiment : actualisez-les depuis la section « Données ».'),
+      all.length ? h('details.legend.small.muted', h('summary', 'ⓘ Légende'), '🏛 IGN · ✍ ajoutée à la main · ⚠ à vérifier · 🚫 supprimé (ne compte plus, rétablissable)') : h('p.small.muted', 'Aucun bâtiment : actualisez-les depuis la section « Données ».'),
       h('ul.obj-list', shown.map((d) => objectRow('dwellings', d, {
         symbols: [
           h('span.sym', { title: d.source === 'manuel' ? 'Ajoutée à la main' : 'Bâtiment IGN (BD TOPO)' }, d.source === 'manuel' ? '✍' : '🏛'),
           d.ignored ? h('span.sym', { title: `Supprimé : ${d.ignored_reason ?? ''}` }, '🚫')
             : rank(d) === 0 ? h('span.sym', { title: d.missing_since ? 'Disparu de la BD TOPO' : 'Probablement pas une habitation' }, '⚠') : null,
         ],
-        label: d.source === 'manuel' ? d.comment || 'Habitation' : d.usage || 'Bâtiment',
+        label: dwellingLabel(d),
         note: [where(d), d.ignored ? d.ignored_reason ?? 'supprimé' : d.missing_since ? 'disparu de la BD TOPO' : ''].filter(Boolean).map((x) => `· ${x}`).join(' '),
         dim: d.ignored,
-        onDelete: d.ignored ? null : () => removeDwelling(d),
+        onDelete: d.ignored ? () => restoreDwelling(d) : () => removeDwelling(d),
+        deleteTitle: d.ignored ? 'Rétablir' : 'Supprimer',
+        deleteIcon: d.ignored ? '↺' : '🗑',
       }))),
-      sorted.length > LIMIT ? h('button.link.small', { onclick: () => { ed.allDwellings = !ed.allDwellings; render(); } },
-        ed.allDwellings ? 'Réduire la liste' : `Afficher les ${sorted.length - LIMIT} autres`) : null,
-      h('p.small.muted', 'Astuce : cliquez un bâtiment sur la carte pour l’identifier.'));
+      sorted.length > DWELLINGS_LIMIT ? h('button.link.small', { onclick: () => { ed.allDwellings = !ed.allDwellings; render(); } },
+        ed.allDwellings ? 'Réduire la liste' : `Afficher les ${sorted.length - DWELLINGS_LIMIT} autres`) : null,
+      h('p.small.muted', 'Cliquez un bâtiment sur la carte pour le sélectionner.'));
   }
 
   function exclusionSummary() {
@@ -1298,7 +1255,6 @@ export async function editorView(main, start) {
     const tools = canEdit && ed.data && !busy
       ? h('div.buttons',
           h('button', { onclick: () => startDraw('reserves') }, '+ Réserve'),
-          h('button', { onclick: () => startDraw('parkings') }, '+ Parking'),
           h('button', { onclick: () => startDraw('posts') }, '+ Poste'),
           h('button', { onclick: () => startDraw('dwellings'), title: 'Habitation absente de la BD TOPO' }, '+ Habitation'),
           h('button', { onclick: undo, disabled: !history.peekLabel(), title: history.peekLabel() ? `Annuler : ${history.peekLabel()}` : 'Rien à annuler' }, '↶'))
@@ -1329,7 +1285,6 @@ export async function editorView(main, start) {
       propertiesPanel(),
       ed.data ? postsSection() : null,
       ed.data ? linesSection() : null,
-      ed.data ? parkingsSection() : null,
       ed.data ? reservesSection() : null,
       ed.data ? dwellingsSection() : null,
       ed.data && !busy

@@ -164,6 +164,25 @@ describe('contrôle des postes', () => {
   });
 });
 
+describe('nom et suppression d’un bâtiment', () => {
+  it('nommer, supprimer avec raison (y compris ajouté à la main), rétablir', async () => {
+    const lon = 2.9;
+    bdtopo.pages = [EMPTY];
+    const { territory } = (await call('POST', '/api/territories', { name: 'Bois nommé', geom: square(lon, LAT, 0.01) })).body;
+    const post = (await call('POST', `/api/territories/${territory.id}/posts`, { geom: point(lon, LAT) })).body.item;
+    const house = (await call('POST', `/api/territories/${territory.id}/dwellings`, { geom: atDistance(lon, 80), name: 'Maison neuve' })).body.item;
+    expect(house.name).toBe('Maison neuve');
+    expect((await call('PATCH', `/api/dwellings/${house.id}`, { name: 'Ferme des Pujols' })).body.item.name).toBe('Ferme des Pujols');
+    expect((await call('PATCH', `/api/dwellings/${house.id}`, { name: 'x'.repeat(101) })).status).toBe(400);
+    // Suppression : raison obligatoire ; le poste redevient valide ; rétablissable.
+    expect((await call('PATCH', `/api/dwellings/${house.id}`, { ignored: true })).status).toBe(400);
+    expect((await call('PATCH', `/api/dwellings/${house.id}`, { ignored: true, ignored_reason: 'Ruine' })).body.item).toMatchObject({ ignored: true, ignored_reason: 'Ruine' });
+    expect((await call('GET', `/api/territories/${territory.id}`)).body.posts.find((p: any) => p.id === post.id).invalid_reason).toBeNull();
+    expect((await call('PATCH', `/api/dwellings/${house.id}`, { ignored: false })).body.item).toMatchObject({ ignored: false, ignored_reason: null });
+    expect((await call('GET', `/api/territories/${territory.id}`)).body.posts.find((p: any) => p.id === post.id).invalid_reason).toBe('EXCLUSION');
+  });
+});
+
 describe('actualisation des bâtiments', () => {
   it('conserve les choix « ignoré », signale les nouveaux et les disparus', async () => {
     const lon = 2.85;
