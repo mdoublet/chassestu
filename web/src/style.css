@@ -386,9 +386,12 @@ ul.places-list li { padding: 0.35rem 0; border-bottom: 1px solid var(--border); 
 ul.places-list li.editing { background: color-mix(in srgb, var(--accent) 8%, transparent); padding: 0.5rem; border-radius: 6px; }
 .place-edit { display: grid; gap: 0.4rem; }
 button.place-name { text-align: left; }
-.place-icon { display: grid; place-items: center; background: #fff; border: 2px solid #1f5130; border-radius: 50%; font-size: 1rem; }
-.place-icon.parking { border-color: #1c7ed6; color: #1c7ed6; font-weight: 700; }
-.place-icon.selected { border-color: #e8590c; box-shadow: 0 0 0 3px color-mix(in srgb, #e8590c 35%, transparent); }
+.place-icon { display: grid; place-items: center; background: none; border: 0; font-size: 1.35rem; line-height: 1;
+  filter: drop-shadow(0 0 1.5px #fff) drop-shadow(0 0 1.5px #fff) drop-shadow(0 1px 2px rgb(0 0 0 / 0.45)); }
+.place-icon.selected { filter: drop-shadow(0 0 2px #e8590c) drop-shadow(0 0 2px #e8590c); transform: scale(1.2); }
+/* « P » bleu des parkings dans les listes (même dessin que sur les cartes). */
+.p-badge { display: inline-grid; place-items: center; width: 1.2em; height: 1.2em; border-radius: 4px; background: #1c5fb8; color: #fff;
+  font: 700 0.8em/1 system-ui, sans-serif; vertical-align: 0.1em; }
 
 /* Territoires */
 .page-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
@@ -545,7 +548,8 @@ a.nav-icon.small { width: 34px; height: 34px; font-size: 1.3rem; }
 img.photo-thumb { width: 56px; height: 56px; object-fit: cover; border-radius: 8px; cursor: zoom-in; flex: none; background: var(--border); }
 .photo-viewer { position: fixed; inset: 0; z-index: 3000; background: rgb(0 0 0 / 0.85); display: grid; place-items: center; cursor: zoom-out; }
 .photo-viewer img { max-width: 96vw; max-height: 92vh; border-radius: 8px; }
-button.photo-icon { flex: none; width: 44px; height: 44px; border-radius: 50%; padding: 0; font-size: 1.2rem; background: var(--surface); border: 1px solid var(--border); }
+button.photo-icon { flex: none; width: 44px; height: 44px; border-radius: 50%; padding: 0; font-size: 1.5rem; background: none; border: 0; box-shadow: none; min-height: 0; cursor: pointer; }
+button.photo-icon:hover { background: color-mix(in srgb, var(--text) 8%, transparent); }
 button.photo-icon.loading { opacity: 0.5; }
 .place-icon.private { border-style: dashed; opacity: 0.85; }
 .zone-slider label { display: grid; gap: 0.2rem; font-size: 0.85rem; }
@@ -554,3 +558,4 @@ button.photo-icon.loading { opacity: 0.5; }
 .streetview { display: flex; align-items: center; gap: 0.8rem; flex-wrap: wrap; margin: 0.4rem 0; }
 .place-sheet-photo img { width: 100%; max-height: 60vh; object-fit: contain; border-radius: 6px; background: #eee; }
 .place-sheet .nav-line { display: flex; align-items: center; gap: 0.6rem; }
+.parking-icon.private span { opacity: 0.7; border-style: dashed; }

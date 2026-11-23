@@ -7,7 +7,7 @@ import '@geoman-io/leaflet-geoman-free';
 import '@geoman-io/leaflet-geoman-free/dist/leaflet-geoman.css';
 import { addBasemaps } from '../map/basemap.js';
 import { escapeHtml, toLatLng, ensureHatchPattern, postIcon, parkingIcon, placeMarker } from '../map/shapes.js';
-import { kindIcon, kindLabel } from './place-picker.js';
+import { kindIcon, kindLabel, kindBadge } from './place-picker.js';
 import { openPlaceSheet } from './place-sheet.js';
 import { api } from '../api.js';
 import { state } from '../state.js';
@@ -939,7 +939,7 @@ export async function editorView(main, start) {
     }
     if (kind === 'dwellings') return dwellingPanel(item);
     if (kind === 'places') {
-      return h('section.props', h('h3', `${item.kind === 'parking' ? '🅿' : kindIcon(item.kind)} ${item.name}`),
+      return h('section.props', h('h3', kindBadge(item.kind), ` ${item.name}`),
         h('p.small.muted', `${kindLabel(item.kind)}${item.notes ? ` · ${item.notes}` : ''}`),
         h('div.buttons', h('button.primary', { onclick: () => openPlaceSheet(item) }, `📄 Ouvrir la fiche${item.has_photo ? ' (photo)' : ''}`)),
         h('p.small.muted', 'Les lieux se modifient dans la page Lieux.'));
@@ -1230,7 +1230,7 @@ export async function editorView(main, start) {
     return foldSection('places', `Lieux (${places.length})`, '',
       places.length ? null : h('p.small.muted', 'Aucun lieu : ils se créent dans la page Lieux.'),
       h('ul.obj-list', places.map((p) => h('li.obj-row', { class: isSelected('places', p.id) ? 'active' : '' },
-        h('span.syms', h('span.sym', p.kind === 'parking' ? '🅿' : kindIcon(p.kind))),
+        h('span.syms', h('span.sym', kindBadge(p.kind))),
         h('button.link.obj-label', { onclick: () => select('places', p.id, { zoom: true }), title: 'Voir sur la carte' }, p.name,
           h('span.small.muted', ` · ${kindLabel(p.kind)}`)),
         h('span.obj-actions', h('button.icon', { onclick: () => openPlaceSheet(p), title: 'Ouvrir la fiche', 'aria-label': `Ouvrir la fiche de ${p.name}` }, '📄'))))));

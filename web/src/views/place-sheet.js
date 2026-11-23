@@ -2,7 +2,7 @@
 // lien vers la page Lieux pour le président (modification).
 import { h, modal } from '../ui.js';
 import { state } from '../state.js';
-import { kindIcon, kindLabel } from './place-picker.js';
+import { kindBadge, kindLabel } from './place-picker.js';
 import { placePhotoUrl } from '../lib/photo.js';
 import { navLine } from '../lib/navigation.js';
 
@@ -15,7 +15,7 @@ export function openPlaceSheet(p) {
   }
   const canEdit = state.role === 'president';
   const actions = [...(canEdit ? [{ label: '✏️ Modifier dans Lieux', value: 'edit' }] : []), { label: 'Fermer', value: null, primary: true }];
-  return modal(`${p.kind === 'parking' ? '🅿' : kindIcon(p.kind)} ${p.name}`, h('div.place-sheet',
+  return modal(h('span', kindBadge(p.kind), ` ${p.name}`), h('div.place-sheet',
     h('p.muted', kindLabel(p.kind)),
     p.notes ? h('p', p.notes) : null,
     photo,

@@ -6,6 +6,8 @@ import { h } from '../ui.js';
 export const PLACE_KINDS = { cabane: 'Cabane', restaurant: 'Restaurant', parking: 'Parking', autre: 'Autre lieu' };
 const ICON = { cabane: '🛖', restaurant: '🍽', parking: '🅿', autre: '📍' };
 export const kindIcon = (k) => ICON[k] ?? '📍';
+/** Icône d'un type dans une liste : « P » bleu des cartes pour un parking, sinon l'emoji. */
+export const kindBadge = (k) => (k === 'parking' ? h('span.p-badge', { 'aria-label': 'Parking' }, 'P') : h('span.kind-emoji', kindIcon(k)));
 export const kindLabel = (k) => PLACE_KINDS[k] ?? k;
 
 /**

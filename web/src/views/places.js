@@ -4,10 +4,10 @@
 // président peut rendre publics.
 import L from '../map/leaflet.js';
 import { addBasemaps } from '../map/basemap.js';
-import { escapeHtml, toLatLng } from '../map/shapes.js';
+import { escapeHtml, toLatLng, parkingIcon, placeIcon } from '../map/shapes.js';
 import { api } from '../api.js';
 import { h, fill, toast, errorMessage, confirmDialog, promptDialog } from '../ui.js';
-import { kindIcon, kindLabel, kindSelect as pickKind } from './place-picker.js';
+import { kindIcon, kindLabel, kindBadge, kindSelect as pickKind } from './place-picker.js';
 import { setInSeason } from '../lib/season.js';
 import { navIcon } from '../lib/navigation.js';
 import { shrinkPhoto, photoThumb, photoIcon } from '../lib/photo.js';
@@ -45,7 +45,8 @@ export async function placesView(main, openId = null) {
     const interactive = !st.placing;
     for (const p of st.places) {
       const cls = [st.editing === p.id ? 'selected' : '', p.visibility === 'private' ? 'private' : '', p.kind === 'parking' ? 'parking' : ''].join(' ');
-      const m = L.marker(toLatLng(p.geom.coordinates), { icon: icon(p.kind === 'parking' ? 'P' : kindIcon(p.kind), cls), interactive }).bindTooltip(escapeHtml(p.visibility === 'private' ? `${p.name} (privé)` : p.name));
+      // Même « P » que sur les cartes des territoires ; les autres lieux : l'emoji seul.
+      const m = L.marker(toLatLng(p.geom.coordinates), { icon: p.kind === 'parking' ? parkingIcon(cls) : placeIcon(kindIcon(p.kind), cls), interactive }).bindTooltip(escapeHtml(p.visibility === 'private' ? `${p.name} (privé)` : p.name));
       if (canEdit(p)) m.on('click', () => { st.editing = p.id; render(); });
       layer.addLayer(m);
     }
@@ -172,7 +173,7 @@ export async function placesView(main, openId = null) {
         ? editRow(p)
         : h('div.place-row',
             h('button.link.place-name', { onclick: () => { st.editing = canEdit(p) ? p.id : null; st.draft = null; map.setView(toLatLng(p.geom.coordinates), 15); render(); } },
-              `${kindIcon(p.kind)} ${p.name}`,
+              kindBadge(p.kind), ` ${p.name}`,
               h('span.small.muted', ` · ${kindLabel(p.kind)}${isPres && p.visibility === 'private' && !p.mine ? ` · ${p.author ?? 'chasseur'}` : ''}${p.notes ? ` · ${p.notes}` : ''}`)),
             p.has_photo ? photoIcon(h, p.id, p.photo_updated_at, p.name) : null,
             navIcon(p.geom.coordinates, p.name)))));
@@ -212,7 +213,7 @@ export async function placesView(main, openId = null) {
         h('p.small.muted', 'Visibles d’eux seuls tant que vous ne les rendez pas publics.'),
         placeList(proposed)) : null,
       isPres && st.off?.length ? fold('Hors saison', { key: 'places.off', extra: String(st.off.length) },
-        h('ul.plain', st.off.map((p) => h('li.off-row', h('span', `${kindIcon(p.kind)} ${p.name}`), h('button.link', { onclick: () => seasonLink(p, true) }, 'Rattacher à la saison'))))) : null);
+        h('ul.plain', st.off.map((p) => h('li.off-row', h('span', kindBadge(p.kind), ` ${p.name}`), h('button.link', { onclick: () => seasonLink(p, true) }, 'Rattacher à la saison'))))) : null);
     drawMap();
   }
 

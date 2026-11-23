@@ -4,7 +4,7 @@
 import L from '../map/leaflet.js';
 import { addBasemaps } from '../map/basemap.js';
 import { toLatLng, escapeHtml, postIcon, ensureHatchPattern, placeMarker } from '../map/shapes.js';
-import { kindIcon, kindLabel } from './place-picker.js';
+import { kindIcon, kindLabel, kindBadge } from './place-picker.js';
 import { openPlaceSheet } from './place-sheet.js';
 import { api } from '../api.js';
 import { state } from '../state.js';
@@ -155,7 +155,7 @@ export async function territoriesView(main) {
       overview?.places?.length ? fold('Lieux', { key: 'territories.places', extra: String(overview.places.length) },
         h('ul.plain.places-list', overview.places.map((p) => h('li', h('div.place-row',
           h('button.link.place-name', { onclick: () => map.setView(toLatLng(p.geom.coordinates), 16), title: 'Voir sur la carte' },
-            `${p.kind === 'parking' ? '🅿' : kindIcon(p.kind)} ${p.name}`, h('span.small.muted', ` · ${kindLabel(p.kind)}`)),
+            kindBadge(p.kind), ` ${p.name}`, h('span.small.muted', ` · ${kindLabel(p.kind)}`)),
           h('button.icon', { onclick: () => openPlaceSheet(p), title: 'Ouvrir la fiche', 'aria-label': `Ouvrir la fiche de ${p.name}` }, '📄')))))) : null,
       offSeason.length ? fold('Hors saison', { key: 'territories.off', extra: String(offSeason.length) },
         h('ul.plain', offSeason.map((t) => h('li.off-row', h('span', t.name),
