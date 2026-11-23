@@ -14,6 +14,7 @@ import { h, fill, toast, errorMessage, confirmDialog, promptDialog, modal, fold 
 import { History } from '../lib/history.js';
 import { checkPost, selfIntersects } from '../lib/checks.js';
 import booleanPointInPolygon from '@turf/boolean-point-in-polygon';
+import { geomCenter, streetViewUrl, satelliteUrl } from '../lib/streetview.js';
 import { simplifyMeters, lineLengthMeters, distanceMeters } from '../lib/simplify.js';
 import { parseGeoFile } from '../lib/importer.js';
 import { DIFFICULTY_LABELS } from '../lib/hunts.js';
@@ -1066,6 +1067,7 @@ export async function editorView(main, start) {
       h('h3', d.ignored ? 'Bâtiment supprimé' : 'Bâtiment'),
       field('Nom', bound('dwellings', d, 'name', { maxlength: 100, placeholder: dwellingLabel({ ...d, name: '' }) })),
       facts.map((f) => h('p.small', f)),
+      streetViewLinks(d.geom),
       d.ignored
         ? [
             h('p.small.alert.muted', `Supprimé le ${new Date(d.ignored_at).toLocaleDateString('fr-FR')} : ${d.ignored_reason}. Il ne compte plus dans la zone non chassable.`),
@@ -1075,6 +1077,15 @@ export async function editorView(main, start) {
             h('p.small', `Compté comme habitation : pas de poste ni de tir à moins de ${buffer} m.`),
             canEdit ? h('button.danger', { onclick: () => removeDwelling(d) }, 'Supprimer ce bâtiment…') : null,
           ]);
+  }
+
+  /** Voir le bâtiment dans Google (nouvel onglet) : Street View, ou satellite à défaut. */
+  function streetViewLinks(geom) {
+    const c = geomCenter(geom);
+    if (!c) return null;
+    return h('p.buttons.streetview',
+      h('a.button', { href: streetViewUrl(c), target: '_blank', rel: 'noopener noreferrer', title: 'Panorama Street View le plus proche (Google)' }, '👁 Street View'),
+      h('a.small', { href: satelliteUrl(c), target: '_blank', rel: 'noopener noreferrer', title: 'Si Street View ne couvre pas ce secteur' }, 'Vue satellite Google'));
   }
 
   /** Libellé d'un bâtiment : son nom, sinon l'usage IGN. */

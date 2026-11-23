@@ -550,3 +550,4 @@ button.photo-icon.loading { opacity: 0.5; }
 .zone-slider label { display: grid; gap: 0.2rem; font-size: 0.85rem; }
 .zone-slider input[type=range] { width: 100%; min-width: 11rem; margin: 0; }
 .zone-slider-ends { display: flex; justify-content: space-between; font-size: 0.75rem; color: #666; }
+.streetview { display: flex; align-items: center; gap: 0.8rem; flex-wrap: wrap; margin: 0.4rem 0; }

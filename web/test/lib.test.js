@@ -412,3 +412,16 @@ describe('création d’un territoire : centre de la carte', () => {
     expect(startCenter({})).toBeNull();
   });
 });
+
+import { geomCenter, streetViewUrl, satelliteUrl } from '../src/lib/streetview.js';
+describe('Street View d’un bâtiment', () => {
+  it('centre du bâtiment et liens Google', () => {
+    const sq = { type: 'Polygon', coordinates: [[[2, 43], [2.0002, 43], [2.0002, 43.0002], [2, 43.0002], [2, 43]]] };
+    const close = (a, b) => { expect(a[0]).toBeCloseTo(b[0], 9); expect(a[1]).toBeCloseTo(b[1], 9); };
+    close(geomCenter(sq), [2.0001, 43.0001]);
+    expect(geomCenter({ type: 'Point', coordinates: [1, 2] })).toEqual([1, 2]);
+    close(geomCenter({ type: 'MultiPolygon', coordinates: [sq.coordinates] }), [2.0001, 43.0001]);
+    expect(streetViewUrl([2.0001, 43.0001])).toBe('https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=43.000100,2.000100');
+    expect(satelliteUrl([2, 43])).toContain('basemap=satellite');
+  });
+});
