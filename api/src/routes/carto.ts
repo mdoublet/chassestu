@@ -194,7 +194,8 @@ cartoRoutes.get('/territories/overview', (c) =>
  */
 export async function loadPlaces(tx: Tx, territoryId: string | null) {
   return tx.query<{ id: string; kind: string }>(
-    `SELECT id, name, kind, ${geomOut('geom')}, updated_at FROM places
+    `SELECT id, name, kind, notes, ${geomOut('geom')}, updated_at,
+            (photo IS NOT NULL OR photo_key IS NOT NULL) AS has_photo, photo_updated_at FROM places
       WHERE visibility = 'public'
         AND (EXISTS (SELECT 1 FROM season_places sp WHERE sp.place_id = places.id AND sp.season_id = app.current_season())
              OR id IN (SELECT parking_id FROM posts WHERE territory_id = $1))

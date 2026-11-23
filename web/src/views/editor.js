@@ -7,7 +7,8 @@ import '@geoman-io/leaflet-geoman-free';
 import '@geoman-io/leaflet-geoman-free/dist/leaflet-geoman.css';
 import { addBasemaps } from '../map/basemap.js';
 import { escapeHtml, toLatLng, ensureHatchPattern, postIcon, parkingIcon, placeMarker } from '../map/shapes.js';
-import { kindIcon } from './place-picker.js';
+import { kindIcon, kindLabel } from './place-picker.js';
+import { openPlaceSheet } from './place-sheet.js';
 import { api } from '../api.js';
 import { state } from '../state.js';
 import { h, fill, toast, errorMessage, confirmDialog, promptDialog, modal, fold } from '../ui.js';
@@ -218,7 +219,15 @@ export async function editorView(main, start) {
   function renderPlaces() {
     const places = ed.data?.places ?? ed.places ?? [];
     for (const p of places) {
-      groups.places.addLayer(placeMarker(p, kindIcon(p.kind)));
+      const m = placeMarker(p, kindIcon(p.kind));
+      if (isSelected('places', p.id)) m.setZIndexOffset(1000).on('add', () => m.getElement()?.classList.add('selected'));
+      // Clic : sélection (fiche à droite) ; sans territoire ouvert, la fiche s'ouvre directement.
+      m.on('click', (e) => {
+        if (e.originalEvent) e.originalEvent.handledByLayer = true;
+        if (ed.mode || ed.recording) return;
+        if (ed.data) select('places', p.id); else openPlaceSheet(p);
+      });
+      groups.places.addLayer(m);
     }
   }
 
@@ -929,6 +938,12 @@ export async function editorView(main, start) {
       return h('section.props', h('h3', 'Zone de réserve'), field('Nom', bound(kind, item, 'name', { maxlength: 200 })), field('Motif', bound(kind, item, 'reason', { maxlength: 1000 })), h('p.small', `${item.area_ha.toLocaleString('fr-FR')} ha`), del);
     }
     if (kind === 'dwellings') return dwellingPanel(item);
+    if (kind === 'places') {
+      return h('section.props', h('h3', `${item.kind === 'parking' ? '🅿' : kindIcon(item.kind)} ${item.name}`),
+        h('p.small.muted', `${kindLabel(item.kind)}${item.notes ? ` · ${item.notes}` : ''}`),
+        h('div.buttons', h('button.primary', { onclick: () => openPlaceSheet(item) }, `📄 Ouvrir la fiche${item.has_photo ? ' (photo)' : ''}`)),
+        h('p.small.muted', 'Les lieux se modifient dans la page Lieux.'));
+    }
     // Poste
     const parkingSelect = bound(kind, item, 'parking_id', {}, 'select');
     parkingSelect.append(h('option', { value: '' }, '— aucun —'), ...ed.data.parkings.map((pk) => h('option', { value: pk.id, selected: pk.id === item.parking_id }, pk.name)));
@@ -1209,6 +1224,18 @@ export async function editorView(main, start) {
       }))));
   }
 
+  /** Lieux de l'association (parkings compris) : lecture, fiche à l'écran. */
+  function placesSection() {
+    const places = ed.data.places ?? [];
+    return foldSection('places', `Lieux (${places.length})`, '',
+      places.length ? null : h('p.small.muted', 'Aucun lieu : ils se créent dans la page Lieux.'),
+      h('ul.obj-list', places.map((p) => h('li.obj-row', { class: isSelected('places', p.id) ? 'active' : '' },
+        h('span.syms', h('span.sym', p.kind === 'parking' ? '🅿' : kindIcon(p.kind))),
+        h('button.link.obj-label', { onclick: () => select('places', p.id, { zoom: true }), title: 'Voir sur la carte' }, p.name,
+          h('span.small.muted', ` · ${kindLabel(p.kind)}`)),
+        h('span.obj-actions', h('button.icon', { onclick: () => openPlaceSheet(p), title: 'Ouvrir la fiche', 'aria-label': `Ouvrir la fiche de ${p.name}` }, '📄'))))));
+  }
+
   function reservesSection() {
     const reserves = ed.data.reserves;
     return foldSection('reserves', `Réserves (${reserves.length})`, '',
@@ -1297,6 +1324,7 @@ export async function editorView(main, start) {
       ed.data ? postsSection() : null,
       ed.data ? linesSection() : null,
       ed.data ? reservesSection() : null,
+      ed.data ? placesSection() : null,
       ed.data ? dwellingsSection() : null,
       ed.data && !busy
         ? foldSection('data', 'Données', 'import, export, IGN',

@@ -15,8 +15,8 @@ import { fold } from '../ui.js';
 import { state } from '../state.js';
 
 
-export async function placesView(main) {
-  const st = { places: [], editing: null, placing: false, draft: null };
+export async function placesView(main, openId = null) {
+  const st = { places: [], editing: openId ?? null, placing: false, draft: null };
   const isPres = state.role === 'president';
   const canEdit = (p) => isPres || (p.mine && p.visibility === 'private');
   const list = h('div');
@@ -218,6 +218,8 @@ export async function placesView(main) {
 
   try {
     await load();
+    const opened = st.places.find((p) => p.id === openId);
+    if (opened) map.setView(toLatLng(opened.geom.coordinates), 15);
   } catch (err) {
     fill(list, h('p.error', errorMessage(err)));
   }

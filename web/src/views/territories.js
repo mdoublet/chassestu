@@ -4,7 +4,8 @@
 import L from '../map/leaflet.js';
 import { addBasemaps } from '../map/basemap.js';
 import { toLatLng, escapeHtml, postIcon, ensureHatchPattern, placeMarker } from '../map/shapes.js';
-import { kindIcon } from './place-picker.js';
+import { kindIcon, kindLabel } from './place-picker.js';
+import { openPlaceSheet } from './place-sheet.js';
 import { api } from '../api.js';
 import { state } from '../state.js';
 import { h, fill, toast, errorMessage, confirmDialog, fold } from '../ui.js';
@@ -74,7 +75,9 @@ export async function territoriesView(main) {
       layer.addLayer(L.geoJSON(r.geom, { style: { color: '#c92a2a', weight: 1, fillOpacity: 0.6, className: 'reserve-shape' }, interactive: false }));
     }
     // Lieux de l'association, parkings compris : communs à tous les territoires.
-    for (const p of overview?.places ?? []) layer.addLayer(placeMarker(p, kindIcon(p.kind)));
+    for (const p of overview?.places ?? []) {
+      layer.addLayer(placeMarker(p, kindIcon(p.kind)).on('click', () => openPlaceSheet(p)));
+    }
     for (const p of (overview?.posts ?? []).filter((x) => visible(x.territory_id))) {
       const t = territories.find((x) => x.id === p.territory_id);
       layer.addLayer(L.marker(toLatLng(p.geom.coordinates), { icon: postIcon(p.number, p.invalid_reason ? 'invalid-static' : '') })
@@ -149,6 +152,11 @@ export async function territoriesView(main) {
     renderToggles();
     fill(list, territories.length ? territories.map(card)
       : h('div.card', h('p', 'Aucun territoire pour cette saison.'), canEdit ? h('a.button.primary', { href: '#/carte/nouveau' }, 'Créer un territoire') : null),
+      overview?.places?.length ? fold('Lieux', { key: 'territories.places', extra: String(overview.places.length) },
+        h('ul.plain.places-list', overview.places.map((p) => h('li', h('div.place-row',
+          h('button.link.place-name', { onclick: () => map.setView(toLatLng(p.geom.coordinates), 16), title: 'Voir sur la carte' },
+            `${p.kind === 'parking' ? '🅿' : kindIcon(p.kind)} ${p.name}`, h('span.small.muted', ` · ${kindLabel(p.kind)}`)),
+          h('button.icon', { onclick: () => openPlaceSheet(p), title: 'Ouvrir la fiche', 'aria-label': `Ouvrir la fiche de ${p.name}` }, '📄')))))) : null,
       offSeason.length ? fold('Hors saison', { key: 'territories.off', extra: String(offSeason.length) },
         h('ul.plain', offSeason.map((t) => h('li.off-row', h('span', t.name),
           canEdit ? h('button.link', { onclick: () => season(t, true) }, 'Rattacher à la saison') : null)))) : null);
