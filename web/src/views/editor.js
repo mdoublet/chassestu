@@ -44,7 +44,6 @@ const STYLE = {
   otherTerritory: { color: '#5f6b63', weight: 2, dashArray: '6 4', fillColor: '#5f6b63', fillOpacity: 0.05 },
   otherExclusion: { color: '#d9480f', weight: 0.5, fillOpacity: 0.45, className: 'exclusion-shape' },
   otherReserve: { color: '#c92a2a', weight: 1, fillOpacity: 0.45, className: 'reserve-shape' },
-  warningBand: { color: '#e8a33d', weight: 1, dashArray: '4 4', fillColor: '#e8a33d', fillOpacity: 0.12 },
 };
 
 /** Style d'un bâtiment selon son état (rendu sur canvas : des centaines d'objets). */
@@ -117,7 +116,7 @@ export async function editorView(main, start) {
 
   const map = L.map(mapEl, { zoomControl: true }).setView([46.6, 2.4], 6);
   if (import.meta.env.DEV) window.__map = map; // tests de bout en bout (jamais en production)
-  addBasemaps(map);
+  addBasemaps(map, { zones: true });
   map.pm.setLang('fr');
   map.pm.setGlobalOptions({ snappable: true, snapDistance: 20, allowSelfIntersection: false });
 
@@ -147,9 +146,7 @@ export async function editorView(main, start) {
   /** Zones calculées par le serveur, pour le contrôle des postes côté client. */
   const zonesFor = (data) => ({
     exclusion: data?.exclusion?.geom,
-    warning: data?.exclusion?.warning_geom,
     bufferM: data?.exclusion?.buffer_distance_m,
-    warningM: data?.exclusion?.warning_margin_m,
     postArea: data?.exclusion?.post_area,
     maxOutsideM: data?.exclusion?.post_max_outside_m ?? 0,
   });
@@ -386,10 +383,7 @@ export async function editorView(main, start) {
       groups.exclusion.addLayer(L.geoJSON(exclusion.post_area, { style: STYLE.postArea, interactive: false }));
     }
 
-    // Zone non chassable (hachures orange) et bande d'avertissement
-    if (exclusion?.warning_geom) {
-      groups.exclusion.addLayer(L.geoJSON(exclusion.warning_geom, { style: STYLE.warningBand, interactive: false }));
-    }
+    // Zone non chassable (hachures orange) : distance des paramètres.
     if (exclusion?.geom) {
       const zone = L.geoJSON(exclusion.geom, { style: STYLE.exclusion, interactive: false });
       groups.exclusion.addLayer(zone);

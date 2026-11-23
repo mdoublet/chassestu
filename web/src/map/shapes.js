@@ -6,6 +6,30 @@ export const escapeHtml = (s) =>
 
 export const toLatLng = ([lon, lat]) => [lat, lon];
 
+// Intensité des zones non chassables (curseur des options de carte), 0 à 100,
+// 50 = rendu normal. En dessous : plus transparent ; au-dessus : hachures plus
+// épaisses et fond plus soutenu. Mémorisée sur l'appareil, commune à toutes les cartes.
+const ZONE_KEY = 'chassestu.zonesIntensite';
+export function zoneStrength() {
+  try {
+    const v = Number(localStorage.getItem(ZONE_KEY));
+    return localStorage.getItem(ZONE_KEY) !== null && Number.isFinite(v) ? Math.min(100, Math.max(0, v)) : 50;
+  } catch {
+    return 50;
+  }
+}
+export function setZoneStrength(v, remember = true) {
+  const s = Math.min(100, Math.max(0, Number(v))) / 50; // 0 → 2, 1 = normal
+  document.documentElement.style.setProperty('--zone-opacity', String(Math.min(1, s)));
+  const boost = Math.max(1, s);
+  const pattern = document.getElementById('hatch-orange');
+  pattern?.querySelector('rect')?.setAttribute('fill', `rgba(217,72,15,${(0.10 * boost * boost).toFixed(3)})`);
+  pattern?.querySelector('line')?.setAttribute('stroke-width', String(2 * boost));
+  if (remember) {
+    try { localStorage.setItem(ZONE_KEY, String(v)); } catch { /* rien */ }
+  }
+}
+
 export function ensureHatchPattern() {
   if (document.getElementById('hatch-defs')) return;
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -21,6 +45,7 @@ export function ensureHatchPattern() {
       <rect width="10" height="10" fill="rgba(217,72,15,0.10)"/><line x1="0" y1="0" x2="0" y2="10" stroke="#d9480f" stroke-width="2"/>
     </pattern></defs>`;
   document.body.append(svg);
+  setZoneStrength(zoneStrength(), false);
 }
 
 export function postIcon(number, cls = '') {

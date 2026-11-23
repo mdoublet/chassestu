@@ -64,7 +64,7 @@ export function createDaySheet(container, opts = {}) {
   const more = h('div.sheet-more');
   fill(container, info, mapEl, more);
   const map = L.map(mapEl, { zoomControl: true }).setView([46.6, 2.4], 6);
-  addBasemaps(map);
+  addBasemaps(map, { zones: true });
   const layers = L.featureGroup().addTo(map);
   const panel = positionPanel(map, { dayId: opts.dayId, guestToken: opts.guestToken, canSeeAll: opts.canSeeAll, onChanged: opts.onChanged });
   let fittedFor = null;

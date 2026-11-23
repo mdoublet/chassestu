@@ -2,6 +2,8 @@
 // Noms de couches, styles, formats et TileMatrixSet vérifiés dans le
 // GetCapabilities de https://data.geopf.fr/wmts (novembre 2026).
 import L from './leaflet.js';
+import { zoneStrength, setZoneStrength } from './shapes.js';
+import { state } from '../state.js';
 
 const WMTS = 'https://data.geopf.fr/wmts';
 const ATTRIBUTION = '© <a href="https://www.ign.fr/" target="_blank" rel="noopener">IGN</a> — Géoplateforme';
@@ -54,8 +56,11 @@ function tileLayer(def, extra = {}) {
   });
 }
 
-/** Ajoute les fonds IGN et le sélecteur de couches ; renvoie les couches. */
-export function addBasemaps(map) {
+/**
+ * Ajoute les fonds IGN et le sélecteur de couches ; renvoie les couches.
+ * `zones` : ajoute au sélecteur le curseur d'intensité des zones non chassables.
+ */
+export function addBasemaps(map, { zones = false } = {}) {
   const plan = tileLayer(IGN_LAYERS.plan);
   const ortho = tileLayer(IGN_LAYERS.ortho);
   const cadastre = tileLayer(IGN_LAYERS.cadastre, { opacity: 0.8 });
@@ -77,13 +82,31 @@ export function addBasemaps(map) {
   });
   map.on('overlayadd', (e) => e.layer === routes && !switching && rememberRoutes(true));
   map.on('overlayremove', (e) => e.layer === routes && !switching && map.hasLayer(ortho) && rememberRoutes(false));
-  L.control
+  const control = L.control
     .layers(
       { [IGN_LAYERS.plan.name]: plan, [IGN_LAYERS.ortho.name]: ortho },
       { [IGN_LAYERS.routes.name]: routes, [IGN_LAYERS.cadastre.name]: cadastre },
       { position: 'topright', collapsed: true },
     )
     .addTo(map);
+  if (zones) control.getContainer().querySelector('.leaflet-control-layers-list')?.append(zoneSlider());
   L.control.scale({ imperial: false }).addTo(map);
   return { plan, ortho, cadastre, routes };
+}
+
+/** Curseur « zones à moins de N m » : plus discrètes ← → plus visibles. */
+function zoneSlider() {
+  const meters = state.tenant?.buffer_distance_m ?? 150;
+  const box = L.DomUtil.create('div', 'zone-slider');
+  box.innerHTML = `<div class="leaflet-control-layers-separator"></div>
+    <label><span>Zones à moins de ${meters} m</span>
+    <input type="range" min="0" max="100" step="5" aria-label="Intensité des zones à moins de ${meters} m des habitations"></label>
+    <div class="zone-slider-ends"><span>atténuées</span><span>renforcées</span></div>`;
+  const input = box.querySelector('input');
+  input.value = String(zoneStrength());
+  input.addEventListener('input', () => setZoneStrength(input.value));
+  // Glisser le curseur ne déplace pas la carte.
+  L.DomEvent.disableClickPropagation(box);
+  for (const ev of ['pointerdown', 'mousedown', 'touchstart']) L.DomEvent.on(input, ev, L.DomEvent.stopPropagation);
+  return box;
 }

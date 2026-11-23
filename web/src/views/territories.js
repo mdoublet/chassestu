@@ -20,7 +20,7 @@ export async function territoriesView(main) {
       canEdit ? h('a.button.primary', { href: '#/carte/nouveau' }, '+ Nouveau territoire') : null),
     mapEl, shown, list);
   const map = L.map(mapEl, { zoomControl: true }).setView([46.6, 2.4], 6);
-  addBasemaps(map);
+  addBasemaps(map, { zones: true });
   const layer = L.featureGroup().addTo(map);
   let territories = [];
   let offSeason = [];

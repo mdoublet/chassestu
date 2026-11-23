@@ -88,7 +88,7 @@ async function dayConsole(main, dayId) {
   main.append(layout);
   let watcher = null;
   const map = L.map(mapEl, { zoomControl: true }).setView([46.6, 2.4], 6);
-  addBasemaps(map);
+  addBasemaps(map, { zones: true });
   const layers = { base: L.featureGroup().addTo(map), posts: L.featureGroup().addTo(map) };
   let fittedFor = null;
 
