@@ -53,7 +53,7 @@ export async function loadPlans(tx: Tx, huntPlanId: string | null) {
 }
 
 const HUNT_PLAN_SELECT = `id, territory_id, name, notes, ${geomOut('start_point')}, ${geomOut('drive_path')}, ${geomOut('exit_point')},
-  round(ST_Length(drive_path::geography))::int AS drive_length_m, updated_at,
+  round(ST_Length(drive_path::geography))::int AS drive_length_m, wind_from_min, wind_from_max, updated_at,
   EXISTS (SELECT 1 FROM season_hunt_plans sp WHERE sp.hunt_plan_id = hunt_plans.id AND sp.season_id = app.current_season()) AS in_season`;
 
 export async function loadHuntPlan(tx: Tx, id: string) {
@@ -85,7 +85,13 @@ const huntPlanFields = z.object({
   start_point: pointSchema.nullable(),
   drive_path: lineSchema.nullable(),
   exit_point: pointSchema.nullable(),
+  // Vents favorables : d'où vient le vent, de min à max (sens horaire) ; null : tous vents.
+  wind_from_min: z.number().int().min(0).max(359).nullable(),
+  wind_from_max: z.number().int().min(0).max(359).nullable(),
 });
+const windPair = (b: { wind_from_min?: number | null; wind_from_max?: number | null }) =>
+  (b.wind_from_min === undefined) === (b.wind_from_max === undefined) && (b.wind_from_min === null) === (b.wind_from_max === null);
+const WIND_MSG = { message: 'Indiquez les deux bornes de la plage de vent (ou aucune).' };
 const GEOMS = ['start_point', 'drive_path', 'exit_point'] as const;
 
 function nameTaken(err: unknown): never {
@@ -103,19 +109,20 @@ planRoutes.get('/territories/:id/hunt-plans', (c) => {
 
 planRoutes.post('/territories/:id/hunt-plans', async (c) => {
   const id = parseId(c.req.param('id'));
-  const body = huntPlanFields.partial({ notes: true, start_point: true, drive_path: true, exit_point: true }).strict().parse(await c.req.json());
+  const body = huntPlanFields.partial({ notes: true, start_point: true, drive_path: true, exit_point: true, wind_from_min: true, wind_from_max: true }).strict()
+    .refine(windPair, WIND_MSG).parse(await c.req.json());
   return tenantTx(c, ['president'], async (tx) => {
     notFoundIfNull(await tx.maybeOne('SELECT id FROM territories WHERE id = $1', [id]), 'Territoire');
     const g = (k: (typeof GEOMS)[number]) => (body[k] ? JSON.stringify(body[k]) : null);
     const { id: hpId } = await tx
       .one<{ id: string }>(
-        `INSERT INTO hunt_plans (territory_id, name, notes, start_point, drive_path, exit_point)
-         VALUES ($1, $2, $3,
+        `INSERT INTO hunt_plans (territory_id, name, notes, wind_from_min, wind_from_max, start_point, drive_path, exit_point)
+         VALUES ($1, $2, $3, $7, $8,
                  CASE WHEN $4::text IS NULL THEN NULL ELSE ${geomParam(4)} END,
                  CASE WHEN $5::text IS NULL THEN NULL ELSE ${geomParam(5)} END,
                  CASE WHEN $6::text IS NULL THEN NULL ELSE ${geomParam(6)} END)
          RETURNING id`,
-        [id, body.name, body.notes ?? '', g('start_point'), g('drive_path'), g('exit_point')],
+        [id, body.name, body.notes ?? '', g('start_point'), g('drive_path'), g('exit_point'), body.wind_from_min ?? null, body.wind_from_max ?? null],
       )
       .catch(nameTaken);
     return c.json({ hunt_plan: await loadHuntPlan(tx, hpId) }, 201);
@@ -124,7 +131,7 @@ planRoutes.post('/territories/:id/hunt-plans', async (c) => {
 
 planRoutes.patch('/hunt-plans/:id', async (c) => {
   const id = parseId(c.req.param('id'));
-  const body = huntPlanFields.partial().strict().parse(await c.req.json());
+  const body = huntPlanFields.partial().strict().refine(windPair, WIND_MSG).parse(await c.req.json());
   return tenantTx(c, ['president'], async (tx) => {
     const sets: string[] = [];
     const params: unknown[] = [id];

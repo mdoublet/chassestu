@@ -26,7 +26,8 @@ export const POSTED = ['poste', 'chef_de_ligne'];
 const HUNT_SELECT = `h.id, h.day_id, h.number, h.territory_id, t.name AS territory_name, h.hunt_plan_id,
   (SELECT name FROM hunt_plans WHERE id = h.hunt_plan_id) AS hunt_plan_name, to_char(h.date, 'YYYY-MM-DD') AS date,
   h.briefing, h.leader_user_id, lu.display_name AS leader_name, h.status, h.assignments_published_at,
-  h.started_at, h.ended_at, h.created_at, h.revision::int AS revision`;
+  h.started_at, h.ended_at, h.created_at, h.revision::int AS revision,
+  h.wind_from_deg, h.wind_speed_kmh, h.wind_gust_kmh`;
 const HUNT_FROM = `hunts h JOIN territories t ON t.id = h.territory_id LEFT JOIN users lu ON lu.id = h.leader_user_id`;
 
 export async function loadHunt(tx: Tx, id: string) {

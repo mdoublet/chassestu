@@ -10,6 +10,8 @@ import '@geoman-io/leaflet-geoman-free/dist/leaflet-geoman.css';
 import { addBasemaps } from '../map/basemap.js';
 import { escapeHtml, toLatLng, ensureHatchPattern, postIcon, traqueIcon, traqueLayers, placeMarker } from '../map/shapes.js';
 import { kindIcon } from './place-picker.js';
+import { liveWind } from '../map/wind-control.js';
+import { COMPASS, sectorDeg, compassName, polygonCenter, rangeLabel, windInRange, windPhrase } from '../lib/wind.js';
 import { api } from '../api.js';
 import { state } from '../state.js';
 import { h, fill, toast, errorMessage, confirmDialog, promptDialog, fold } from '../ui.js';
@@ -61,6 +63,7 @@ export async function plansView(main, territoryId, huntPlanId) {
   if (import.meta.env.DEV) window.__plansMap = map; // tests de bout en bout (jamais en production)
   const layers = { base: L.featureGroup().addTo(map), traque: L.featureGroup().addTo(map), posts: L.featureGroup().addTo(map) };
   const markers = new Map(); // post_id → marker
+  const wind = liveWind(map, () => polygonCenter(ps.data?.territory?.geom), { onWind: () => renderTraqueCard() });
 
   // -------------------------------------------------------------------------
   // Données
@@ -110,6 +113,7 @@ export async function plansView(main, territoryId, huntPlanId) {
   // -------------------------------------------------------------------------
 
   function renderMap() {
+    wind.refresh();
     layers.base.clearLayers();
     layers.posts.clearLayers();
     markers.clear();
@@ -250,6 +254,27 @@ export async function plansView(main, territoryId, huntPlanId) {
     exit: 'Cliquez à l’endroit de la sortie de la traque.',
   };
 
+  /** Vents favorables du plan : de … à … (sens horaire), ou tous vents ; vent actuel en regard. */
+  function windRangeField(hp) {
+    const has = hp.wind_from_min != null;
+    const w = wind.current;
+    const now = w ? h('span.small', ` · actuellement ${windPhrase(w.from_deg)} ${w.speed_kmh} km/h${has ? (windInRange(w.from_deg, hp.wind_from_min, hp.wind_from_max) ? ' ✔ favorable' : ' ✖ pas favorable') : ''}`) : null;
+    if (!canEdit) return h('p.small', `💨 Vents favorables : ${rangeLabel(hp.wind_from_min, hp.wind_from_max)}`, now);
+    const opts = (value, first) => [h('option', { value: '' }, first), ...COMPASS.map((c) => h('option', { value: c, selected: value != null && compassName(value) === c }, c))];
+    const from = h('select', { 'aria-label': 'Vent favorable : de' }, opts(hp.wind_from_min, 'tous vents'));
+    const to = h('select', { 'aria-label': 'Vent favorable : à', disabled: !has }, opts(hp.wind_from_max, '—'));
+    const save = () => {
+      if (!from.value) return patchHuntPlan({ wind_from_min: null, wind_from_max: null }, 'Plan pour tous vents.');
+      const min = sectorDeg(from.value);
+      const max = to.value ? sectorDeg(to.value) : min;
+      return patchHuntPlan({ wind_from_min: min, wind_from_max: max }, `Vents favorables : ${rangeLabel(min, max)}.`);
+    };
+    from.onchange = save;
+    to.onchange = save;
+    return h('div.wind-range', h('span', '💨 Vents favorables (d’où vient le vent) : de '), from, h('span', ' à '), to, now,
+      h('p.small.muted', 'Sens horaire : « O à N » couvre O, ONO, NO, NNO, N. À la création d’une battue, le plan favorable au vent prévu est proposé en premier.'));
+  }
+
   function renderTraqueCard() {
     const hp = huntPlan();
     if (!hp) {
@@ -265,6 +290,7 @@ export async function plansView(main, territoryId, huntPlanId) {
             h('label', 'Nom', h('input', { value: hp.name, maxlength: 200, onchange: (e) => e.target.value.trim() && patchHuntPlan({ name: e.target.value.trim() }, 'Plan de chasse renommé.') })),
             h('label', 'Consignes de la traque', h('input', { value: hp.notes, maxlength: 2000, placeholder: 'ex. chiens lâchés au ruisseau, sens nord → sud', onchange: (e) => patchHuntPlan({ notes: e.target.value }, 'Consignes enregistrées.') })))
         : [h('h2', hp.name), hp.notes ? h('p', hp.notes) : null],
+      windRangeField(hp),
       h('div.traque-facts',
         fact('Départ', !!hp.start_point),
         fact('Tracé', !!hp.drive_path, hp.drive_length_m ? `${hp.drive_length_m.toLocaleString('fr-FR')} m` : ''),
@@ -448,7 +474,7 @@ export async function plansView(main, territoryId, huntPlanId) {
       const traque = [hp.start_point ? 'D' : null, hp.drive_path ? '〰' : null, hp.exit_point ? 'S' : null].filter(Boolean).join(' ');
       const d = h('details.fold.hunt-plan', { open: active && !ps.collapsed, class: active ? 'active' : '' },
         h('summary', h('span', hp.name),
-          h('span.small.muted', ` · ${hp.coverage.length ? `effectifs ${hp.coverage.map((c) => c.hunter_count).join(', ')}` : 'grille vide'}${traque ? ` · ${traque}` : ' · traque non tracée'}`)),
+          h('span.small.muted', ` · ${hp.coverage.length ? `effectifs ${hp.coverage.map((c) => c.hunter_count).join(', ')}` : 'grille vide'}${traque ? ` · ${traque}` : ' · traque non tracée'}${hp.wind_from_min != null ? ` · 💨 ${rangeLabel(hp.wind_from_min, hp.wind_from_max)}` : ''}`)),
         active ? [traqueBox, gridBox] : null);
       d.addEventListener('toggle', () => {
         if (d.open && !active) switchHuntPlan(hp.id);
@@ -481,5 +507,5 @@ export async function plansView(main, territoryId, huntPlanId) {
   setTimeout(() => map.invalidateSize(), 0);
   setTimeout(() => map.invalidateSize(), 400); // après la mise en page du panneau
 
-  return () => { document.removeEventListener('keydown', onKey); map.remove(); };
+  return () => { document.removeEventListener('keydown', onKey); wind.stop(); map.remove(); };
 }

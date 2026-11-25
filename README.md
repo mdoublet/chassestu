@@ -269,6 +269,17 @@ migration sont rattachées à un « Plan principal ». Les anciennes routes
 `/territories/:id/coverage-plans` restent en compatibilité (premier plan de
 chasse du territoire).
 
+**Vent** (migration 0030) : chaque plan de chasse peut avoir une plage de vents
+favorables (d'où vient le vent, de … à … dans le sens horaire, 16 directions ;
+vide : tous vents). À la création d'une battue, le vent prévu au centre du
+territoire (Open-Meteo, gratuit, sans clé ; seules les coordonnées du centre
+sont envoyées) classe les plans : les favorables en tête (⭐), le premier est
+proposé d'office ; le vent prévu est gardé avec la battue. Les cartes de la
+journée, de la fiche chasseur et des plans de chasse affichent le vent de
+l'heure (flèche dans le sens où il souffle, direction, force, rafales),
+rafraîchi toutes les 15 minutes. Météo indisponible : rien n'est affiché et
+le choix du plan reste manuel.
+
 - [x] Les plans de l'exemple (5 et 6 chasseurs) se saisissent dans la grille et s'affichent sur la carte.
 - [x] Une ligne dont le nombre de postes cochés diffère de l'effectif ne peut pas être enregistrée (client et base).
 - [x] Un poste invalidé signale en rouge les plans qui l'utilisent (aussi : poste désactivé ou supprimé).

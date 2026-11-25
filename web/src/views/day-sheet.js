@@ -8,6 +8,8 @@
 // Pour tous : chasseurs, responsables, président, invités. Mise à jour automatique.
 import L from '../map/leaflet.js';
 import { addBasemaps } from '../map/basemap.js';
+import { liveWind } from '../map/wind-control.js';
+import { polygonCenter } from '../lib/wind.js';
 import { escapeHtml, toLatLng, ensureHatchPattern, postIcon, parkingIcon } from '../map/shapes.js';
 import { api } from '../api.js';
 import { state } from '../state.js';
@@ -65,6 +67,9 @@ export function createDaySheet(container, opts = {}) {
   fill(container, info, mapEl, more);
   const map = L.map(mapEl, { zoomControl: true }).setView([46.6, 2.4], 6);
   addBasemaps(map, { zones: true });
+  // Vent au centre du territoire de la battue en cours.
+  let windCenter = null;
+  const wind = liveWind(map, () => windCenter);
   const layers = L.featureGroup().addTo(map);
   const panel = positionPanel(map, { dayId: opts.dayId, guestToken: opts.guestToken, canSeeAll: opts.canSeeAll, onChanged: opts.onChanged });
   let fittedFor = null;
@@ -293,6 +298,8 @@ export function createDaySheet(container, opts = {}) {
     const { day } = view;
     layers.clearLayers();
     let tLayer = null;
+    windCenter = cur ? polygonCenter(cur.territory.geom) : null;
+    wind.refresh();
     if (cur) {
       tLayer = L.geoJSON(cur.territory.geom, { style: { color: '#1f5130', weight: 3, fillOpacity: 0.04 }, interactive: false });
       layers.addLayer(tLayer);
@@ -376,6 +383,7 @@ export function createDaySheet(container, opts = {}) {
     update: apply,
     destroy() {
       panel.destroy();
+      wind.stop();
       map.remove();
     },
   };

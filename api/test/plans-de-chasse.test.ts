@@ -88,6 +88,23 @@ describe('plans de chasse', () => {
     expect(detail.hunt_plan).toBeNull();
   });
 
+  it('vent : plage favorable par plan ; vent prévu gardé avec la battue', async () => {
+    const hp = (await call('POST', `/api/territories/${territoryId}/hunt-plans`, { name: 'Vent d’ouest', wind_from_min: 248, wind_from_max: 315 })).body.hunt_plan;
+    expect(hp).toMatchObject({ wind_from_min: 248, wind_from_max: 315 });
+    // Les deux bornes, ou aucune.
+    expect((await call('PATCH', `/api/hunt-plans/${hp.id}`, { wind_from_min: 10 })).status).toBe(400);
+    expect((await call('PATCH', `/api/hunt-plans/${hp.id}`, { wind_from_min: 315, wind_from_max: 45 })).body.hunt_plan).toMatchObject({ wind_from_min: 315, wind_from_max: 45 });
+    expect((await call('PATCH', `/api/hunt-plans/${hp.id}`, { wind_from_min: null, wind_from_max: null })).body.hunt_plan.wind_from_min).toBeNull();
+    expect((await call('PATCH', `/api/hunt-plans/${hp.id}`, { wind_from_min: 400, wind_from_max: 10 })).status).toBe(400);
+
+    const { dayId } = await runningDay((u, m, path, body) => api(u, m, path, { tenant, body }), P, HUNTERS, { date: '2026-12-12' });
+    const res = await call('POST', `/api/days/${dayId}/battues`, { territory_id: territoryId, hunt_plan_id: hp.id, wind: { from_deg: 270, speed_kmh: 18, gust_kmh: 35 } });
+    expect(res.status).toBe(201);
+    expect((await call('GET', `/api/hunts/${res.body.hunt_id}`)).body.hunt).toMatchObject({ wind_from_deg: 270, wind_speed_kmh: 18, wind_gust_kmh: 35 });
+    expect(res.body.battues.at(-1)).toMatchObject({ wind_from_deg: 270, wind_speed_kmh: 18 });
+    expect((await call('DELETE', `/api/hunt-plans/${hp.id}`)).status).toBe(204);
+  });
+
   it('supprimer un plan de chasse : sa grille disparaît, la battue passe sans plan', async () => {
     const tmp = (await call('POST', `/api/territories/${territoryId}/hunt-plans`, { name: 'Éphémère' })).body.hunt_plan.id;
     await call('PUT', `/api/hunt-plans/${tmp}/coverage/1`, { post_ids: [ids[1]] });

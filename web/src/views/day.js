@@ -7,6 +7,8 @@
 //    regroupement.
 import L from '../map/leaflet.js';
 import { addBasemaps } from '../map/basemap.js';
+import { liveWind } from '../map/wind-control.js';
+import { polygonCenter, rankPlans, rangeLabel, windPhrase, compassName } from '../lib/wind.js';
 import { escapeHtml, toLatLng, ensureHatchPattern, postIcon, traqueLayers } from '../map/shapes.js';
 import { api } from '../api.js';
 import { state } from '../state.js';
@@ -90,6 +92,9 @@ async function dayConsole(main, dayId) {
   const map = L.map(mapEl, { zoomControl: true }).setView([46.6, 2.4], 6);
   addBasemaps(map, { zones: true });
   const layers = { base: L.featureGroup().addTo(map), posts: L.featureGroup().addTo(map) };
+  // Vent : territoire de la battue en cours, sinon celui choisi pour la prochaine.
+  const windTerritory = () => (running() && dv.territory?.territory) || dv.territories?.find((t) => t.id === dv.newBattue.territory_id) || dv.territory?.territory || null;
+  const wind = liveWind(map, () => polygonCenter(windTerritory()?.geom), { onWind: () => render() });
   let fittedFor = null;
 
   const current = () => dv.detail?.battues.at(-1) ?? null;
@@ -123,12 +128,17 @@ async function dayConsole(main, dayId) {
     return dv.huntPlans.get(territoryId) ?? null; // null : en cours de chargement
   }
 
-  /** Choix du plan de chasse : '' = sans plan (postes choisis à la main). */
+  /**
+   * Choix du plan de chasse : '' = sans plan (postes choisis à la main). Avec
+   * le vent prévu, les plans favorables viennent en tête, marqués ⭐.
+   */
   function huntPlanSelect(territoryId, value, onchange, disabled = false) {
     const plans = huntPlansOf(territoryId);
     if (plans === null) return h('select', { disabled: true }, h('option', 'Chargement…'));
+    const ranked = rankPlans(plans, wind.current?.from_deg ?? null);
     return h('select', { disabled, 'aria-label': 'Plan de chasse', onchange: (e) => onchange(e.target.value || null) },
-      plans.map((hp) => h('option', { value: hp.id, selected: hp.id === value }, hp.name)),
+      ranked.map((hp) => h('option', { value: hp.id, selected: hp.id === value },
+        `${hp.favorable ? '⭐ ' : ''}${hp.name}${hp.wind_from_min != null ? ` (vents ${rangeLabel(hp.wind_from_min, hp.wind_from_max)})` : ''}`)),
       h('option', { value: '', selected: !value }, '— sans plan : postes choisis à la main —'));
   }
 
@@ -461,9 +471,21 @@ async function dayConsole(main, dayId) {
         dv.territories.map((t) => h('option', { value: t.id, selected: t.id === nb.territory_id }, t.name)))),
       (() => {
         const plans = huntPlansOf(nb.territory_id);
-        if (plans && nb.hunt_plan_id === undefined) nb.hunt_plan_id = plans[0]?.id ?? null;
+        const w = wind.current;
+        // Plan proposé d'office (tant que le responsable n'en a pas choisi) : le
+        // premier favorable au vent prévu, sinon le premier.
+        if (plans && (nb.hunt_plan_id === undefined || nb.autoPlan)) {
+          nb.hunt_plan_id = rankPlans(plans, w?.from_deg ?? null)[0]?.id ?? null;
+          nb.autoPlan = true;
+        }
+        const chosen = plans?.find((p) => p.id === nb.hunt_plan_id);
+        const fav = chosen && w && rankPlans([chosen], w.from_deg)[0];
         return [
-          h('label', 'Plan de chasse', huntPlanSelect(nb.territory_id, nb.hunt_plan_id, (v) => { nb.hunt_plan_id = v; })),
+          h('p.small.wind-hint', w
+            ? [`💨 Vent prévu : ${windPhrase(w.from_deg)} (${w.from_deg}°), ${w.speed_kmh} km/h${w.gust_kmh ? `, rafales ${w.gust_kmh}` : ''}.`,
+               chosen?.wind_from_min != null ? (fav?.favorable ? h('strong', ' ⭐ Plan adapté à ce vent.') : h('span.warn-text', ` ⚠ Ce plan est prévu pour les vents ${rangeLabel(chosen.wind_from_min, chosen.wind_from_max)}.`)) : null]
+            : 'Vent prévu : indisponible (météo hors ligne).'),
+          h('label', 'Plan de chasse', huntPlanSelect(nb.territory_id, nb.hunt_plan_id, (v) => { nb.hunt_plan_id = v; nb.autoPlan = false; render(); })),
           plans && !plans.length
             ? h('p.small.muted', 'Aucun plan de chasse pour ce territoire : les postes seront choisis à la main. ',
                 state.role === 'president' ? h('a', { href: `#/plans/${nb.territory_id}` }, 'Créer un plan de chasse') : null)
@@ -475,8 +497,12 @@ async function dayConsole(main, dayId) {
       h('button.primary', { onclick: async () => {
         const ids = present.filter((p) => !nb.excluded.has(p.id)).map((p) => p.id);
         if (!ids.length) return toast('Choisissez au moins un volontaire.', 'error');
-        const res = await act(() => api.post(`/days/${dayId}/battues`, { territory_id: nb.territory_id, hunt_plan_id: nb.hunt_plan_id ?? null, participant_ids: ids }), 'Battue créée.');
-        if (res) { await takePlanPosts(); nb.excluded.clear(); nb.hunt_plan_id = undefined; dv.regroup = { choice: null, place: '', time: '', point: null, when: 'now' }; }
+        const w = wind.current;
+        const res = await act(() => api.post(`/days/${dayId}/battues`, {
+          territory_id: nb.territory_id, hunt_plan_id: nb.hunt_plan_id ?? null, participant_ids: ids,
+          wind: w ? { from_deg: w.from_deg, speed_kmh: w.speed_kmh, gust_kmh: w.gust_kmh } : null,
+        }), 'Battue créée.');
+        if (res) { await takePlanPosts(); nb.excluded.clear(); nb.hunt_plan_id = undefined; nb.autoPlan = false; dv.regroup = { choice: null, place: '', time: '', point: null, when: 'now' }; }
       } }, 'Créer la battue'));
   }
 
@@ -780,6 +806,7 @@ async function dayConsole(main, dayId) {
   }
 
   function render() {
+    wind.refresh();
     const { day } = dv.detail;
     const run = running();
     const last = current();
@@ -831,6 +858,7 @@ async function dayConsole(main, dayId) {
   });
   return () => {
     watcher.stop();
+    wind.stop();
     map.remove();
   };
 }

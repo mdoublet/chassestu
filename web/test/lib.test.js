@@ -425,3 +425,44 @@ describe('Street View d’un bâtiment', () => {
     expect(satelliteUrl([2, 43])).toContain('basemap=satellite');
   });
 });
+
+import { compassName, sectorDeg, windInRange, rangeLabel, rankPlans, pickHour, windPhrase, strength } from '../src/lib/wind.js';
+describe('vent', () => {
+  it('rose des vents', () => {
+    expect(compassName(268)).toBe('O');
+    expect(compassName(359)).toBe('N');
+    expect(compassName(-45)).toBe('NO');
+    expect(sectorDeg('ONO')).toBe(293);
+    expect(windPhrase(270)).toBe('d’ouest');
+    expect(windPhrase(0)).toBe('du nord');
+    expect(windPhrase(135)).toBe('du sud-est');
+    expect(strength(18)).toBe('modéré');
+    expect(strength(25)).toBe('modéré');
+  });
+  it('plages de directions, y compris à cheval sur le nord', () => {
+    expect(windInRange(280, 248, 315)).toBe(true);   // OSO → NO
+    expect(windInRange(240, 248, 315)).toBe(true);   // dans la marge d'un demi-secteur
+    expect(windInRange(200, 248, 315)).toBe(false);
+    expect(windInRange(10, 315, 45)).toBe(true);     // NO → NE en passant par N
+    expect(windInRange(180, 315, 45)).toBe(false);
+    expect(windInRange(90, 90, 90)).toBe(true);
+    expect(windInRange(120, null, null)).toBe(true);
+    expect(rangeLabel(248, 315)).toBe('OSO à NO');
+    expect(rangeLabel(null, null)).toBe('tous vents');
+  });
+  it('plans classés selon le vent', () => {
+    const plans = [
+      { id: 'tous', wind_from_min: null, wind_from_max: null },
+      { id: 'est', wind_from_min: 45, wind_from_max: 135 },
+      { id: 'ouest', wind_from_min: 225, wind_from_max: 315 },
+    ];
+    const r = rankPlans(plans, 270);
+    expect(r.map((p) => p.id)).toEqual(['ouest', 'tous', 'est']);
+    expect(r[0].favorable).toBe(true);
+    expect(rankPlans(plans, null).map((p) => p.id)).toEqual(['tous', 'est', 'ouest']);
+  });
+  it('heure de prévision la plus proche', () => {
+    const hourly = { time: ['2026-11-25T08:00', '2026-11-25T09:00'], wind_direction_10m: [265.4, 280], wind_speed_10m: [12.4, 15], wind_gusts_10m: [30, 33] };
+    expect(pickHour(hourly, new Date('2026-11-25T08:20:00Z'))).toEqual({ time: '2026-11-25T08:00', from_deg: 265, speed_kmh: 12, gust_kmh: 30 });
+  });
+});

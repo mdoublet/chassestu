@@ -4179,4 +4179,27 @@ ALTER TABLE dwellings ADD COLUMN name text NOT NULL DEFAULT '' CHECK (length(nam
 
 INSERT INTO schema_migrations (name, checksum) VALUES ('0029_nom_batiment.sql', 'b43c7e965cd7dd0c9d09d462f321e85e8077480f41a390e484a51173b00822fc');
 
+DO $guard$
+BEGIN
+  IF EXISTS (SELECT 1 FROM schema_migrations WHERE name = '0030_vent.sql') THEN
+    RAISE EXCEPTION 'La migration % est déjà appliquée : rien à faire.', '0030_vent.sql';
+  END IF;
+END $guard$;
+
+-- ==================== 0030_vent.sql ====================
+-- Vent. Plan de chasse : plage de directions favorables (d'où vient le vent,
+-- en degrés, sens horaire de wind_from_min à wind_from_max ; les deux vides :
+-- tous vents). Battue : vent prévu à sa création (Open-Meteo), pour mémoire.
+ALTER TABLE hunt_plans
+  ADD COLUMN wind_from_min smallint CHECK (wind_from_min BETWEEN 0 AND 359),
+  ADD COLUMN wind_from_max smallint CHECK (wind_from_max BETWEEN 0 AND 359),
+  ADD CONSTRAINT hunt_plans_wind_range CHECK ((wind_from_min IS NULL) = (wind_from_max IS NULL));
+
+ALTER TABLE hunts
+  ADD COLUMN wind_from_deg  smallint CHECK (wind_from_deg BETWEEN 0 AND 359),
+  ADD COLUMN wind_speed_kmh smallint CHECK (wind_speed_kmh BETWEEN 0 AND 400),
+  ADD COLUMN wind_gust_kmh  smallint CHECK (wind_gust_kmh BETWEEN 0 AND 400);
+
+INSERT INTO schema_migrations (name, checksum) VALUES ('0030_vent.sql', '5aea43c42b1112128b0284db990b43bc92af446409c9f5e496a47e3ab22e1b7e');
+
 COMMIT;
