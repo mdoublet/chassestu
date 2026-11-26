@@ -281,8 +281,10 @@ responsables arrivent toujours sur les journées.
 **Infos de la saison** (onglet « 📅 Infos », migration 0033) : dates
 d'ouverture, espèces et périodes (jours, horaires, horaires « de jour »
 calculés sur le lever et le coucher du soleil d'une ville de référence),
-calendrier des battues, avis datés, liste de contrôle et règles, en trois
-vues : Ce jour (date au choix), Saison (frise), Règles. Données par saison
+calendrier des battues, avis datés, liste de contrôle et règles, en quatre
+vues : Ce jour (date au choix), Espèces (toutes les fiches, toute la saison,
+avec leurs battues), Saison (frise et calendrier des battues), Règles. Sans
+infos, le président les charge en un clic depuis l'onglet Infos. Données par saison
 (`seasons.regulations`, JSON validé par `api/src/regulations.ts`), modifiées
 dans Paramètres → Infos de la saison (formulaires, import et export JSON),
 reprises à la création de la saison suivante. Modèle fourni : ACCA de

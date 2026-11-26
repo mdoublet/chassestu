@@ -59,9 +59,9 @@ export function renderInfos(root, reg) {
     input.value = s;
     todayBtn.hidden = isToday;
     todayTag.hidden = !isToday;
-    fill(tabsEl, [['jour', '☀ Ce jour'], ['saison', '☰ Saison'], ['regles', '📘 Règles']].map(([k, l]) =>
+    fill(tabsEl, [['jour', '☀ Ce jour'], ['especes', '🦌 Espèces'], ['saison', '☰ Saison'], ['regles', '📘 Règles']].map(([k, l]) =>
       h('button', { type: 'button', 'aria-current': st.tab === k ? 'page' : null, onclick: () => setTab(k) }, l)));
-    fill(view, st.tab === 'jour' ? renderDay() : st.tab === 'saison' ? renderSeason() : renderRules());
+    fill(view, st.tab === 'jour' ? renderDay() : st.tab === 'especes' ? renderSpecies() : st.tab === 'saison' ? renderSeason() : renderRules());
   }
 
   // ------------------------------------------------------------------ Ce jour
@@ -194,6 +194,50 @@ export function renderInfos(root, reg) {
     ];
   }
 
+  // ------------------------------------------------------------------ Espèces
+  /** Toutes les espèces, toute la saison : périodes, jours, horaires, limites, consignes, battues. */
+  function renderSpecies() {
+    const c = ctx();
+    const chips = [['all', 'Tout'], ...reg.categories.map((x) => [x.id, x.label])];
+    const vis = (e) => st.cat === 'all' || e.cat === st.cat;
+    const stateBadge = (e) => {
+      const s = speciesStatus(reg, e, c.s);
+      const when = c.isToday ? 'aujourd’hui' : `le ${fmtShort(c.s)}`;
+      if (s.state === 'open') return h('span.badge.b-open', `Ouvert ${when}`);
+      if (s.state === 'cond') return h('span.badge.b-cond', 'Sur autorisation');
+      if (s.state === 'notday') return h('span.badge.b-closed', `Pas ${when}`);
+      if (s.state === 'suspended') return h('span.badge.b-closed', 'Suspendu');
+      if (s.state === 'check') return h('span.badge.b-check', 'À vérifier');
+      return h('span.badge.b-closed', `Fermé ${when}`);
+    };
+    const speciesCard = (e) => {
+      const f = firstFrom(e);
+      const l = lastTo(e);
+      const inner = [
+        f ? h('div.hrs', `Du ${fmtShort(f)} au ${fmtShort(l)}`) : h('div.lim', e.checkText ?? ''),
+        e.limit ? h('div.lim', e.limit) : null,
+      ];
+      const all = { periods: e.periods ?? [] };
+      const d = card(e, all, stateBadge(e), inner);
+      const games = e.battue ? (reg.battues ?? []).filter((b) => b.game === e.battue) : [];
+      if (games.length) {
+        d.querySelector('.sp-body dl')?.append(h('dt', `Battues (${games.length})`),
+          h('dd', h('ul.battue-dates', games.map((b) => h('li', { class: b.date < todayISO() ? 'past' : '' }, `${fmtDayMonth(b.date)} ${b.date.slice(0, 4)} — ${b.leader}`)))));
+      }
+      return d;
+    };
+    return [
+      h('h3.sec', 'Toutes les espèces', h('small', `${reg.species.length} fiches · touchez pour le détail`)),
+      h('div.chips', { role: 'group', 'aria-label': 'Filtrer par famille' }, chips.map(([k, l]) =>
+        h('button.chip', { type: 'button', 'aria-pressed': String(st.cat === k), onclick: () => { st.cat = k; render(); } }, l))),
+      reg.categories.flatMap((cat) => {
+        const list = reg.species.filter((e) => e.cat === cat.id && vis(e));
+        return list.length ? [h('h3.sub', cat.label), ...list.map(speciesCard)] : [];
+      }),
+      reg.day_footer ? h('p.foot', reg.day_footer) : null,
+    ];
+  }
+
   // ------------------------------------------------------------------ Saison
   function renderSeason() {
     const cp = reg.campaign ?? {};
@@ -240,6 +284,12 @@ export function renderInfos(root, reg) {
         h('span', h('i', { style: 'width:4px;background:var(--i-blaze)' }), 'battue')),
       chart,
       reg.season_footer ? h('p.foot', reg.season_footer) : null,
+      reg.battues?.length ? [
+        h('h3.sec', 'Calendrier des battues', h('small', String(reg.battues.length))),
+        h('table.battue-cal', h('tbody', [...reg.battues].sort((a, b) => a.date.localeCompare(b.date)).map((b) =>
+          h('tr', { class: b.date < todayISO() ? 'past' : b.date === todayISO() ? 'today' : '' },
+            h('td', `${fmtDayMonth(b.date)} ${b.date.slice(0, 4)}`), h('td', b.game), h('td', b.leader))))),
+      ] : null,
     ];
   }
 

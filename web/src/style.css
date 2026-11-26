@@ -705,3 +705,10 @@ details.infos-sp > summary { cursor: pointer; font-weight: 600; }
 .infos-species-form { display: grid; gap: 0.35rem; padding: 0.5rem 0; }
 .infos-table { width: 100%; border-collapse: collapse; }
 .infos-table td, .infos-table th { padding: 0.2rem; text-align: left; }
+.infos .battue-dates { columns: 2; padding-left: 18px; }
+.infos .battue-dates li.past, .infos .battue-cal tr.past { color: var(--i-ink2); opacity: .7; }
+.infos .battue-cal { width: 100%; border-collapse: collapse; font-size: .9rem; }
+.infos .battue-cal td { padding: .35rem .3rem; border-bottom: 1px solid var(--i-line); }
+.infos .battue-cal tr.today td { font-weight: 700; color: var(--i-blaze); }
+.infos-tabs button { padding: 0 .3rem; font-size: .8rem; }
+.infos-empty { margin: 0.8rem; }
