@@ -387,7 +387,7 @@ export function createDaySheet(container, opts = {}) {
           tile('Poste', h('div.join-main', h('b.big', String(post.number)), post.name ? h('span', post.name) : null,
             post.access_path ? h('span.small.muted', `${post.access_path_length_m} m à pied`) : null),
             h('button.walk-icon', { type: 'button', onclick: go, title: 'Guidage à pied jusqu’au poste', 'aria-label': 'Guidage à pied jusqu’au poste' }, '🥾')),
-          tile('Ligne', h('div.join-main', line?.name ? h('b', line.name) : h('span.muted', 'Aucune'),
+          tile('Ligne', h('div.join-main', line?.name ? h('b', line.name) : null,
             line?.name ? h('span.small', line.chief ? 'vous êtes chef de ligne' : chiefs.length ? `chef : ${chiefs.map((c) => c.name).join(', ')}` : 'pas de chef') : null)),
           tile('Parking', h('div.join-main', post.parking ? h('b', post.parking.name) : h('span.muted', 'Aucun : jusqu’au poste')),
             navIcon(post.parking ? post.parking.geom.coordinates : post.geom.coordinates, post.parking ? `parking ${post.parking.name}` : `poste ${post.number}`)),

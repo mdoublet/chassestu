@@ -189,16 +189,14 @@ huntRoutes.delete('/hunts/:id', (c) => {
 export async function setSelection(tx: Tx, huntId: string, dayParticipantIds: string[]) {
   const hunt = await loadHunt(tx, huntId);
   await tx.execute('DELETE FROM hunt_participants WHERE hunt_id = $1 AND NOT (day_participant_id = ANY($2))', [huntId, dayParticipantIds]);
-  // Rôle repris de la battue précédente de la journée ; sinon traqueur pour un
-  // traqueur habituel de l'association, posté pour les autres.
+  // Nouvelle battue : chacun repart posté (chasseur) ; seuls les traqueurs
+  // habituels de l'association (catégorie du membre) partent traqueurs.
+  // Les rôles de la battue précédente (chef de ligne…) ne sont pas repris.
   const added = await tx.query(
     `INSERT INTO hunt_participants (hunt_id, day_participant_id, user_id, guest_name, present, role)
      SELECT $1, dp.id, dp.user_id, dp.guest_name, true,
-            coalesce((SELECT x.role FROM hunt_participants x JOIN hunts ph ON ph.id = x.hunt_id
-                       WHERE x.day_participant_id = dp.id AND ph.day_id = $3 AND ph.id <> $1
-                       ORDER BY ph.number DESC LIMIT 1),
-                     CASE WHEN (SELECT m.usual_role FROM memberships m WHERE m.user_id = dp.user_id AND m.tenant_id = dp.tenant_id) = 'traqueur'
-                          THEN 'traqueur'::hunt_role ELSE 'poste'::hunt_role END)
+            CASE WHEN (SELECT m.usual_role FROM memberships m WHERE m.user_id = dp.user_id AND m.tenant_id = dp.tenant_id) = 'traqueur'
+                 THEN 'traqueur'::hunt_role ELSE 'poste'::hunt_role END
        FROM day_participants dp JOIN hunt_days d ON d.id = dp.day_id
       -- Avant le jour J (battue préparée) : ceux qui ont répondu présent.
       WHERE dp.day_id = $3 AND (dp.present OR (d.status <> 'en_cours' AND dp.response = 'present')) AND dp.id = ANY($2)

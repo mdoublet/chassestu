@@ -31,9 +31,14 @@ describe('battues préparées d’avance', () => {
     const first = (await call('POST', `/api/days/${dayId}/battues`, { territory_id: territoryId })).body.hunt_id;
     // Sans « prepare », une seconde battue reste refusée pendant la première.
     expect((await call('POST', `/api/days/${dayId}/battues`, { territory_id: territoryId })).status).toBe(409);
+    // Un chef de ligne dans la battue n° 1…
+    const p1 = (await call('GET', `/api/hunts/${first}`)).body.participants[0];
+    expect((await call('PATCH', `/api/hunts/${first}/participants/${p1.id}`, { role: 'chef_de_ligne' })).status).toBe(200);
     const prep = await call('POST', `/api/days/${dayId}/battues`, { territory_id: territoryId, prepare: true });
     expect(prep.status).toBe(201);
     const second = prep.body.hunt_id;
+    // … redevient posté (chasseur) dans la suivante.
+    expect((await call('GET', `/api/hunts/${second}`)).body.participants.map((p: any) => p.role)).toEqual(['poste', 'poste']);
     expect(prep.body.battues.find((b: any) => b.id === second)).toMatchObject({ number: 2, status: 'brouillon' });
 
     // Préparation complète : postes, tirage, espèces.

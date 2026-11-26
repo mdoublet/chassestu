@@ -759,3 +759,5 @@ ul.people li { padding: 0.15rem 0; }
 .lead-card .join-row { gap: 0.5rem; }
 .lead-card button { flex: none; }
 .people-fold > summary { cursor: pointer; font-weight: 600; margin: 0.4rem 0; }
+.role-bar { display: flex; align-items: center; gap: 0.35rem; flex-wrap: wrap; padding: 0.4rem; background: color-mix(in srgb, var(--primary) 8%, transparent); border-radius: 8px; margin: 0.3rem 0; }
+.assign-row.beaters { opacity: 0.9; }
