@@ -106,19 +106,19 @@ export function createDaySheet(container, opts = {}) {
       lunch);
   }
 
+  /** Rendez-vous en une ligne : lieu, heure, photo, itinéraire (date et heure sont dans le bandeau). */
   function rdvCard(day) {
-    return h('section.card',
-      h('h3', 'Rendez-vous'),
-      h('p', `${formatHuntDate(day.date)} à ${formatTime(day.meeting_time)}${day.meeting_place ? ` · ${day.meeting_place}` : ''}`),
-      placePhoto(day.meeting_place),
-      day.meeting_point ? navButtons('Itinéraire jusqu’au rendez-vous', day.meeting_point.coordinates) : null,
-      day.lunch_offered ? h('p.small', `🍽 Déjeuner proposé${day.lunch_info ? ` : ${day.lunch_info}` : ''}.`) : null);
+    return h('section.card.compact-card',
+      h('div.join-row',
+        h('span', '📍 ', h('b', day.meeting_place || 'Rendez-vous'), ` · ${formatTime(day.meeting_time)}`),
+        h('span.row-icons', placePhoto(day.meeting_place), day.meeting_point ? navIcon(day.meeting_point.coordinates, 'rendez-vous') : null)),
+      day.lunch_offered && day.lunch_info ? h('p.small', `🍽 ${day.lunch_info}`) : null);
   }
 
   /** Photo d'un lieu de l'association (cabane…) reconnu par son nom. */
   function placePhoto(name) {
     const pl = name ? opts.placeOf?.(name) : null;
-    return pl?.has_photo ? h('div.place-photo', photoIcon(h, pl.id, pl.photo_updated_at, pl.name), h('span.small.muted', 'Photo du lieu')) : null;
+    return pl?.has_photo ? photoIcon(h, pl.id, pl.photo_updated_at, pl.name) : null;
   }
 
   function speciesList(cur) {
@@ -133,9 +133,13 @@ export function createDaySheet(container, opts = {}) {
       }));
   }
 
+  /** Espèces tirables en une ligne : « Sanglier 1/3 · Chevreuil 0 » (quota atteint en rouge). */
   function speciesBox(cur) {
-    const list = speciesList(cur);
-    return list ? h('section.card', h('h3', 'Espèces tirables'), list) : null;
+    if (!cur?.species?.length) return null;
+    return h('p.species-line', h('b', 'Tirables : '), cur.species.map((s, i) => {
+      const full = s.quota !== null && s.taken >= s.quota;
+      return [i ? ' · ' : '', h('span', { class: full ? 'full' : '' }, `${s.s} ${s.quota === null ? s.taken : `${s.taken}/${s.quota}`}${full ? ' ⛔' : ''}`)];
+    }));
   }
 
   function harvestBox(cur, canDeclare) {
@@ -154,9 +158,9 @@ export function createDaySheet(container, opts = {}) {
       return b;
     }));
     const killed = cur.harvests.filter((x) => (x.outcome ?? 'tue') === 'tue').length;
-    return h('section.card',
+    return h('section.card.harvest-card',
       h('h3', `Animaux · ${killed} tué(s)${cur.harvests.length > killed ? ` · ${cur.harvests.length - killed} blessé(s) ou vu(s)` : ''}`),
-      canDeclare ? speciesList(cur) : null,
+      canDeclare ? speciesBox(cur) : null,
       cur.harvests.length
         ? h('ul.plain.harvests', cur.harvests.map((x) => h('li',
             h('span', `${OUTCOME_ICONS[x.outcome ?? 'tue']} `, h('strong', x.species), ` ${OUTCOME_LABELS[x.outcome ?? 'tue'].toLowerCase()}${x.category !== 'indetermine' ? ` · ${CATEGORY_LABELS[x.category]}` : ''}`, x.shooter ? ` — ${x.shooter}${x.post_number ? ` (poste ${x.post_number})` : ''}` : '', x.notes ? ` · ${x.notes}` : ''),
@@ -169,7 +173,7 @@ export function createDaySheet(container, opts = {}) {
               e.preventDefault();
               opts.onDeclare(cur.hunt.id, { species: species.value, category: category.value, outcome });
             },
-          }, choice, species, category, h('button.primary', { type: 'submit' }, 'Déclarer'))
+          }, choice, h('div.declare-row', species, category, h('button.primary', { type: 'submit' }, 'Déclarer')))
         : null);
   }
 
@@ -184,7 +188,7 @@ export function createDaySheet(container, opts = {}) {
       post.parking
         ? navButtons(`Parking « ${post.parking.name} »`, post.parking.geom.coordinates)
         : [navButtons('Pas de parking défini : jusqu’au poste', post.geom.coordinates),
-           h('p.small.muted', 'Arrêtez-vous au plus près, puis suivez le guidage à pied.')],
+           null],
       post.access_path ? h('p.small', `Puis ${post.access_path_length_m} m à pied (pointillés).`) : null);
   }
 
@@ -195,7 +199,7 @@ export function createDaySheet(container, opts = {}) {
     return keepOpen(h('details.card',
       h('summary', me && !cur.show_all_posts ? 'Vos voisins' : 'Ligne de postes'),
       compact ? h('p', items.join(' · ')) : h('ul.plain', items.map((t) => h('li', t))),
-      me ? h('p.small.muted', 'Ne tirez jamais vers vos voisins.') : null), 'sheet.neighbors');
+      null), 'sheet.neighbors');
   }
 
   /**
@@ -280,7 +284,8 @@ export function createDaySheet(container, opts = {}) {
         top = [harvestBox(cur, false), panel.el];
         break;
       case 'regroupement':
-        top = [placePhoto(day.regroup?.place), day.regroup?.point ? navButtons('Itinéraire jusqu’au regroupement', day.regroup.point.coordinates) : null, panel.el];
+        // Lieu, photo, itinéraire et guidage à pied : dans le panneau (une ligne).
+        top = [day.regroup?.point ? panel.el : h('section.card.compact-card', h('div.join-row', h('span', '⚑ ', h('b', day.regroup?.place || 'Regroupement')), placePhoto(day.regroup?.place))), day.regroup?.point ? null : panel.el];
         break;
       default:
         top = [];
@@ -292,10 +297,10 @@ export function createDaySheet(container, opts = {}) {
       // « Rejoindre » : le titre et les consignes sont dans la carte unique du poste.
       joining ? null : h('section.status-banner', { class: `tone-${step.tone}` }, h('strong', step.title), step.text ? h('span', step.text) : null, respondBox(view)),
       joining ? null : opts.leadCard?.() ?? null, // responsable désigné de la battue en cours
-      h('p.small.day-line', h('span.status', { class: `status-${day.status}` }, DAY_STATUS_LABELS[day.status]),
-        ` ${formatHuntDate(day.date)}`,
-        lastBattue && day.status === 'en_cours' ? ` · battue n° ${lastBattue.number} (${lastBattue.territory_name})` : '',
-        cur?.me ? ` · ${ROLE_LABELS[cur.me.role].toLowerCase()}` : ''),
+      // Journée en cours : battue et rôle seulement ; avant : statut de la journée.
+      day.status === 'en_cours'
+        ? (lastBattue && !['rejoindre', 'traque'].includes(phase) ? h('p.small.day-line', `Battue n° ${lastBattue.number} · ${lastBattue.territory_name}${cur?.me ? ` · ${ROLE_LABELS[cur.me.role].toLowerCase()}` : ''}`) : null)
+        : h('p.small.day-line', h('span.status', { class: `status-${day.status}` }, DAY_STATUS_LABELS[day.status])),
       // Ligne : le posté la voit dans sa carte ; le chef de ligne garde la liste de ses chasseurs.
       ['rejoindre', 'traque'].includes(phase) && !(joining && !cur?.line?.chief) ? lineCard(cur, joining) : null,
       top,
@@ -306,7 +311,7 @@ export function createDaySheet(container, opts = {}) {
       ['rejoindre', 'traque', 'preparation'].includes(phase) && !joining ? neighborsCard(cur, phase === 'traque') : null,
       briefing(view),
       day.status === 'en_cours' || day.status === 'terminee' ? battuesSummary(view) : null,
-      h('p.small.muted.live', `Mis à jour à ${new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`),
+
     );
   }
 
@@ -358,7 +363,9 @@ export function createDaySheet(container, opts = {}) {
     if (post && ['rejoindre', 'traque'].includes(step.phase)) {
       target = { kind: 'post', number: post.number, name: post.name, coords: post.geom.coordinates, path: post.access_path?.coordinates ?? null, canConfirm: running };
     } else if (step.phase === 'regroupement' && view.day.regroup?.point) {
-      target = { kind: 'point', title: `Regroupement${view.day.regroup.place ? ` · ${view.day.regroup.place}` : ''}`, coords: view.day.regroup.point.coordinates };
+      const pl = view.day.regroup.place;
+      target = { kind: 'point', title: pl || 'Regroupement', coords: view.day.regroup.point.coordinates,
+        icons: [placePhoto(pl), navIcon(view.day.regroup.point.coordinates, 'regroupement')].filter(Boolean) };
     }
     const joining = step.phase === 'rejoindre' && post;
     let join = null;
@@ -485,7 +492,7 @@ export async function memberDayView(main, dayId) {
           ` · ${p.people.map((x) => x.participant_name).join(' et ')}`)))),
       actions: hunt.assignments_published_at && !hunt.started_at
         ? h('div.join-lead',
-            h('p.small.muted', lead.as_leader ? `Vous êtes responsable de la battue n° ${hunt.number}.` : `Responsable : ${hunt.leader_name ?? '—'} ; vous pouvez lancer la battue à sa place.`),
+
             h('button.primary', { onclick: go('debut', 'Début de battue : les chasseurs sont prévenus.',
               ready === rows.length ? 'Lancer la battue ? Les chasseurs seront prévenus.' : `Seulement ${ready}/${rows.length} poste(s) en place. Lancer quand même la battue ?`) }, '🎯 Lancer la battue'))
         : null,
@@ -509,26 +516,15 @@ export async function memberDayView(main, dayId) {
       if (!(await confirmDialog(`Battue n° ${hunt.number}`, confirmText, 'Confirmer'))) return;
       act(() => api.post(`/hunts/${hunt.id}/actions/${action}`), msg);
     };
-    return h('section.card.lead-card',
-      h('h3', lead.as_leader ? `🎯 Vous êtes responsable de la battue n° ${hunt.number}` : `🎯 Battue n° ${hunt.number} · responsable : ${hunt.leader_name ?? '—'}`),
-      lead.as_leader ? null : h('p.small.muted', 'Vous pouvez lancer et terminer la battue à sa place.'),
-      !hunt.assignments_published_at
-        ? h('p.small.muted', 'Les postes ne sont pas encore publiés : vous pourrez lancer la battue une fois les chasseurs placés.')
-        : hunt.started_at
-          ? h('p', h('span.status.status-en_cours', `Traque depuis ${new Date(hunt.started_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`))
-          : [
-              h('p', h('strong', { class: ready === rows.length ? 'all-ready' : '' }, `${ready}/${rows.length} poste(s) occupé(s) et confirmé(s)`)),
-              h('ul.plain.readiness', rows.map((p) => h('li', { class: ok(p) ? 'ok' : '' },
-                h('span.light', ok(p) ? '●' : '○'),
-                h('strong', `Poste ${p.number}${p.name ? ` · ${p.name}` : ''}`),
-                h('span', p.people.length
-                  ? p.people.map((x) => `${x.participant_name} ${x.in_place_at ? `✅ ${new Date(x.in_place_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}` : '⏳'}`).join(' · ')
-                  : 'libre')))),
-            ],
-      h('div.buttons',
+    const hm = (iso) => new Date(iso).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+    return h('section.card.lead-card.compact-card',
+      h('div.join-row',
+        h('span', '🎯 ', h('b', `Battue n° ${hunt.number}`), lead.as_leader ? ' · vous êtes responsable' : ` · resp. ${hunt.leader_name ?? '—'}`,
+          hunt.started_at ? h('span.small.muted', ` · traque depuis ${hm(hunt.started_at)}`)
+            : hunt.assignments_published_at ? h('span.small.muted', ` · ${ready}/${rows.length} en place`) : h('span.small.muted', ' · postes non publiés')),
         hunt.assignments_published_at && !hunt.started_at
           ? h('button.primary', { onclick: go('debut', 'Début de battue : les chasseurs sont prévenus.',
-              ready === rows.length ? 'Lancer la battue ? Les chasseurs seront prévenus.' : `Seulement ${ready}/${rows.length} poste(s) confirmé(s). Lancer quand même la battue ?`) }, 'Lancer la battue')
+              ready === rows.length ? 'Lancer la battue ? Les chasseurs seront prévenus.' : `Seulement ${ready}/${rows.length} poste(s) confirmé(s). Lancer quand même la battue ?`) }, 'Lancer')
           : null,
         hunt.started_at
           ? h('button.danger', { onclick: go('fin', 'Fin de battue : les chasseurs sont prévenus.', 'Terminer la battue ? Les chasseurs seront prévenus (armes déchargées).') }, 'Fin de battue')

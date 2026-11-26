@@ -77,7 +77,7 @@ export function positionPanel(map, { dayId, guestToken, canSeeAll = false, onCha
       wantShare = e.target.checked;
       try { if (wantShare) localStorage.removeItem(NO_SHARE_KEY); else localStorage.setItem(NO_SHARE_KEY, '1'); } catch { /* rien */ }
       if (wantShare) setSharing(true); else if (sharing) setSharing(false);
-    } }), 'Partager ma position', h('span.small.muted', ' avec le responsable'));
+    } }), 'Partager');
   }
   const targetCoords = () => ctx.target?.coords ?? null;
   const targetKey = (t) => (t ? `${t.kind}:${t.number ?? ''}:${t.coords.join(',')}` : '');
@@ -428,8 +428,23 @@ export function positionPanel(map, { dayId, guestToken, canSeeAll = false, onCha
         bottom: null,
       };
     }
-    if (!guiding && isPost && ctx.compact && ctx.me?.in_place) {
-      return { top: [h('h3', `Poste n° ${t.number}`), confirm], bottom: null };
+    if (!guiding && isPost && ctx.compact) {
+      return {
+        top: [h('div.join-actions',
+          h('b', `Poste n° ${t.number}`),
+          h('button.walk-icon', { type: 'button', onclick: startGuiding, title: 'Guidage à pied jusqu’au poste', 'aria-label': 'Guidage à pied jusqu’au poste' }, '🥾'),
+          confirm, shareToggle())],
+        bottom: null,
+      };
+    }
+    if (!guiding && !isPost) {
+      return {
+        top: [h('div.join-row', h('span', h('b', `⚑ ${t.title}`)),
+          h('span.row-icons', ...(t.icons ?? []),
+            h('button.walk-icon', { type: 'button', onclick: startGuiding, title: 'Me guider à pied', 'aria-label': 'Me guider à pied' }, '🥾'))),
+          h('div.join-actions', shareToggle())],
+        bottom: null,
+      };
     }
     if (!guiding) {
       return {
@@ -460,7 +475,7 @@ export function positionPanel(map, { dayId, guestToken, canSeeAll = false, onCha
               !reached && path ? h('p', `${formatDistance(prog.direct)} à vol d’oiseau${prog.offPath > 25 ? ` · vous êtes à ${formatDistance(prog.offPath)} du chemin` : ''}`) : null,
               h('p.my-position', h('span.dot', { style: `background:${st.color}` }), h('strong', isPost || st !== POSITION_STATUS.sur_poste ? st.label : 'Arrivé'),
                 h('span.small.muted', ` · précision ±${fix.accuracy} m`)),
-              !reached ? h('p.small.muted', heading === null ? 'Flèche : nord en haut de l’écran.' : 'Flèche orientée selon votre téléphone.') : null))
+              null))
         : null,
     ];
     const bottom = [
@@ -484,38 +499,37 @@ export function positionPanel(map, { dayId, guestToken, canSeeAll = false, onCha
     }
     el.hidden = false;
 
-    const dashboard = !!ctx.join && !guiding && ctx.target?.kind === 'post';
+    // Partage déjà proposé dans la ligne d'actions (tableau de bord, traque, regroupement, sans cible).
+    const dashboard = !guiding && (!ctx.target || ctx.target.kind === 'point' || !!ctx.join || ctx.compact);
     const share = canShare() && !dashboard
       ? [
           h('label.check.share',
             h('input', { type: 'checkbox', checked: sharing, onchange: (e) => setSharing(e.target.checked) }),
             'Partager ma position avec le responsable'),
-          ctx.compact ? null : h('p.small.muted', sharing
-            ? 'Gardez l’appli ouverte : le partage s’arrête écran verrouillé.'
-            : 'Visible seulement du président et des responsables, pendant les battues.'),
+          null,
         ]
       : null;
 
     // Sans cible (traqueur, chef de ligne, responsable) : simple affichage de sa position.
     const ownWithoutTarget = !ctx.target
       ? [
-          h('h3', '📍 Positions en direct'),
-          watchId === null ? h('button', { onclick: startWatch }, 'Afficher ma position sur la carte') : null,
+          h('div.join-actions',
+            watchId === null ? h('button', { onclick: () => { shareIfWanted(); startWatch(); } }, '📍 Ma position')
+              : fix ? h('span.my-position', h('span.dot', { style: `background:${POSITION_STATUS.localise.color}` }), `±${fix.accuracy} m`) : h('span.small.muted', 'GPS…'),
+            shareToggle()),
           geoError ? h('p.error.small', geoError) : null,
-          fix ? h('p.my-position', h('span.dot', { style: `background:${POSITION_STATUS.localise.color}` }), h('strong', 'Localisé'), h('span.small.muted', ` · précision ±${fix.accuracy} m`)) : null,
           zone ? h('p.alert.danger.zone-alert', `⚠ ${ZONE_ALERT[zone]}`) : null,
         ]
       : null;
 
-    const list = dashboard
+    const list = dashboard && ctx.join
       ? (showList ? h('button', { onclick: fitEveryone }, '🗺 Voir les positions de tout le monde') : null)
       : showList && others.length
       ? (() => {
           const shared = others.filter((p) => p.shared);
           const ready = others.filter((p) => p.status === 'sur_poste' || p.status === 'confirme').length;
           const posted = others.filter((p) => p.post_number !== null).length;
-          return [
-            h('h3', `Participants · ${ready} en place / ${posted} poste(s) attribué(s)`),
+          return h('details.people-fold', h('summary', `Participants · ${ready}/${posted} en place`),
             h('ul.plain.position-list', others.map((p) => {
               const s = POSITION_STATUS[p.status] ?? POSITION_STATUS.localise;
               return h('li', p.lon !== null ? { class: 'locatable', title: 'Voir sur la carte', onclick: () => focusOn(p) } : {},
@@ -523,9 +537,7 @@ export function positionPanel(map, { dayId, guestToken, canSeeAll = false, onCha
                 h('span', h('strong', p.name), ` · ${p.post_number ? `poste ${p.post_number}` : ROLE_SHORT[p.role]}`),
                 h('span.small.muted', `${s.label}${p.lon !== null && p.shared ? ` · position ${formatAge(p.age_s)}` : ''}${p.distance_m !== null && p.status === 'en_route' ? ` · à ${formatDistance(p.distance_m)}` : ''}`));
             })),
-            h('button', { onclick: fitEveryone }, 'Voir tout le monde sur la carte'),
-            shared.length < others.length ? h('p.small.muted', 'Sur la carte : ceux qui partagent leur position.') : null,
-          ];
+            h('button', { onclick: fitEveryone }, '🗺 Voir tout le monde'));
         })()
       : null;
 

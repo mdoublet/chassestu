@@ -312,7 +312,7 @@ export async function dayConsole(main, dayId, { prep = false } = {}) {
         h('select', { disabled: !editable, onchange: (e) => act(() => api.patch(`/days/${dayId}`, { leader_user_id: e.target.value }), 'Responsable de la journée enregistré.') },
           day.leader_user_id ? null : h('option', { value: '', selected: true, disabled: true }, '— choisir —'),
           people.map((m) => h('option', { value: m.id, selected: m.id === day.leader_user_id }, m.id === state.user.id ? `${m.display_name} (moi)` : m.display_name)))),
-      h('p.small.muted', 'Il est proposé comme responsable de chaque battue (modifiable battue par battue).'));
+      null);
   }
 
   function convocationSection() {
@@ -476,9 +476,7 @@ export async function dayConsole(main, dayId, { prep = false } = {}) {
     }), p.name, p.guest ? h('span.badge', 'invité') : null));
     return h('section.card',
       h('h2', prepare ? `Préparer la battue n° ${dv.detail.battues.length + 1}` : `Battue n° ${dv.detail.battues.length + 1}`),
-      prepare ? h('p.small.muted', dv.detail.day.status === 'en_cours'
-        ? 'Préparée pendant la battue en cours : invisible des chasseurs jusqu’à la publication de ses postes.'
-        : 'Préparée avant le jour J avec ceux qui ont répondu présent : invisible des chasseurs ; ses postes se publient une fois la journée lancée.') : null,
+      prepare ? h('p.small.muted', 'Invisible des chasseurs jusqu’à la publication.') : null,
       h('label', 'Territoire', h('select', { onchange: (e) => { nb.territory_id = e.target.value; nb.hunt_plan_id = undefined; render(); } },
         dv.territories.map((t) => h('option', { value: t.id, selected: t.id === nb.territory_id }, t.name)))),
       (() => {
@@ -501,12 +499,12 @@ export async function dayConsole(main, dayId, { prep = false } = {}) {
           plans && !plans.length
             ? h('p.small.muted', 'Aucun plan de chasse pour ce territoire : les postes seront choisis à la main. ',
                 state.role === 'president' ? h('a', { href: `#/plans/${nb.territory_id}` }, 'Créer un plan de chasse') : null)
-            : h('p.small.muted', 'Le plan de chasse (sens de la traque) donne les postes à pourvoir en priorité.'),
+            : null,
         ];
       })(),
       present.length ? null : h('p.small.alert', 'Personne n’a encore répondu présent.'),
       h('fieldset.members', h('legend', `Volontaires (${present.length - nb.excluded.size} sur ${present.length} présents)`), checks),
-      h('p.small.muted', 'Décochez les présents qui ne font pas cette battue.'),
+
       h('button.primary', { onclick: async () => {
         const ids = present.filter((p) => !nb.excluded.has(p.id)).map((p) => p.id);
         if (!ids.length) return toast('Choisissez au moins un volontaire.', 'error');
@@ -547,7 +545,7 @@ export async function dayConsole(main, dayId, { prep = false } = {}) {
     if (!next) return regroupForm();
     return h('section.card.after-battue',
       h('h2', `Battue n° ${ended.number} terminée`),
-      h('p', 'Enchaînez directement : chaque chasseur reçoit son poste de la battue suivante.'),
+
       h('button.primary', { onclick: async () => {
         if (!(await confirmDialog(`Battue n° ${next.number}`, `Publier les postes de la battue n° ${next.number} (${next.territory_name}) ? Les chasseurs sont prévenus.`, 'Publier'))) return;
         dv.focus = next.id;
@@ -605,7 +603,7 @@ export async function dayConsole(main, dayId, { prep = false } = {}) {
     if (hunt.leader_user_id && !candidates.has(hunt.leader_user_id)) candidates.set(hunt.leader_user_id, hunt.leader_name ?? '?');
     return h('div.battue-head',
       h('h2', `Battue n° ${hunt.number} · ${hunt.territory_name}`),
-      hunt.status === 'brouillon' ? h('p', h('span.status.status-brouillon', 'En préparation'), h('span.small.muted', ' invisible des chasseurs jusqu’à la publication des postes')) : null,
+      hunt.status === 'brouillon' ? h('p', h('span.status.status-brouillon', 'En préparation'), h('span.small.muted', ' · invisible des chasseurs')) : null,
       hunt.started_at ? h('p', h('span.status.status-en_cours', `Traque depuis ${timeOf(hunt.started_at)}`)) : null,
       h('div.battue-roles',
         h('label.hunt-plan-choice', 'Plan de chasse ',
@@ -632,7 +630,7 @@ export async function dayConsole(main, dayId, { prep = false } = {}) {
     const leader = hunt.leader_user_id === state.user.id ? null : hunt.leader_name;
     return h('section.card.battue-actions',
       hunt.assignments_published_at && leader
-        ? h('p.small.muted', `${leader} lance et termine la battue depuis sa vue chasseur ; vous pouvez le faire à sa place.`)
+        ? h('p.small.muted', `Responsable : ${leader}`)
         : null,
       h('div.buttons',
         !hunt.started_at
@@ -889,7 +887,7 @@ export async function dayConsole(main, dayId, { prep = false } = {}) {
         ? (day.status === 'en_cours' || dv.creating
             ? [newBattueForm(day.status !== 'en_cours' || !!run), !foc && last && dv.hunt ? harvestSection() : null]
             : h('section.card', h('h2', 'Battues'),
-                h('p.small.muted', 'Préparez dès maintenant les battues de la journée (plan, volontaires, postes) avec ceux qui ont répondu présent. Leurs postes se publient une fois la journée lancée.'),
+                null,
                 h('button', { onclick: () => { dv.creating = true; render(); } }, '＋ Préparer une battue')))
         : foc.status === 'en_cours' && dv.hunt
           // Ordre des actions ; prélèvements seulement une fois la battue lancée.

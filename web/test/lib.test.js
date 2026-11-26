@@ -323,7 +323,7 @@ describe('vue chasseur : phase de la journée', () => {
   const current = (hunt, post = { number: 4 }, role = 'poste') => ({ hunt: { assignments_published: false, started_at: null, ...hunt }, me: { role }, post });
   it('avant la journée : répondre, puis rendez-vous et déjeuner', () => {
     expect(dayPhase({ day, me }).phase).toBe('reponse');
-    expect(dayPhase({ day, me: { ...me, response: 'present', lunch: true } }).text).toBe('À 7h45, Cabane. Vous êtes inscrit au déjeuner.');
+    expect(dayPhase({ day, me: { ...me, response: 'present', lunch: true } }).text).toBe('7h45, Cabane · déjeuner : oui');
     expect(dayPhase({ day, me: { ...me, response: 'absent' } }).phase).toBe('absent');
   });
   it('jour J : de l’attente à la traque, puis regroupement', () => {
@@ -335,7 +335,7 @@ describe('vue chasseur : phase de la journée', () => {
     expect(dayPhase({ day: run, me: here, battues: [battue('en_cours')], current: current({}) }).phase).toBe('preparation');
     const go = dayPhase({ day: run, me: here, battues: [battue('en_cours')], current: current({ assignments_published: true }) });
     expect(go).toMatchObject({ phase: 'rejoindre', title: 'Rejoignez votre poste n° 4' });
-    expect(dayPhase({ day: run, me: here, battues: [battue('en_cours')], current: current({ assignments_published: true, started_at: 'x' }) }).title).toBe('Battue en cours — poste 4');
+    expect(dayPhase({ day: run, me: here, battues: [battue('en_cours')], current: current({ assignments_published: true, started_at: 'x' }) }).title).toBe('Traque en cours · poste 4');
     expect(dayPhase({ day: run, me: here, battues: [battue('terminee')], current: current({ status: 'terminee' }) }).phase).toBe('fin');
     const rg = dayPhase({ day: { ...run, regroup: { place: 'Croix du Loup', time: '11:30' } }, me: here, battues: [battue('terminee')] });
     expect(rg).toMatchObject({ phase: 'regroupement', text: 'Rendez-vous Croix du Loup à 11h30.' });

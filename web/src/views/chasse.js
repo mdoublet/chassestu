@@ -44,7 +44,7 @@ export async function chasseView(main, tab = null, dayId = null) {
   if (!day) {
     fill(body, h('div.card',
       h('p', manager ? 'Aucune journée de chasse en cours ni prévue.' : 'Aucune journée de chasse en cours ni prévue pour vous.'),
-      manager ? null : h('p.small.muted', 'Vous recevrez une notification à la prochaine convocation.'),
+
       h('a', { href: '#/journees' }, manager ? 'Journées : en créer une →' : 'Toutes les journées →')));
     return null;
   }

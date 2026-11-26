@@ -735,3 +735,23 @@ ul.people li { display: flex; align-items: center; gap: 0.4rem; padding: 0.25rem
 .pdot { flex: none; width: 0.75rem; height: 0.75rem; border-radius: 50%; background: #f08c00; }
 .pdot.ok { background: #2f9e44; }
 .join-lead { margin-top: 0.7rem; }
+/* Vue chasseur compacte */
+.sheet-info .card, .sheet-more .card { padding: 0.6rem 0.75rem; margin: 0.45rem 0; }
+.sheet-info .status-banner { padding: 0.5rem 0.75rem; margin: 0.4rem 0; }
+.sheet-info .status-banner strong { font-size: 1.05rem; }
+.sheet-info .day-line { margin: 0.2rem 0; }
+.compact-card .join-row { border: 0; padding: 0; }
+.row-icons { display: inline-flex; align-items: center; gap: 0.2rem; }
+.species-line { margin: 0.4rem 0.2rem; font-size: 0.92rem; }
+.species-line .full { color: #c92a2a; font-weight: 700; }
+.positions .join-title { font-size: 1.1rem; }
+.join-grid { margin: 0.3rem 0 0.5rem; }
+.join-tile { min-height: 4rem; }
+.join-people h3 { margin: 0.6rem 0 0.2rem; }
+ul.people li { padding: 0.15rem 0; }
+.declare-row { display: flex; gap: 0.4rem; flex-wrap: wrap; margin-top: 0.4rem; }
+.declare-row select { flex: 1; min-width: 7rem; }
+.harvest-card h3 { margin: 0 0 0.3rem; }
+.lead-card .join-row { gap: 0.5rem; }
+.lead-card button { flex: none; }
+.people-fold > summary { cursor: pointer; font-weight: 600; margin: 0.4rem 0; }

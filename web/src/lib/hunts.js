@@ -98,51 +98,51 @@ export function dayPhase(view) {
     case 'convoquee':
       if (!me) return { phase: 'convoque', tone: 'info', title: `Journée du ${formatHuntDate(day.date)}`, text: `Rendez-vous à ${rdv}.` };
       if (!me.response) return { phase: 'reponse', tone: 'warn', title: 'Serez-vous présent ?', text: `Journée de chasse le ${formatHuntDate(day.date)}, rendez-vous à ${rdv}.` };
-      if (me.response === 'absent') return { phase: 'absent', tone: 'info', title: 'Vous êtes noté absent', text: 'Vous pouvez changer d’avis ci-dessous jusqu’au début de la journée.' };
-      return { phase: 'rdv', tone: 'info', title: `Rendez-vous le ${formatHuntDate(day.date)}`, text: `À ${rdv}.${day.lunch_offered ? (me.lunch ? ' Vous êtes inscrit au déjeuner.' : ' Vous n’êtes pas inscrit au déjeuner.') : ''}` };
+      if (me.response === 'absent') return { phase: 'absent', tone: 'info', title: 'Vous êtes noté absent', text: '' };
+      return { phase: 'rdv', tone: 'info', title: `Rendez-vous le ${formatHuntDate(day.date)}`, text: `${rdv}${day.lunch_offered ? (me.lunch ? ' · déjeuner : oui' : ' · déjeuner : non') : ''}` };
     default:
       break;
   }
   // Journée en cours.
   if (me && !me.present) {
-    return { phase: 'non_present', tone: 'info', title: 'Vous n’êtes pas noté présent', text: 'Arrivé au rendez-vous ? Signalez-vous à l’organisateur.' };
+    return { phase: 'non_present', tone: 'info', title: 'Pas noté présent', text: 'Signalez-vous à l’organisateur.' };
   }
   if (!last) {
-    return { phase: 'attente_battue', tone: 'info', title: 'Rendez-vous', text: `${rdv}. La première battue va être organisée.` };
+    return { phase: 'attente_battue', tone: 'info', title: 'Au rendez-vous', text: rdv };
   }
   if (last.status === 'terminee') {
     if (day.regroup) {
       const where = day.regroup.place || 'au point indiqué sur la carte';
       return { phase: 'regroupement', tone: 'warn', title: 'Regroupement', text: `Rendez-vous ${where} ${day.regroup.time ? `à ${formatTime(day.regroup.time)}` : 'dès maintenant'}.` };
     }
-    return { phase: 'fin', tone: 'done', title: `Fin de la battue n° ${last.number}`, text: 'Déchargez votre arme. Le lieu de regroupement va vous être indiqué.' };
+    return { phase: 'fin', tone: 'done', title: `Fin de la battue n° ${last.number}`, text: 'Déchargez votre arme.' };
   }
   if (!current) {
-    return { phase: 'non_volontaire', tone: 'info', title: `${what} en cours`, text: 'Vous ne participez pas à cette battue. Attendez le regroupement.' };
+    return { phase: 'non_volontaire', tone: 'info', title: `${what} en cours`, text: 'Vous ne participez pas.' };
   }
   if (!me) {
     return hunt.started_at
       ? { phase: 'traque', tone: 'go', title: `${what} : traque en cours`, text: `${hunt.posted_count} posté(s).` }
-      : { phase: 'preparation', tone: 'warn', title: `${what} en préparation`, text: hunt.assignments_published ? 'Postes publiés : les chasseurs rejoignent leur poste.' : 'Postes pas encore publiés.' };
+      : { phase: 'preparation', tone: 'warn', title: `${what} en préparation`, text: hunt.assignments_published ? 'Postes publiés.' : 'Postes non publiés.' };
   }
   if (!hunt.assignments_published) {
-    return { phase: 'preparation', tone: 'warn', title: `${what} en préparation`, text: 'Restez au rendez-vous : les postes vont être attribués.' };
+    return { phase: 'preparation', tone: 'warn', title: `${what} en préparation`, text: 'Postes bientôt attribués.' };
   }
   if (hunt.started_at) {
-    if (role === 'traqueur') return { phase: 'traque', tone: 'go', title: 'Traque en cours', text: 'Gilet orange, restez en ligne avec les autres traqueurs, signalez-vous à la voix.' };
-    if (role === 'chef_de_ligne' && !post) return { phase: 'traque', tone: 'go', title: 'Battue en cours', text: 'Veillez à la ligne de postes et à la sécurité. La fin vous sera annoncée.' };
+    if (role === 'traqueur') return { phase: 'traque', tone: 'go', title: 'Traque en cours', text: 'Gilet orange, restez en ligne.' };
+    if (role === 'chef_de_ligne' && !post) return { phase: 'traque', tone: 'go', title: 'Battue en cours', text: 'Veillez à la ligne de postes.' };
     return post
-      ? { phase: 'traque', tone: 'go', title: `Battue en cours — poste ${post.number}`, text: 'Restez à votre poste. Tir uniquement dans les angles autorisés. La fin vous sera annoncée ici.' }
-      : { phase: 'traque', tone: 'warn', title: 'Battue en cours', text: 'Vous n’avez pas de poste : voyez le responsable.' };
+      ? { phase: 'traque', tone: 'go', title: `Traque en cours · poste ${post.number}`, text: 'Restez au poste. Tir dans les angles autorisés.' }
+      : { phase: 'traque', tone: 'warn', title: 'Battue en cours', text: 'Pas de poste : voyez le responsable.' };
   }
-  if (role === 'traqueur') return { phase: 'rejoindre', tone: 'warn', title: 'Vous êtes traqueur', text: 'Préparez-vous : la traque démarrera au signal du responsable.' };
+  if (role === 'traqueur') return { phase: 'rejoindre', tone: 'warn', title: 'Vous êtes traqueur', text: 'Attendez le signal.' };
   // Le chef de ligne est un chasseur posté : il rejoint son poste ; sa ligne s'affiche en dessous.
-  if (role === 'chef_de_ligne' && !post) return { phase: 'rejoindre', tone: 'warn', title: 'Vous êtes chef de ligne', text: 'Vérifiez la mise en place des postés avant le début de battue.' };
+  if (role === 'chef_de_ligne' && !post) return { phase: 'rejoindre', tone: 'warn', title: 'Vous êtes chef de ligne', text: 'Vérifiez la mise en place.' };
   if (post && current.me.in_place) {
-    return { phase: 'rejoindre', tone: 'go', title: `En place au poste n° ${post.number}`, text: 'Attendez le signal de début de battue.' };
+    return { phase: 'rejoindre', tone: 'go', title: `En place au poste n° ${post.number}`, text: 'Attendez le signal.' };
   }
   return post
-    ? { phase: 'rejoindre', tone: 'warn', title: `Rejoignez votre poste n° ${post.number}`, text: 'En voiture jusqu’au parking, puis à pied. Chargez votre arme seulement au poste et confirmez « Je suis en place ».' }
+    ? { phase: 'rejoindre', tone: 'warn', title: `Rejoignez votre poste n° ${post.number}`, text: 'Arme chargée au poste seulement.' }
     : { phase: 'rejoindre', tone: 'warn', title: 'Pas de poste attribué', text: 'Voyez le responsable de la battue.' };
 }
 
