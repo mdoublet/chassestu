@@ -492,3 +492,35 @@ describe('Ma chasse : journée à montrer', () => {
     expect(pickDay([{ id: 'f', status: 'brouillon', date: '2026-12-01' }], '2026-11-26')).toBeNull();
   });
 });
+
+import fontcouverte from '../src/data/fontcouverte-2026-2027.json';
+import oracle from './fontcouverte-oracle.json';
+import { speciesStatus, sunTimes, holidayName, dayNotices, nextOpenDate, battueOn } from '../src/lib/regulations.js';
+describe('infos de chasse (règlement de la saison)', () => {
+  it('reproduit exactement la page d’origine, jour par jour (soleil, fériés, état de chaque espèce)', () => {
+    let checked = 0;
+    for (const row of oracle) {
+      const sun = sunTimes(row.d, fontcouverte.reference);
+      expect([row.d, sun.rise, sun.set]).toEqual([row.d, row.rise, row.set]);
+      expect(holidayName(row.d)?.replace('’', "'") ?? null).toBe(row.hol);
+      for (const e of fontcouverte.species) {
+        const s = speciesStatus(fontcouverte, e, row.d);
+        expect(`${row.d} ${e.id} ${s.state}${s.periods ? `:${s.periods.length}` : ''}`).toBe(`${row.d} ${e.id} ${row.st[e.id]}`);
+        checked += 1;
+      }
+    }
+    expect(checked).toBe(377 * 29);
+  });
+  it('avis du jour : ouverture générale, férié, battue', () => {
+    expect(dayNotices(fontcouverte, '2026-09-13').map((n) => n.title)).toContain('Ouverture générale');
+    expect(dayNotices(fontcouverte, '2026-12-25').map((n) => n.title)).toContain('Jour férié : Noël'); // vendredi : faisan (dimanche, mercredi et fériés)
+    expect(dayNotices(fontcouverte, '2026-11-11').some((n) => n.title.startsWith('Jour férié'))).toBe(false); // mercredi : déjà un jour de chasse
+    const b = dayNotices(fontcouverte, '2026-11-28').find((n) => n.battue);
+    expect(b.title).toBe('Battue au chevreuil ce jour');
+    expect(b.text).toMatch(/^Responsable : Raphaël\./);
+    expect(battueOn(fontcouverte, 'sanglier', '2026-11-21')).toEqual({ date: '2026-11-21', leader: 'Dominique' });
+    expect(dayNotices(fontcouverte, '2027-07-01')[0].title).toBe('Hors campagne');
+    const lievre = fontcouverte.species.find((e) => e.id === 'lievre');
+    expect(nextOpenDate(fontcouverte, lievre, '2026-11-26')).toBe('2026-11-29'); // dimanche suivant
+  });
+});

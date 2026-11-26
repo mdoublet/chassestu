@@ -1,0 +1,1212 @@
+{
+ "version": 1,
+ "title": "ACCA de Fontcouverte, saison 2026-2027",
+ "season_label": "2026-2027",
+ "reference": {
+  "name": "La Rochelle",
+  "lat": 46.1591,
+  "lon": -1.152
+ },
+ "campaign": {
+  "from": "2026-06-01",
+  "to": "2027-05-31",
+  "before_text": "Avant la campagne 2026-2027 : ouverture anticipée le 1er juin 2026 pour le grand gibier",
+  "after_text": "Après la campagne 2026-2027"
+ },
+ "chart": {
+  "from": "2026-08-20",
+  "to": "2027-04-01"
+ },
+ "categories": [
+  {
+   "id": "petit",
+   "label": "Petit gibier sédentaire"
+  },
+  {
+   "id": "passage",
+   "label": "Oiseaux de passage"
+  },
+  {
+   "id": "eau",
+   "label": "Gibier d'eau"
+  },
+  {
+   "id": "autre",
+   "label": "Renard, corvidés et autres"
+  },
+  {
+   "id": "grand",
+   "label": "Grand gibier"
+  }
+ ],
+ "days": {
+  "ALL": {
+   "label": "Tous les jours",
+   "dow": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6
+   ]
+  },
+  "DMF": {
+   "label": "Dimanche, mercredi et jours fériés",
+   "dow": [
+    0,
+    3
+   ],
+   "holidays": true
+  },
+  "DM": {
+   "label": "Dimanche et mercredi",
+   "dow": [
+    0,
+    3
+   ]
+  },
+  "D": {
+   "label": "Dimanche uniquement",
+   "dow": [
+    0
+   ]
+  }
+ },
+ "hours": {
+  "STD1": {
+   "seg": [
+    [
+     "08:00",
+     "12:00"
+    ],
+    [
+     "14:00",
+     "19:00"
+    ]
+   ],
+   "label": "8h00–12h00 et 14h00–19h00"
+  },
+  "STD2": {
+   "seg": [
+    [
+     "08:30",
+     "17:30"
+    ]
+   ],
+   "label": "8h30–17h30"
+  },
+  "DAY": {
+   "seg": [
+    [
+     "r-60",
+     "s+60"
+    ]
+   ],
+   "label": "1 h avant le lever à 1 h après le coucher du soleil"
+  },
+  "CAILLE1": {
+   "seg": [
+    [
+     "08:00",
+     "12:00"
+    ],
+    [
+     "14:00",
+     "s+0"
+    ]
+   ],
+   "label": "8h00–12h00 et 14h00 jusqu’au coucher du soleil"
+  },
+  "CAILLE2": {
+   "seg": [
+    [
+     "08:30",
+     "s+0"
+    ]
+   ],
+   "label": "8h30 jusqu’au coucher du soleil"
+  },
+  "BEC1": {
+   "seg": [
+    [
+     "08:00",
+     "12:00"
+    ],
+    [
+     "14:00",
+     "18:00"
+    ]
+   ],
+   "label": "8h00–12h00 et 14h00–18h00"
+  },
+  "PASSEE": {
+   "seg": [
+    [
+     "r-120",
+     "s+120"
+    ]
+   ],
+   "label": "2 h avant le lever à 2 h après le coucher du soleil (passée)"
+  },
+  "PASSEE_ANT": {
+   "seg": [
+    [
+     "r-120",
+     "09:00"
+    ],
+    [
+     "19:00",
+     "s+120"
+    ]
+   ],
+   "label": "2 h avant le lever jusqu'à 9h00, puis de 19h00 à 2 h après le coucher (tir interdit de 9h à 19h)"
+  }
+ },
+ "species": [
+  {
+   "id": "perdrix",
+   "cat": "petit",
+   "name": "Perdrix rouge et grise",
+   "src": "Tableau ACCA",
+   "limit": "2 ou 3 par jour selon le secteur",
+   "limitFull": "2 ou 3 par jour selon le secteur de gestion ; 15 par an selon le secteur (la mention « ou 20 » est barrée dans le tableau ACCA). Le maximum exact est fixé par territoire dans le plan de gestion perdrix.",
+   "notes": [
+    "Chaque prélèvement est enregistré immédiatement (carnet ou ChassAdapt)."
+   ],
+   "periods": [
+    {
+     "from": "2026-09-13",
+     "to": "2026-10-24",
+     "days": "DMF",
+     "hours": "STD1"
+    },
+    {
+     "from": "2026-10-25",
+     "to": "2026-11-29",
+     "days": "DMF",
+     "hours": "STD2"
+    }
+   ]
+  },
+  {
+   "id": "faisan",
+   "cat": "petit",
+   "name": "Faisan",
+   "sub": "Coq uniquement",
+   "src": "Tableau ACCA",
+   "limit": "2 par jour, 20 par an",
+   "limitFull": "2 par jour et 20 par an.",
+   "notes": [
+    "Seul le coq peut être tiré : le tir de la poule faisane est interdit (art. 21.4.2).",
+    "Chaque prélèvement est enregistré immédiatement (carnet ou ChassAdapt)."
+   ],
+   "periods": [
+    {
+     "from": "2026-09-13",
+     "to": "2026-10-24",
+     "days": "DMF",
+     "hours": "STD1"
+    },
+    {
+     "from": "2026-10-25",
+     "to": "2027-01-31",
+     "days": "DMF",
+     "hours": "STD2"
+    }
+   ]
+  },
+  {
+   "id": "lievre",
+   "cat": "petit",
+   "name": "Lièvre",
+   "src": "ACCA + arrêté",
+   "limit": "1 par jour (tout le département)",
+   "limitFull": "1 par jour sur l'ensemble du département. Annuel : « PGC par secteur 2 » dans le tableau ACCA (probablement 2 par an selon le plan de gestion du secteur : à confirmer).",
+   "notes": [
+    "Fermeture le 6 décembre selon l'ACCA (l'arrêté préfectoral irait jusqu'au 20 décembre) : l'ACCA est plus stricte.",
+    "Interdits : les levrauts, et le lièvre à l’affût à la tombée du jour ou au gîte (art. 13).",
+    "Carte lièvre à rendre au plus tard le lundi 4 janvier 2027 (art. 21.4.6)."
+   ],
+   "periods": [
+    {
+     "from": "2026-10-18",
+     "to": "2026-10-24",
+     "days": "D",
+     "hours": "STD1"
+    },
+    {
+     "from": "2026-10-25",
+     "to": "2026-12-06",
+     "days": "D",
+     "hours": "STD2"
+    }
+   ]
+  },
+  {
+   "id": "lapin",
+   "cat": "petit",
+   "name": "Lapin",
+   "src": "ACCA + arrêté",
+   "limit": "2 par jour (si non classé ESOD)",
+   "limitFull": "2 par jour et par chasseur, uniquement si le lapin n'est pas classé ESOD dans la commune.",
+   "notes": [
+    "À vérifier : le classement du lapin (ESOD ou gibier) dans la commune.",
+    "Lapin classé gibier : enregistrement comme le faisan et la perdrix, furet interdit sauf dérogation. Classé ESOD : furet autorisé."
+   ],
+   "periods": [
+    {
+     "from": "2026-09-13",
+     "to": "2026-10-24",
+     "days": "DM",
+     "hours": "STD1"
+    },
+    {
+     "from": "2026-10-25",
+     "to": "2027-02-28",
+     "days": "ALL",
+     "hours": "STD2"
+    }
+   ]
+  },
+  {
+   "id": "ramier",
+   "cat": "passage",
+   "name": "Pigeon ramier",
+   "sub": "Palombe",
+   "src": "ACCA + arrêté",
+   "limit": "Aucun PMA",
+   "limitFull": "Pas de PMA.",
+   "notes": [
+    "Le tableau ACCA porte « 20/202/2027 » comme clôture : c'est une coquille, l'arrêté indique le 20/02/2027 (retenu).",
+    "Poste fixe pour colombidés : accord préalable du propriétaire et du Président (art. 10).",
+    "Prélèvements notés sur le carnet au plus tard en fin de saison."
+   ],
+   "periods": [
+    {
+     "from": "2026-09-13",
+     "to": "2027-02-10",
+     "days": "ALL",
+     "hours": "DAY"
+    },
+    {
+     "from": "2027-02-11",
+     "to": "2027-02-20",
+     "days": "ALL",
+     "hours": "DAY",
+     "cond": "Uniquement depuis un poste fixe matérialisé de main d'homme"
+    }
+   ]
+  },
+  {
+   "id": "biset",
+   "cat": "passage",
+   "name": "Pigeons biset et colombin",
+   "src": "ACCA + arrêté",
+   "limit": "Aucun PMA",
+   "limitFull": "Pas de PMA.",
+   "notes": [
+    "Prélèvements notés sur le carnet au plus tard en fin de saison."
+   ],
+   "periods": [
+    {
+     "from": "2026-09-13",
+     "to": "2027-02-10",
+     "days": "ALL",
+     "hours": "DAY"
+    }
+   ]
+  },
+  {
+   "id": "grives",
+   "cat": "passage",
+   "name": "Grives et merle noir",
+   "sub": "Draine, musicienne, mauvis, litorne",
+   "src": "ACCA + arrêté",
+   "limit": "Aucun PMA",
+   "limitFull": "Pas de PMA.",
+   "notes": [
+    "Poste fixe pour grives : accord préalable du propriétaire et du Président (art. 10).",
+    "Prélèvements notés sur le carnet au plus tard à la fermeture de l’espèce."
+   ],
+   "periods": [
+    {
+     "from": "2026-09-13",
+     "to": "2027-02-10",
+     "days": "ALL",
+     "hours": "DAY"
+    }
+   ]
+  },
+  {
+   "id": "tourterelle-bois",
+   "cat": "passage",
+   "name": "Tourterelle des bois",
+   "src": "Tableau ACCA",
+   "kind": "check",
+   "checkText": "Aucune date dans le tableau ACCA : il renvoie à l'arrêté ministériel (art. 3 de l'arrêté préfectoral). Vérifiez cet arrêté avant de tirer. Chaque prélèvement doit être enregistré immédiatement (ChassAdapt).",
+   "notes": [],
+   "periods": []
+  },
+  {
+   "id": "tourterelle-turque",
+   "cat": "passage",
+   "name": "Tourterelle turque",
+   "src": "ACCA + arrêté",
+   "limit": "Aucun PMA",
+   "limitFull": "Pas de PMA.",
+   "notes": [
+    "Prélèvements notés sur le carnet au plus tard à la fermeture de l’espèce."
+   ],
+   "periods": [
+    {
+     "from": "2026-09-13",
+     "to": "2027-02-20",
+     "days": "ALL",
+     "hours": "DAY"
+    }
+   ]
+  },
+  {
+   "id": "caille",
+   "cat": "passage",
+   "name": "Caille des blés",
+   "src": "ACCA + arrêté",
+   "limit": "10 par jour, 50 par an",
+   "limitFull": "10 cailles par jour et 50 par an, tout territoire confondu.",
+   "notes": [
+    "Chasse anticipée dès le 30/08 selon l'ACCA (l'arrêté indique le 29/08) : l'ACCA est plus stricte.",
+    "Chaque prélèvement est enregistré immédiatement (ChassAdapt ou carnet)."
+   ],
+   "periods": [
+    {
+     "from": "2026-08-30",
+     "to": "2026-09-12",
+     "days": "ALL",
+     "hours": "CAILLE1",
+     "cond": "Chasse anticipée"
+    },
+    {
+     "from": "2026-09-13",
+     "to": "2026-10-24",
+     "days": "DM",
+     "hours": "CAILLE1"
+    },
+    {
+     "from": "2026-10-25",
+     "to": "2027-02-20",
+     "days": "ALL",
+     "hours": "CAILLE2"
+    }
+   ]
+  },
+  {
+   "id": "alouette",
+   "cat": "passage",
+   "name": "Alouette des champs",
+   "src": "ACCA + arrêté",
+   "limit": "Aucun PMA",
+   "limitFull": "Pas de PMA.",
+   "notes": [],
+   "periods": [
+    {
+     "from": "2026-09-13",
+     "to": "2027-01-31",
+     "days": "ALL",
+     "hours": "DAY"
+    }
+   ]
+  },
+  {
+   "id": "becasse",
+   "cat": "passage",
+   "name": "Bécasse des bois",
+   "src": "ACCA + arrêté",
+   "limit": "2 par jour, 6 par semaine, 30 par saison",
+   "limitFull": "2 par jour et par chasseur, 6 par semaine (du lundi au dimanche), 15 par mois et 30 par saison.",
+   "notes": [
+    "Enregistrer chaque bécasse avant tout déplacement : marquage + carnet bécasse, ou application ChassAdapt.",
+    "Carnet bécasse à rendre au plus tard le lundi 1er mars 2027."
+   ],
+   "periods": [
+    {
+     "from": "2026-09-13",
+     "to": "2026-10-24",
+     "days": "DM",
+     "hours": "BEC1"
+    },
+    {
+     "from": "2026-10-25",
+     "to": "2027-02-20",
+     "days": "ALL",
+     "hours": "STD2"
+    }
+   ]
+  },
+  {
+   "id": "colvert",
+   "cat": "eau",
+   "name": "Canard colvert",
+   "src": "Arrêté préfectoral",
+   "limit": "5 par volée jusqu’au 12/09",
+   "limitFull": "Hors installation immatriculée : colvert 5 oiseaux par volée et par chasseur jusqu'au 12/09/2026. Depuis une installation immatriculée, de midi à midi : 15 canards pour un chasseur seul, 25 s'ils sont plusieurs ; un chasseur seul peut aller à 25 uniquement si au moins 10 sont des colverts. Le maximum retenu est 25 de midi à midi.",
+   "notes": [
+    "Zones humides = marais non asséchés, fleuves, rivières, canaux, réservoirs, lacs, étangs et nappes d’eau. Ailleurs : chasse de jour.",
+    "Du 21/08 à l'ouverture générale, tir interdit de 9h à 19h en zones humides.",
+    "Prélèvements enregistrés sur ChassAdapt (ou carnet individuel) ; carnet de tonne obligatoire.",
+    "Plomb interdit en zones humides et sur les zones gibier d’eau signalées (art. 21.3).",
+    "Ne pas chasser les territoires frappés d'opposition pour le gibier d'eau (art. 9)."
+   ],
+   "periods": [
+    {
+     "from": "2026-08-21",
+     "to": "2026-09-12",
+     "days": "ALL",
+     "hours": "PASSEE_ANT",
+     "where": "Zones humides",
+     "cond": "Ouverture anticipée à 6h00"
+    },
+    {
+     "from": "2026-09-13",
+     "to": "2027-01-31",
+     "days": "ALL",
+     "hours": "PASSEE",
+     "where": "Zones humides"
+    },
+    {
+     "from": "2026-09-13",
+     "to": "2027-01-31",
+     "days": "ALL",
+     "hours": "DAY",
+     "where": "Autres territoires",
+     "cond": "Le 13/09 : ouverture à 8h00"
+    }
+   ]
+  },
+  {
+   "id": "canards",
+   "cat": "eau",
+   "name": "Autres canards",
+   "sub": "Pilet, siffleur, souchet, sarcelles, macreuses, garrot…",
+   "src": "Arrêté préfectoral",
+   "limit": "15 par jour hors installation",
+   "limitFull": "Hors installation immatriculée : 15 oiseaux par chasseur et par jour. Depuis une installation immatriculée, de midi à midi : 15 pour un chasseur seul, 25 s'ils sont plusieurs (max. 15 pour les espèces autres que le colvert).",
+   "notes": [
+    "Zones humides = marais non asséchés, fleuves, rivières, canaux, réservoirs, lacs, étangs et nappes d’eau. Ailleurs : chasse de jour.",
+    "Du 21/08 à l'ouverture générale, tir interdit de 9h à 19h en zones humides.",
+    "Prélèvements enregistrés sur ChassAdapt (ou carnet individuel) ; carnet de tonne obligatoire.",
+    "Plomb interdit en zones humides et sur les zones gibier d’eau signalées (art. 21.3).",
+    "Ne pas chasser les territoires frappés d'opposition pour le gibier d'eau (art. 9)."
+   ],
+   "periods": [
+    {
+     "from": "2026-08-21",
+     "to": "2026-09-12",
+     "days": "ALL",
+     "hours": "PASSEE_ANT",
+     "where": "Zones humides",
+     "cond": "Ouverture anticipée à 6h00"
+    },
+    {
+     "from": "2026-09-13",
+     "to": "2027-01-31",
+     "days": "ALL",
+     "hours": "PASSEE",
+     "where": "Zones humides"
+    },
+    {
+     "from": "2026-09-13",
+     "to": "2027-01-31",
+     "days": "ALL",
+     "hours": "DAY",
+     "where": "Autres territoires",
+     "cond": "Le 13/09 : ouverture à 8h00"
+    }
+   ]
+  },
+  {
+   "id": "canards-sept",
+   "cat": "eau",
+   "name": "Chipeau, fuligule morillon, nette rousse",
+   "src": "Arrêté préfectoral",
+   "limit": "15 par jour hors installation",
+   "limitFull": "Mêmes limites que les autres canards : 15 par chasseur et par jour hors installation immatriculée ; de midi à midi depuis une installation immatriculée : 15 (seul) ou 25 (plusieurs).",
+   "notes": [
+    "Zones humides = marais non asséchés, fleuves, rivières, canaux, réservoirs, lacs, étangs et nappes d’eau. Ailleurs : chasse de jour.",
+    "Du 21/08 à l'ouverture générale, tir interdit de 9h à 19h en zones humides.",
+    "Prélèvements enregistrés sur ChassAdapt (ou carnet individuel) ; carnet de tonne obligatoire.",
+    "Plomb interdit en zones humides et sur les zones gibier d’eau signalées (art. 21.3).",
+    "Ne pas chasser les territoires frappés d'opposition pour le gibier d'eau (art. 9)."
+   ],
+   "periods": [
+    {
+     "from": "2026-09-15",
+     "to": "2027-01-31",
+     "days": "ALL",
+     "hours": "PASSEE",
+     "where": "Zones humides",
+     "cond": "Ouverture à 7h00"
+    },
+    {
+     "from": "2026-09-15",
+     "to": "2027-01-31",
+     "days": "ALL",
+     "hours": "DAY",
+     "where": "Autres territoires",
+     "cond": "Ouverture à 7h00"
+    }
+   ]
+  },
+  {
+   "id": "oies",
+   "cat": "eau",
+   "name": "Oies",
+   "sub": "Cendrée, rieuse, des moissons, bernache du Canada",
+   "src": "Arrêté préfectoral",
+   "limit": "Aucun PMA indiqué",
+   "limitFull": "Aucun PMA indiqué dans l'arrêté pour les oies.",
+   "notes": [
+    "Zones humides = marais non asséchés, fleuves, rivières, canaux, réservoirs, lacs, étangs et nappes d’eau. Ailleurs : chasse de jour.",
+    "Du 21/08 à l'ouverture générale, tir interdit de 9h à 19h en zones humides.",
+    "Prélèvements enregistrés sur ChassAdapt (ou carnet individuel) ; carnet de tonne obligatoire.",
+    "Plomb interdit en zones humides et sur les zones gibier d’eau signalées (art. 21.3).",
+    "Ne pas chasser les territoires frappés d'opposition pour le gibier d'eau (art. 9)."
+   ],
+   "periods": [
+    {
+     "from": "2026-08-21",
+     "to": "2026-09-12",
+     "days": "ALL",
+     "hours": "PASSEE_ANT",
+     "where": "Zones humides",
+     "cond": "Ouverture anticipée à 6h00"
+    },
+    {
+     "from": "2026-09-13",
+     "to": "2027-01-31",
+     "days": "ALL",
+     "hours": "PASSEE",
+     "where": "Zones humides"
+    },
+    {
+     "from": "2026-09-13",
+     "to": "2027-01-31",
+     "days": "ALL",
+     "hours": "DAY",
+     "where": "Autres territoires",
+     "cond": "Le 13/09 : ouverture à 8h00"
+    }
+   ]
+  },
+  {
+   "id": "rallides",
+   "cat": "eau",
+   "name": "Foulque, poule d’eau, râle d’eau",
+   "src": "Arrêté préfectoral",
+   "limit": "Aucun PMA indiqué",
+   "limitFull": "Aucun PMA indiqué dans l'arrêté.",
+   "notes": [
+    "Zones humides = marais non asséchés, fleuves, rivières, canaux, réservoirs, lacs, étangs et nappes d’eau. Ailleurs : chasse de jour.",
+    "Du 21/08 à l'ouverture générale, tir interdit de 9h à 19h en zones humides.",
+    "Prélèvements enregistrés sur ChassAdapt (ou carnet individuel) ; carnet de tonne obligatoire.",
+    "Plomb interdit en zones humides et sur les zones gibier d’eau signalées (art. 21.3).",
+    "Ne pas chasser les territoires frappés d'opposition pour le gibier d'eau (art. 9)."
+   ],
+   "periods": [
+    {
+     "from": "2026-09-15",
+     "to": "2027-01-31",
+     "days": "ALL",
+     "hours": "PASSEE",
+     "where": "Zones humides",
+     "cond": "Ouverture à 7h00"
+    },
+    {
+     "from": "2026-09-15",
+     "to": "2027-01-31",
+     "days": "ALL",
+     "hours": "DAY",
+     "where": "Autres territoires",
+     "cond": "Ouverture à 7h00"
+    }
+   ]
+  },
+  {
+   "id": "limicoles",
+   "cat": "eau",
+   "name": "Limicoles",
+   "sub": "Bécassines, barges, chevaliers, courlis corlieu, pluviers…",
+   "src": "Arrêté préfectoral",
+   "limit": "Aucun PMA indiqué",
+   "limitFull": "Aucun PMA indiqué dans l'arrêté.",
+   "notes": [
+    "Zones humides = marais non asséchés, fleuves, rivières, canaux, réservoirs, lacs, étangs et nappes d’eau. Ailleurs : chasse de jour.",
+    "Du 21/08 à l'ouverture générale, tir interdit de 9h à 19h en zones humides.",
+    "Prélèvements enregistrés sur ChassAdapt (ou carnet individuel) ; carnet de tonne obligatoire.",
+    "Plomb interdit en zones humides et sur les zones gibier d’eau signalées (art. 21.3).",
+    "Ne pas chasser les territoires frappés d'opposition pour le gibier d'eau (art. 9).",
+    "Courlis cendré, barge à queue noire et eider à duvet : chasse suspendue."
+   ],
+   "periods": [
+    {
+     "from": "2026-08-21",
+     "to": "2026-09-12",
+     "days": "ALL",
+     "hours": "PASSEE_ANT",
+     "where": "Zones humides",
+     "cond": "Ouverture anticipée à 6h00"
+    },
+    {
+     "from": "2026-09-13",
+     "to": "2027-01-31",
+     "days": "ALL",
+     "hours": "PASSEE",
+     "where": "Zones humides"
+    },
+    {
+     "from": "2026-09-13",
+     "to": "2027-01-31",
+     "days": "ALL",
+     "hours": "DAY",
+     "where": "Autres territoires",
+     "cond": "Le 13/09 : ouverture à 8h00"
+    }
+   ]
+  },
+  {
+   "id": "vanneau",
+   "cat": "eau",
+   "name": "Vanneau huppé",
+   "src": "Arrêté préfectoral",
+   "limit": "Aucun PMA indiqué",
+   "limitFull": "Aucun PMA indiqué dans l'arrêté.",
+   "notes": [
+    "Zones humides = marais non asséchés, fleuves, rivières, canaux, réservoirs, lacs, étangs et nappes d’eau. Ailleurs : chasse de jour.",
+    "Du 21/08 à l'ouverture générale, tir interdit de 9h à 19h en zones humides.",
+    "Prélèvements enregistrés sur ChassAdapt (ou carnet individuel) ; carnet de tonne obligatoire.",
+    "Plomb interdit en zones humides et sur les zones gibier d’eau signalées (art. 21.3).",
+    "Ne pas chasser les territoires frappés d'opposition pour le gibier d'eau (art. 9)."
+   ],
+   "periods": [
+    {
+     "from": "2026-09-13",
+     "to": "2027-01-31",
+     "days": "ALL",
+     "hours": "PASSEE",
+     "where": "Zones humides",
+     "cond": "Ouverture à 8h00"
+    },
+    {
+     "from": "2026-09-13",
+     "to": "2027-01-31",
+     "days": "ALL",
+     "hours": "DAY",
+     "where": "Autres territoires",
+     "cond": "Ouverture à 8h00"
+    }
+   ]
+  },
+  {
+   "id": "milouin",
+   "cat": "eau",
+   "name": "Fuligule milouin",
+   "src": "Arrêté préfectoral",
+   "kind": "check",
+   "checkText": "L'arrêté préfectoral renvoie à un arrêté ministériel spécifique à l'espèce, et précise que le PMA national peut être fermé en cours d'année. Vérifiez avant de tirer.",
+   "notes": [],
+   "periods": []
+  },
+  {
+   "id": "suspendu",
+   "cat": "eau",
+   "name": "Eider à duvet, courlis cendré, barge à queue noire",
+   "src": "Arrêté préfectoral",
+   "kind": "suspended",
+   "checkText": "Chasse suspendue (l'arrêté précise que cela peut évoluer par arrêté ministériel).",
+   "notes": [],
+   "periods": []
+  },
+  {
+   "id": "renard",
+   "cat": "autre",
+   "name": "Renard",
+   "src": "Arrêté préfectoral",
+   "limit": "Aucun PMA",
+   "limitFull": "Pas de PMA.",
+   "notes": [
+    "Interdit en réserve toute l’année.",
+    "À l'approche ou à l'affût, une autorisation individuelle du Président peut être exigée (art. 14 et 18) : à confirmer avec lui.",
+    "Chasse autorisée même en temps de neige."
+   ],
+   "periods": [
+    {
+     "from": "2026-06-01",
+     "to": "2026-09-12",
+     "days": "ALL",
+     "hours": "DAY",
+     "restricted": true,
+     "cond": "Période anticipée : réservé aux détenteurs d'une attribution de plan de chasse (chevreuil ou sanglier) ET d'une autorisation préfectorale"
+    },
+    {
+     "from": "2026-09-13",
+     "to": "2027-02-28",
+     "days": "ALL",
+     "hours": "DAY"
+    }
+   ]
+  },
+  {
+   "id": "corvides",
+   "cat": "autre",
+   "name": "Corvidés et étourneau",
+   "sub": "Corbeau freux, corneille, sansonnet, geai, pie",
+   "src": "Arrêté préfectoral",
+   "limit": "Aucun PMA",
+   "limitFull": "Pas de PMA.",
+   "notes": [
+    "Grand duc artificiel et appelants autorisés.",
+    "Prélèvements notés sur le carnet au plus tard à la fermeture de l’espèce."
+   ],
+   "periods": [
+    {
+     "from": "2026-09-13",
+     "to": "2027-02-28",
+     "days": "ALL",
+     "hours": "DAY"
+    }
+   ]
+  },
+  {
+   "id": "mustelides",
+   "cat": "autre",
+   "name": "Blaireau, belette, fouine, martre, putois",
+   "src": "Arrêté préfectoral",
+   "limit": "Aucun PMA",
+   "limitFull": "Pas de PMA.",
+   "notes": [
+    "Prélèvements notés sur le carnet au plus tard à la fermeture de l’espèce."
+   ],
+   "periods": [
+    {
+     "from": "2026-09-13",
+     "to": "2027-02-28",
+     "days": "ALL",
+     "hours": "DAY"
+    }
+   ]
+  },
+  {
+   "id": "ragondin",
+   "cat": "autre",
+   "name": "Ragondin, rat musqué et espèces exotiques",
+   "sub": "Raton laveur, vison d’Amérique, chien viverrin",
+   "src": "Arrêté préfectoral",
+   "limit": "Aucun PMA",
+   "limitFull": "Pas de PMA.",
+   "notes": [
+    "Chasse autorisée en temps de neige pour le ragondin et le rat musqué.",
+    "Prélèvements notés sur le carnet au plus tard à la fermeture de l’espèce."
+   ],
+   "periods": [
+    {
+     "from": "2026-09-13",
+     "to": "2027-02-28",
+     "days": "ALL",
+     "hours": "DAY"
+    }
+   ]
+  },
+  {
+   "id": "chevreuil",
+   "cat": "grand",
+   "name": "Chevreuil",
+   "src": "ACCA + arrêté",
+   "battue": "chevreuil",
+   "plan": "36 bracelets pour l'ACCA, dont 4 en tir d'été",
+   "limit": "Bracelet obligatoire",
+   "limitFull": "Plan de chasse : un bracelet de marquage par animal. Plan de l'ACCA : 36 chevreuils, dont 4 en tir d'été.",
+   "notes": [
+    "Sur le territoire ACCA, la chasse se fait en battue (dates du calendrier) ou à l’approche/affût avec une autorisation individuelle du Président (art. 14 et 18).",
+    "Tir à arme à canon rayé d’au moins 1 kJ à 100 m (équivalent .222 Remington) ou à l’arc (art. 18).",
+    "Chassable en réserve à partir du 1er janvier (sauf secteurs L et R), dans le cadre du plan de chasse (art. 4)."
+   ],
+   "periods": [
+    {
+     "from": "2026-06-01",
+     "to": "2026-09-12",
+     "days": "ALL",
+     "hours": "DAY",
+     "restricted": true,
+     "cond": "Approche ou affût uniquement, sur autorisation individuelle ; tir à balle (carabine) ou à l'arc ; brocard uniquement"
+    },
+    {
+     "from": "2026-09-13",
+     "to": "2027-02-28",
+     "days": "ALL",
+     "hours": "DAY",
+     "restricted": true,
+     "cond": "Approche, affût ou battue ; balle, plomb n° 1 ou 2, ou arc. En zones humides : balle, ou munitions de substitution de 3,75 à 4,8 mm, ou arc"
+    }
+   ]
+  },
+  {
+   "id": "sanglier",
+   "cat": "grand",
+   "name": "Sanglier",
+   "src": "ACCA + arrêté",
+   "battue": "sanglier",
+   "plan": "10 bracelets pour l'ACCA",
+   "limit": "Bracelet obligatoire",
+   "limitFull": "Plan de chasse : un bracelet de marquage par animal. Plan de l'ACCA : 10 sangliers.",
+   "notes": [
+    "En réserve, seul le plan de chasse peut s'exécuter (art. 4). D'après l'arrêté : de septembre à décembre, 3 jours libres par mois sauf dimanche, à déclarer par mail avant la chasse (ddtm-rcfs@charente-maritime.gouv.fr) ; dès le 1er janvier, tous les jours.",
+    "Tir à arme à canon rayé d’au moins 1 kJ à 100 m (équivalent .222 Remington) ou à l’arc (art. 18)."
+   ],
+   "periods": [
+    {
+     "from": "2026-06-01",
+     "to": "2026-08-14",
+     "days": "ALL",
+     "hours": "DAY",
+     "restricted": true,
+     "cond": "Tir à balle, à l'arc ou à la chevrotine en battue ; approche, affût et battue sur autorisation individuelle (accord écrit de l'exploitant pour les parcelles cultivées)"
+    },
+    {
+     "from": "2026-08-15",
+     "to": "2026-09-12",
+     "days": "ALL",
+     "hours": "DAY",
+     "restricted": true,
+     "cond": "Approche, affût et battue ; balle, arc ou chevrotine en battue ; accord écrit de l'exploitant pour les parcelles cultivées"
+    },
+    {
+     "from": "2026-09-13",
+     "to": "2027-03-31",
+     "days": "ALL",
+     "hours": "DAY",
+     "restricted": true,
+     "cond": "Approche, affût et battue ; balle, arc ou chevrotine en battue"
+    },
+    {
+     "from": "2027-04-01",
+     "to": "2027-05-31",
+     "days": "ALL",
+     "hours": "DAY",
+     "restricted": true,
+     "cond": "Protection des semis : autorisation individuelle uniquement, approche et affût. Battue à titre exceptionnel avec autorisation préalable de la DDTM (demande 24 h avant, avant le jeudi 17h pour un week-end)"
+    }
+   ]
+  },
+  {
+   "id": "cerf",
+   "cat": "grand",
+   "name": "Cerf élaphe",
+   "src": "Arrêté préfectoral",
+   "plan": "Aucun bracelet cerf dans le plan de chasse de l'ACCA (seulement chevreuil et sanglier)",
+   "noPlan": true,
+   "limit": "Pas au plan ACCA",
+   "limitFull": "Le plan de chasse de l'ACCA ne mentionne aucun bracelet cerf : sans attribution, pas de tir.",
+   "notes": [],
+   "periods": [
+    {
+     "from": "2026-09-13",
+     "to": "2027-02-28",
+     "days": "ALL",
+     "hours": "DAY",
+     "restricted": true,
+     "cond": "Plan de chasse et bracelet obligatoires. Dès le 13/09 uniquement en forêt domaniale, parc clos et secteurs C et J ; dès le 10/10/2026 sur le reste du territoire"
+    }
+   ]
+  },
+  {
+   "id": "daim",
+   "cat": "grand",
+   "name": "Daim",
+   "src": "Arrêté préfectoral",
+   "plan": "Aucun bracelet daim dans le plan de chasse de l'ACCA (seulement chevreuil et sanglier)",
+   "noPlan": true,
+   "limit": "Pas au plan ACCA",
+   "limitFull": "Le plan de chasse de l'ACCA ne mentionne aucun bracelet daim : sans attribution, pas de tir.",
+   "notes": [],
+   "periods": [
+    {
+     "from": "2026-06-01",
+     "to": "2026-09-12",
+     "days": "ALL",
+     "hours": "DAY",
+     "restricted": true,
+     "cond": "Plan de chasse et bracelet obligatoires ; approche ou affût uniquement ; tir à balle ou à l'arc"
+    },
+    {
+     "from": "2026-09-13",
+     "to": "2027-02-28",
+     "days": "ALL",
+     "hours": "DAY",
+     "restricted": true,
+     "cond": "Plan de chasse et bracelet obligatoires ; approche, affût et battue ; tir à balle ou à l'arc"
+    }
+   ]
+  }
+ ],
+ "battues": [
+  {
+   "date": "2026-09-19",
+   "game": "chevreuil",
+   "leader": "Raphaël"
+  },
+  {
+   "date": "2026-09-26",
+   "game": "sanglier",
+   "leader": "Dominique"
+  },
+  {
+   "date": "2026-10-03",
+   "game": "chevreuil",
+   "leader": "Raphaël"
+  },
+  {
+   "date": "2026-10-06",
+   "game": "chevreuil",
+   "leader": "Pascal"
+  },
+  {
+   "date": "2026-10-10",
+   "game": "sanglier",
+   "leader": "Dominique"
+  },
+  {
+   "date": "2026-10-13",
+   "game": "chevreuil",
+   "leader": "Pascal"
+  },
+  {
+   "date": "2026-10-17",
+   "game": "chevreuil",
+   "leader": "Daniel"
+  },
+  {
+   "date": "2026-10-24",
+   "game": "sanglier",
+   "leader": "Dominique"
+  },
+  {
+   "date": "2026-10-31",
+   "game": "chevreuil",
+   "leader": "Raphaël"
+  },
+  {
+   "date": "2026-11-07",
+   "game": "sanglier",
+   "leader": "Dominique"
+  },
+  {
+   "date": "2026-11-14",
+   "game": "chevreuil",
+   "leader": "Daniel"
+  },
+  {
+   "date": "2026-11-17",
+   "game": "chevreuil",
+   "leader": "Pascal"
+  },
+  {
+   "date": "2026-11-21",
+   "game": "sanglier",
+   "leader": "Dominique"
+  },
+  {
+   "date": "2026-11-28",
+   "game": "chevreuil",
+   "leader": "Raphaël"
+  },
+  {
+   "date": "2026-12-05",
+   "game": "sanglier",
+   "leader": "Dominique"
+  },
+  {
+   "date": "2026-12-08",
+   "game": "chevreuil",
+   "leader": "Pascal"
+  },
+  {
+   "date": "2026-12-12",
+   "game": "chevreuil",
+   "leader": "Daniel"
+  },
+  {
+   "date": "2026-12-19",
+   "game": "sanglier",
+   "leader": "Dominique"
+  },
+  {
+   "date": "2027-01-02",
+   "game": "sanglier",
+   "leader": "Dominique"
+  },
+  {
+   "date": "2027-01-05",
+   "game": "chevreuil",
+   "leader": "Pascal"
+  },
+  {
+   "date": "2027-01-09",
+   "game": "chevreuil",
+   "leader": "Raphaël"
+  },
+  {
+   "date": "2027-01-16",
+   "game": "sanglier",
+   "leader": "Dominique"
+  },
+  {
+   "date": "2027-01-23",
+   "game": "chevreuil",
+   "leader": "Raphaël"
+  },
+  {
+   "date": "2027-01-30",
+   "game": "sanglier",
+   "leader": "Dominique"
+  },
+  {
+   "date": "2027-02-06",
+   "game": "chevreuil",
+   "leader": "Daniel"
+  },
+  {
+   "date": "2027-02-13",
+   "game": "sanglier",
+   "leader": "Dominique"
+  },
+  {
+   "date": "2027-02-16",
+   "game": "chevreuil",
+   "leader": "Pascal"
+  },
+  {
+   "date": "2027-02-20",
+   "game": "chevreuil",
+   "leader": "Raphaël"
+  },
+  {
+   "date": "2027-02-27",
+   "game": "sanglier",
+   "leader": "Dominique"
+  },
+  {
+   "date": "2027-03-06",
+   "game": "sanglier",
+   "leader": "Dominique"
+  },
+  {
+   "date": "2027-03-13",
+   "game": "sanglier",
+   "leader": "Dominique"
+  },
+  {
+   "date": "2027-03-20",
+   "game": "sanglier",
+   "leader": "Dominique"
+  },
+  {
+   "date": "2027-03-27",
+   "game": "sanglier",
+   "leader": "Dominique"
+  }
+ ],
+ "battue_notice": "Gilet ou veste orange fluo à chaque poste, une seule arme à feu par tireur, carnet de battue tenu à jour (art. 7).",
+ "notices": [
+  {
+   "from": "2026-09-13",
+   "to": "2026-09-13",
+   "title": "Ouverture générale",
+   "text": "Tir à partir de 8h00 ce jour-là (arrêté préfectoral, art. 1)."
+  },
+  {
+   "from": "2026-06-01",
+   "to": "2026-09-12",
+   "title": "Avant l’ouverture générale (13/09)",
+   "text": "Seules les chasses anticipées sont possibles : caille à partir du 30/08, gibier d’eau en zones humides à partir du 21/08, grand gibier sur autorisation."
+  },
+  {
+   "from": "2027-03-01",
+   "to": "2027-05-31",
+   "title": "Clôture générale passée",
+   "text": "La chasse à tir a fermé le 28/02/2027 au soir. Seul le sanglier reste ouvert (jusqu’au 31/03, puis semis sur autorisation)."
+  }
+ ],
+ "day_hint": "Valable pour un chasseur en règle (permis validé, carte ACCA, assurance).",
+ "day_footer": "Chasse en temps de neige interdite, sauf gibier d’eau, plan de chasse au grand gibier, renard, ragondin et rat musqué, chasse à courre et vénerie sous terre. Horaires « de jour » calculés pour La Rochelle (à ±2 min : gardez une marge). L’AG peut modifier le calendrier en urgence (art. 21.5).",
+ "season_footer": "Sans barre : tourterelle des bois et fuligule milouin (arrêté ministériel), eider, courlis cendré et barge à queue noire (suspendus). Le sanglier se poursuit jusqu’au 31/05/2027 pour la protection des semis, sur autorisation. Les barres du gibier d’eau montrent deux lignes : zones humides (haut) et autres territoires (bas).",
+ "checklist": [
+  {
+   "id": "permis",
+   "label": "Permis de chasser validé pour la saison"
+  },
+  {
+   "id": "assur",
+   "label": "Attestation d’assurance chasse individuelle"
+  },
+  {
+   "id": "carte",
+   "label": "Carte de membre ACCA, carte temporaire ou carte d’invité"
+  },
+  {
+   "id": "carnet",
+   "label": "Carnet de prélèvement, carte lièvre ou application ChassAdapt"
+  },
+  {
+   "id": "battue",
+   "label": "Battue : timbre grand gibier à jour et gilet orange fluo"
+  }
+ ],
+ "rules": [
+  {
+   "title": "Avant de partir",
+   "text": "La page indique ce que le règlement permet, pas votre situation personnelle. Cochez ce que vous avez sur vous (mémorisé sur cet appareil uniquement).",
+   "open": true
+  },
+  {
+   "title": "Où il est interdit de chasser",
+   "text": "- Réserves de chasse et de faune sauvage : en tout temps, sauf exécution du plan de chasse (art. 4). Le plan de la réserve est en dernière page du règlement.\n- En permanence : stades, cimetières, jardins publics et privés, terrains de camping, routes, chemins publics, lignes de chemin de fer (art. 8).\n- Dans un rayon de 150 m autour des habitations (art. 12).\n- Avant et pendant la récolte : fourrage, sarrasin, luzerne à graines, trèfle, tournesol, vignes, vergers, maïs (sauf plan de chasse au grand gibier).\n- Jeunes plantations (résineux jusqu’à 2 m, peupliers pendant 3 ans), cultures florales et maraîchères, pépinières, chantiers, claires, sartières, viviers, clos où des animaux sont parqués.\n- Territoires frappés d’opposition : pas de chasse au gibier d’eau ni aux colombidés (art. 9).\n- Bâtiments d’exploitation : pas d’entrée sans permission (art. 11).",
+   "open": false
+  },
+  {
+   "title": "Sécurité et armes",
+   "text": "- Identifier le gibier avec certitude et s’assurer qu’il n’y a aucun danger avant de tirer (art. 5).\n- Interdit de tirer au jugé, à travers haies, buissons et sous-bois, à hauteur d’homme, ou à portée d’arme en direction de haies, maisons (caravanes, abris de jardin compris), routes, voies ferrées, lignes électriques et téléphoniques et lieux de réunion. Tir à balle vers ces lieux : interdit en tout temps.\n- Armes ouvertes et déchargées hors action de chasse ; déchargées puis sous étui fermé en véhicule ; ouvertes et déchargées pour franchir un obstacle ou une clôture (art. 6).\n- Interdit de battre les buissons avec son fusil, et de chasser en état d’ébriété ou sous l’emprise de stupéfiants.\n- Battues : dirigées par le Président ou un délégué, consignes de sécurité au début, une seule arme à feu par tireur, lignes déplacées sur ordre des chefs de ligne après la sonnerie de fin de traque, gilet ou veste orange fluo à chaque poste, panneaux « Chasse en cours » retirés dès la fin (art. 7).",
+   "open": false
+  },
+  {
+   "title": "Grand gibier : battues et plan de chasse",
+   "text": "- Les membres chassent isolément tous les gibiers, sauf le grand gibier soumis au plan de chasse, chassé en battue selon les instructions du Président (art. 14).\n- Approche et affût (grand gibier et renard) : autorisation individuelle délivrée par le Président.\n- Tir à balle avec une arme à canon rayé dont la balle développe au moins 1 kJ à 100 m (équivalent .222 Remington), ou à l’arc (art. 18).\n- Calendrier : 33 battues (17 chevreuil, 16 sanglier). Dates et lieu de rassemblement communiqués aux membres à jour du timbre grand gibier ; carnet de battue tenu à jour.\n- Le petit gibier tué appartient aux membres et sa vente est interdite. Le grand gibier est partagé entre les participants (la tête revient au tireur) ou vendu au profit de l’association ; les décisions du Président sont sans appel (art. 17).",
+   "open": false
+  },
+  {
+   "title": "Carnets, limites et restitutions",
+   "text": "- Carnets et cartes de prélèvement : port et renseignement obligatoires, à présenter avec le permis et l’attestation d’assurance.\n- Gibier soumis à PMA : noter au stylo indélébile ou via ChassAdapt, sur place et au moment de la capture, avant tout déplacement.\n- Bécasse : carnet spécifique ou ChassAdapt, prélèvement enregistré avant tout transport.\n- À restituer au détenteur du droit de chasse : carte lièvre au plus tard le **lundi 4 janvier 2027** ; carnets de prélèvement (départemental et bécasse) au plus tard le **lundi 1er mars 2027**.\n- Présenter poches et carniers sur demande des gardes-chasse et agents assermentés (art. 21.4.5).\n- Plomb interdit : marais non asséchés, fleuves, rivières, canaux, réservoirs, lacs, étangs, nappes d’eau et zones gibier d’eau signalées (art. 21.3).",
+   "open": false
+  },
+  {
+   "title": "Membres, cartes et invités",
+   "text": "- Tout titulaire d’un permis validé qui veut chasser doit avoir une carte délivrée par l’ACCA (art. 1). Cotisation indiquée : 90 € pour les catégories 1 à 6.\n- Invités : carte gratuite, aucune délivrée avant le 13/09/2026. Chasseur extérieur de catégorie 6 : 1 carte par an ; catégorie 7 : aucune ; membre sans apport de territoire : 1 par an ; membre avec apport : 1 par an plus 1 par tranche de 20 ha, maximum 6 par an.\n- La carte s’écrit à l’encre : nom, prénom, adresse, téléphone et jour autorisé. L’invité est sous la responsabilité du membre (art. 16).",
+   "open": false
+  },
+  {
+   "title": "Sanctions",
+   "text": "- **150 €** : infractions aux articles 3 à 17, non-respect des jours, horaires et PMA, des chasses anticipées, des lâchers de gibier de tir, du gibier de repeuplement et des parkings de chasse ; tir d’un gibier interdit ; chasse sans carte ou avec une carte falsifiée.\n- **50 €** : non-restitution des carnets et de la carte lièvre, restitution hors délai, défaut de port ou de marquage, plomb interdit, refus de contrôle du tableau de chasse.\n- Plafond de 150 € par infraction. Sanctions pénales et civiles possibles en plus. Réprimande, formation sécurité, suspension du droit de chasser ou exclusion temporaire possibles (art. 19 et 20).",
+   "open": false
+  },
+  {
+   "title": "Autres modes de chasse (arrêté)",
+   "text": "- Chasse à l’arc : mêmes périodes que le tir, certificat de capacité délivré par la fédération et permis validé.\n- Chasse à courre, à cor et à cri : du 13/09/2026 au 31/03/2027. Vénerie sous terre : du 13/09/2026 au 15/01/2027.\n- Chasse au vol : de l’ouverture au 28/02/2027 pour les espèces sédentaires.\n- Goudron de Norvège : autorisation préalable du propriétaire.",
+   "open": false
+  },
+  {
+   "title": "Sources et points à vérifier",
+   "text": "Règlement intérieur et de chasse de l’ACCA de Fontcouverte 2026-2027 (approuvé en AG le 05/06/2026, validé par la FDC 17) et arrêté préfectoral 26EB075-DDTM du 22/05/2026. Là où l’ACCA est plus stricte que la préfecture, la page suit l’ACCA.\n\n- Tourterelle des bois et fuligule milouin : dates non données, arrêté ministériel à consulter.\n- Perdrix, PMA annuel : « 15 ou 20 » avec « ou 20 » barré dans le tableau.\n- Lièvre, PMA annuel : « PGC par secteur 2 », lecture incertaine.\n- Pigeon ramier : « 20/202/2027 » dans le tableau ACCA, corrigé en 20/02/2027.\n- Lièvre : fermeture 06/12 (ACCA) contre 20/12 (arrêté). Caille : anticipée dès le 30/08 (ACCA) contre 29/08 (arrêté).\n- Gibier d’eau : absent du tableau ACCA, données de l’arrêté ; la ligne 21.4.1 est partiellement masquée.\n- Cerf et daim : aucun bracelet au plan de chasse ACCA.\n- Lapin : classement ESOD de la commune à vérifier.\n\nAide-mémoire, pas un texte juridique. En cas de doute, demandez au Président de l’ACCA.",
+   "open": false
+  }
+ ]
+}

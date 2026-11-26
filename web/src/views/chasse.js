@@ -39,10 +39,7 @@ export async function chasseView(main, tab = null) {
   const body = h('div.chasse-body');
   main.append(h('div.chasse', switcher, body));
 
-  if (current === 'infos') {
-    await infosTab(body);
-    return null;
-  }
+  if (current === 'infos') return (await infosTab(body)) ?? null;
   if (!day) {
     fill(body, h('div.card',
       h('p', manager ? 'Aucune journée de chasse en cours ni prévue.' : 'Aucune journée de chasse en cours ni prévue pour vous.'),
@@ -61,6 +58,15 @@ export async function chasseView(main, tab = null) {
 }
 
 async function infosTab(body) {
+  // Infos de la saison (données de l'association) : vue native.
+  try {
+    const { regulations } = await api.get('/seasons/current/regulations');
+    if (regulations) {
+      body.classList.add('scroll');
+      const { renderInfos } = await import('./infos.js');
+      return renderInfos(body, regulations);
+    }
+  } catch { /* on passe aux solutions de repli */ }
   const url = state.tenant?.info_url;
   if (url) {
     fill(body,

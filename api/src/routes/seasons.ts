@@ -6,6 +6,7 @@ import type { AppEnv } from '../env';
 import type { Tx } from '../db';
 import { notFoundIfNull, parseId, tenantTx } from '../context';
 import { AppError } from '../errors';
+import { regulationsSchema } from '../regulations';
 
 export const seasonRoutes = new Hono<AppEnv>();
 
@@ -74,6 +75,11 @@ seasonRoutes.post('/seasons', async (c) => {
   if (body.ends_on <= body.starts_on) throw new AppError(422, 'VALIDATION', 'La fin de saison doit suivre son début.');
   return tenantTx(c, ['president'], async (tx) => {
     const { id } = await tx.one<{ id: string }>('SELECT app.create_season($1, $2, $3, $4) AS id', [body.name, body.starts_on, body.ends_on, body.copy_from ?? null]).catch(nameTaken);
+    // Infos de chasse reprises de la saison d'origine (à mettre à jour : dates, battues…).
+    await tx.execute(
+      `UPDATE seasons s SET regulations = f.regulations FROM seasons f
+        WHERE s.id = $1 AND f.id = coalesce($2::uuid, (SELECT current_season_id FROM tenants WHERE id = app.current_tenant_id()))`,
+      [id, body.copy_from ?? null]);
     if (body.make_current) await tx.query('SELECT app.set_current_season($1)', [id]);
     return c.json({ season: await tx.one(`SELECT ${SEASON_SELECT} FROM seasons s WHERE s.id = $1`, [id]) }, 201);
   });
@@ -172,5 +178,30 @@ seasonRoutes.delete('/seasons/:id/:kind{territories|hunt-plans|places|members}/:
   return tenantTx(c, ['president'], async (tx) => {
     await tx.execute(`DELETE FROM ${link.table} WHERE season_id = $1 AND ${link.col} = $2`, [id, eid]);
     return c.body(null, 204);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Infos de chasse de la saison (onglet « Infos »)
+// ---------------------------------------------------------------------------
+
+/** Infos de la saison en cours (tout membre). */
+seasonRoutes.get('/seasons/current/regulations', (c) =>
+  tenantTx(c, null, async (tx) => {
+    const row = await tx.maybeOne<{ id: string; name: string; regulations: unknown }>(
+      'SELECT id, name, regulations FROM seasons WHERE id = app.current_season()');
+    return c.json({ season: row ? { id: row.id, name: row.name } : null, regulations: row?.regulations ?? null });
+  }),
+);
+
+/** Remplace les infos d'une saison (président) ; null pour les effacer. */
+seasonRoutes.put('/seasons/:id/regulations', async (c) => {
+  const id = parseId(c.req.param('id'));
+  const raw = await c.req.json();
+  const body = z.object({ regulations: z.unknown() }).strict().parse(raw);
+  const regulations = body.regulations === null ? null : regulationsSchema.parse(body.regulations);
+  return tenantTx(c, ['president'], async (tx) => {
+    notFoundIfNull(await tx.maybeOne('UPDATE seasons SET regulations = $2 WHERE id = $1 RETURNING id', [id, regulations === null ? null : JSON.stringify(regulations)]), 'Saison');
+    return c.json({ regulations });
   });
 });

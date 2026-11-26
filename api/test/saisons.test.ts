@@ -1,7 +1,8 @@
 // Saisons : saison initiale, espèces et quotas, rattachements, nouvelle saison
 // reprenant la précédente, journées de la saison, récapitulatif.
+import { readFileSync } from 'node:fs';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { api, createTenant, newBattue, point, runningDay, square } from './helpers';
+import { api, asOwner, createTenant, newBattue, point, runningDay, square } from './helpers';
 
 const P = 'pres_saison';
 let tenant: string;
@@ -85,6 +86,29 @@ describe('saisons', () => {
     expect((await as(P, 'DELETE', `/api/seasons/${next}`)).status).toBe(409);
     expect((await as(P, 'DELETE', `/api/seasons/${first}`)).status).toBe(409);
     expect((await as('sai1', 'PUT', '/api/seasons/current', { season_id: first })).status).toBe(403);
+  });
+});
+
+describe('infos de chasse de la saison', () => {
+  it('le président enregistre les infos (modèle Fontcouverte), les membres les lisent ; reprises dans la saison suivante', async () => {
+    const model = JSON.parse(readFileSync(new URL('../../web/src/data/fontcouverte-2026-2027.json', import.meta.url), 'utf8'));
+    const cur = (await as(P, 'GET', '/api/seasons')).body.current;
+    expect((await as('sai1', 'PUT', `/api/seasons/${cur.id}/regulations`, { regulations: model })).status).toBe(403);
+    const put = await as(P, 'PUT', `/api/seasons/${cur.id}/regulations`, { regulations: model });
+    expect(put.status).toBe(200);
+    const got = (await as('sai1', 'GET', '/api/seasons/current/regulations')).body;
+    expect(got.regulations.species).toHaveLength(29);
+    expect(got.regulations.battues).toHaveLength(33);
+    // Références internes vérifiées ; pas de champ inconnu.
+    const bad = structuredClone(model);
+    bad.species[0].periods[0].hours = 'INCONNU';
+    expect((await as(P, 'PUT', `/api/seasons/${cur.id}/regulations`, { regulations: bad })).status).toBe(400);
+    expect((await as(P, 'PUT', `/api/seasons/${cur.id}/regulations`, { regulations: { ...model, script: '<b>x</b>' } })).status).toBe(400);
+    // Nouvelle saison : infos reprises (à mettre à jour), sans changer la saison en cours.
+    const next = (await as(P, 'POST', '/api/seasons', { name: '2027-2028 infos', starts_on: '2027-06-01', ends_on: '2028-05-31' })).body.season;
+    const copied = await asOwner('SELECT regulations->>\'title\' AS t FROM seasons WHERE id = $1', [next.id]);
+    expect(copied[0].t).toBe(model.title);
+    expect((await as(P, 'PUT', `/api/seasons/${cur.id}/regulations`, { regulations: null })).body.regulations).toBeNull();
   });
 });
 

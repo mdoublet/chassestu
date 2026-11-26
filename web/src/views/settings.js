@@ -65,7 +65,8 @@ export async function settingsView(main, { refreshMe }) {
   const seasonBox = h('section.card');
   const speciesBox = h('section.card');
   const recapBox = h('section.card');
-  main.append(h('h1', 'Paramètres'), seasonBox, form, speciesBox, recapBox);
+  const infosBox = h('section.card');
+  main.append(h('h1', 'Paramètres'), seasonBox, form, speciesBox, infosBox, recapBox);
   await loadSeasons();
 
   // -------------------------------------------------------------------------
@@ -76,7 +77,10 @@ export async function settingsView(main, { refreshMe }) {
       const { seasons, current, species } = await api.get('/seasons');
       renderSeason(seasons, current);
       renderSpecies(current, species);
-      if (current) renderRecap(current, await api.get(`/seasons/${current.id}/recap`));
+      if (current) {
+        import('./infos-editor.js').then((m) => m.infosEditor(infosBox, current));
+        renderRecap(current, await api.get(`/seasons/${current.id}/recap`));
+      }
     } catch (err) {
       fill(seasonBox, h('p.error', errorMessage(err)));
     }

@@ -278,6 +278,18 @@ sinon les espèces et quotas de la saison. Onglet par défaut : Journée quand u
 journée est démarrée (point rouge), Infos sinon. Le président et les
 responsables arrivent toujours sur les journées.
 
+**Infos de la saison** (onglet « 📅 Infos », migration 0033) : dates
+d'ouverture, espèces et périodes (jours, horaires, horaires « de jour »
+calculés sur le lever et le coucher du soleil d'une ville de référence),
+calendrier des battues, avis datés, liste de contrôle et règles, en trois
+vues : Ce jour (date au choix), Saison (frise), Règles. Données par saison
+(`seasons.regulations`, JSON validé par `api/src/regulations.ts`), modifiées
+dans Paramètres → Infos de la saison (formulaires, import et export JSON),
+reprises à la création de la saison suivante. Modèle fourni : ACCA de
+Fontcouverte 2026-2027 (`web/src/data/`), vérifié jour par jour contre la page
+d'origine (`web/test/fontcouverte-oracle.json`). Sans infos : la page
+d'informations (adresse dans Paramètres), sinon les espèces et quotas.
+
 **Battues préparées d'avance** (migration 0032) : pendant la journée, même
 pendant une battue, « ＋ Préparer la suivante » crée la battue suivante en
 préparation (statut brouillon) : plan, volontaires, postes, placement,

@@ -4344,4 +4344,20 @@ END $function$;
 
 INSERT INTO schema_migrations (name, checksum) VALUES ('0032_battues_preparees.sql', 'afe7a66455b827082aa2fd8090198935efd81f7a3255b7fc8b0092391d1b38d1');
 
+DO $guard$
+BEGIN
+  IF EXISTS (SELECT 1 FROM schema_migrations WHERE name = '0033_infos_saison.sql') THEN
+    RAISE EXCEPTION 'La migration % est déjà appliquée : rien à faire.', '0033_infos_saison.sql';
+  END IF;
+END $guard$;
+
+-- ==================== 0033_infos_saison.sql ====================
+-- Infos de chasse d'une saison (onglet « Infos » des membres) : dates
+-- d'ouverture et périodes par espèce, jours et horaires, calendrier des
+-- battues, avis datés, liste de contrôle, règles. Document JSON validé par
+-- l'API, modifié par le président, repris à la création de la saison suivante.
+ALTER TABLE seasons ADD COLUMN regulations jsonb CHECK (regulations IS NULL OR (jsonb_typeof(regulations) = 'object' AND pg_column_size(regulations) < 500000));
+
+INSERT INTO schema_migrations (name, checksum) VALUES ('0033_infos_saison.sql', '4e43cf28de03997456e93dd30d354e228ec1b5083f0d64ea40a14c735910cc98');
+
 COMMIT;
