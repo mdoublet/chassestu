@@ -190,12 +190,46 @@ export async function dayConsole(main, dayId, { prep = false } = {}) {
   // Carte : territoire de la battue, postes du jour (vert) ; points de RDV
   // -------------------------------------------------------------------------
 
+  /** Territoire détaillé (postes, zones) pour l'aperçu d'une battue à créer. */
+  function previewTerritory(id) {
+    dv.previews ??= new Map();
+    if (!id) return null;
+    if (!dv.previews.has(id)) {
+      dv.previews.set(id, null);
+      api.get(`/territories/${id}`).then((r) => { dv.previews.set(id, r); renderMap(); }).catch(() => dv.previews.delete(id));
+    }
+    return dv.previews.get(id);
+  }
+
   function renderMap() {
     layers.base.clearLayers();
     layers.posts.clearLayers();
     const { day } = dv.detail;
     let tLayer = null;
-    const t = dv.hunt && dv.territory;
+    // Création d'une battue : aperçu du territoire et du plan choisis dans le formulaire.
+    const creating = day.status !== 'terminee' && (dv.creating || !focused());
+    if (creating && dv.newBattue.territory_id) {
+      const pt = previewTerritory(dv.newBattue.territory_id);
+      if (pt) {
+        tLayer = L.geoJSON(pt.territory.geom, { style: { color: '#1f5130', weight: 3, fillOpacity: 0.04 }, interactive: false });
+        layers.base.addLayer(tLayer);
+        if (pt.exclusion?.geom) layers.base.addLayer(L.geoJSON(pt.exclusion.geom, { style: { color: '#d9480f', weight: 1, fillOpacity: 1, className: 'exclusion-shape' }, interactive: false }));
+        for (const r of pt.reserves) layers.base.addLayer(L.geoJSON(r.geom, { style: { color: '#c92a2a', weight: 1, fillOpacity: 1, className: 'reserve-shape' }, interactive: false }));
+        const plan = (huntPlansOf(dv.newBattue.territory_id) ?? []).find((x) => x.id === dv.newBattue.hunt_plan_id) ?? null;
+        // Postes de la grille du plan pour le nombre de volontaires (ou l'effectif le plus proche en dessous).
+        const n = available().length - dv.newBattue.excluded.size;
+        const rows = (plan?.coverage ?? []).filter((c) => c.valid !== false).sort((a, b) => a.hunter_count - b.hunter_count);
+        const row = [...rows].reverse().find((c) => c.hunter_count <= n) ?? rows[0];
+        const inPlan = new Set(row?.post_ids ?? []);
+        for (const p of pt.posts) {
+          const ok = p.active && !p.invalid_reason;
+          layers.posts.addLayer(L.marker(toLatLng(p.geom.coordinates), { icon: postIcon(p.number, inPlan.has(p.id) ? 'in-plan' : ok ? 'dim' : 'invalid-static dim') })
+            .bindTooltip(escapeHtml(`Poste ${p.number}${p.name ? ` · ${p.name}` : ''}`), { direction: 'top', offset: [0, -14] }));
+        }
+        if (plan) for (const l of traqueLayers(plan)) layers.base.addLayer(l);
+      }
+    }
+    const t = !creating && dv.hunt && dv.territory;
     if (t) {
       const { hunt, day_post_ids, participants } = dv.hunt;
       tLayer = L.geoJSON(t.territory.geom, { style: { color: '#1f5130', weight: 3, fillOpacity: 0.04 }, interactive: false });
@@ -205,7 +239,7 @@ export async function dayConsole(main, dayId, { prep = false } = {}) {
       const chosen = new Set(day_post_ids);
       const occupants = new Map();
       for (const p of participants) if (p.post_id) occupants.set(p.post_id, [...(occupants.get(p.post_id) ?? []), p.name]);
-      const editable = hunt.status === 'en_cours' && !hunt.started_at && !dv.placing;
+      const editable = ['en_cours', 'brouillon'].includes(hunt.status) && !hunt.started_at && !dv.placing;
       for (const p of t.posts) {
         const available = p.active && !p.invalid_reason;
         const cls = chosen.has(p.id) ? 'in-plan' : available ? 'dim' : 'invalid-static dim';
@@ -215,11 +249,11 @@ export async function dayConsole(main, dayId, { prep = false } = {}) {
         layers.posts.addLayer(m);
       }
     }
-    if (dv.hunt?.hunt_plan) for (const l of traqueLayers(dv.hunt.hunt_plan)) layers.base.addLayer(l);
+    if (t && dv.hunt?.hunt_plan) for (const l of traqueLayers(dv.hunt.hunt_plan)) layers.base.addLayer(l);
     if (day.meeting_point) layers.base.addLayer(L.circleMarker(toLatLng(day.meeting_point.coordinates), { radius: 8, color: '#0b6bcb', fillOpacity: 0.9 }).bindTooltip('Rendez-vous'));
     const rg = (dv.regroup.choice === 'other' ? dv.regroup.point : dv.regroup.choice?.point) ?? day.regroup_point;
     if (rg) layers.base.addLayer(L.marker(toLatLng(rg.coordinates), { icon: L.divIcon({ className: 'regroup-icon', html: '<span>⚑</span>', iconSize: [30, 30], iconAnchor: [15, 28] }) }).bindTooltip('Regroupement'));
-    const key = tLayer ? `t:${dv.territoryId}` : day.meeting_point ? 'meeting' : 'none';
+    const key = tLayer ? `t:${creating ? dv.newBattue.territory_id : dv.territoryId}` : day.meeting_point ? 'meeting' : 'none';
     if (fittedFor !== key) {
       fittedFor = key;
       if (tLayer) map.fitBounds(tLayer.getBounds(), { padding: [20, 20] });
@@ -472,7 +506,7 @@ export async function dayConsole(main, dayId, { prep = false } = {}) {
     if (!dv.territories.length) return h('p.muted', 'Créez d’abord un territoire dans la cartographie.');
     const checks = present.map((p) => h('label.check', h('input', {
       type: 'checkbox', checked: !nb.excluded.has(p.id),
-      onchange: (e) => { if (e.target.checked) nb.excluded.delete(p.id); else nb.excluded.add(p.id); },
+      onchange: (e) => { if (e.target.checked) nb.excluded.delete(p.id); else nb.excluded.add(p.id); renderMap(); },
     }), p.name, p.guest ? h('span.badge', 'invité') : null));
     return h('section.card',
       h('h2', prepare ? `Préparer la battue n° ${dv.detail.battues.length + 1}` : `Battue n° ${dv.detail.battues.length + 1}`),
