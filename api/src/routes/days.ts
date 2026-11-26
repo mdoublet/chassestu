@@ -118,8 +118,8 @@ dayRoutes.get('/days', (c) =>
               (SELECT jsonb_build_object('number', h.number, 'status', h.status, 'started_at', h.started_at,
                                          'territory_name', t.name, 'published', h.assignments_published_at IS NOT NULL)
                  FROM hunts h JOIN territories t ON t.id = h.territory_id
-                WHERE h.day_id = d.id ORDER BY h.number DESC LIMIT 1) AS current_battue,
-              (SELECT count(*)::int FROM hunts h WHERE h.day_id = d.id) AS battue_count,
+                WHERE h.day_id = d.id AND h.status IN ('en_cours', 'terminee') ORDER BY h.number DESC LIMIT 1) AS current_battue,
+              (SELECT count(*)::int FROM hunts h WHERE h.day_id = d.id AND h.status IN ('en_cours', 'terminee')) AS battue_count,
               d.season_id, d.season_id IS NOT DISTINCT FROM app.current_season() AS in_season
          FROM ${DAY_FROM}
         ORDER BY d.date DESC, d.meeting_time DESC`,
@@ -340,6 +340,8 @@ dayRoutes.post('/days/:id/actions/:action{convoquer|brouillon|demarrer|terminer|
         await tx.execute(`UPDATE day_participants SET present = true WHERE day_id = $1 AND response = 'present'`, [id]);
         break;
       case 'terminer':
+        // Battues préparées jamais publiées : supprimées avec la fin de la journée.
+        await tx.execute(`DELETE FROM hunts WHERE day_id = $1 AND status = 'brouillon'`, [id]);
         await tx.execute(`UPDATE hunt_days SET status = 'terminee' WHERE id = $1`, [id]);
         break;
       case 'annuler':
@@ -364,24 +366,26 @@ dayRoutes.post('/days/:id/battues', async (c) => {
   const id = parseId(c.req.param('id'));
   const body = z.object({
     territory_id: z.uuid(), hunt_plan_id: z.uuid().nullable().optional(), participant_ids: z.array(z.uuid()).max(500).optional(),
+    // Préparée d'avance (invisible des chasseurs jusqu'à la publication de ses postes).
+    prepare: z.boolean().optional(),
     // Vent prévu à la création (affiché, gardé pour mémoire).
     wind: z.object({ from_deg: z.number().int().min(0).max(359), speed_kmh: z.number().int().min(0).max(400), gust_kmh: z.number().int().min(0).max(400).nullable() }).strict().nullable().optional(),
   }).strict().parse(await c.req.json());
   return tenantTx(c, MANAGERS, async (tx) => {
     const day = await loadDay(tx, id);
     requireStatus(day, ['en_cours'], 'Nouvelle battue');
-    if (await tx.maybeOne(`SELECT 1 FROM hunts WHERE day_id = $1 AND status = 'en_cours'`, [id])) {
-      throw new AppError(409, 'BATTUE_RUNNING', 'Terminez d’abord la battue en cours.');
+    if (!body.prepare && await tx.maybeOne(`SELECT 1 FROM hunts WHERE day_id = $1 AND status = 'en_cours'`, [id])) {
+      throw new AppError(409, 'BATTUE_RUNNING', 'Terminez d’abord la battue en cours, ou préparez la suivante.');
     }
     const previous = await tx.maybeOne<{ id: string }>('SELECT id FROM hunts WHERE day_id = $1 ORDER BY number DESC LIMIT 1', [id]);
     const { id: huntId } = await tx.one<{ id: string }>(
       `INSERT INTO hunts (day_id, number, territory_id, date, meeting_time, meeting_place, meeting_point, status, leader_user_id,
                           wind_from_deg, wind_speed_kmh, wind_gust_kmh)
        SELECT d.id, coalesce((SELECT max(number) FROM hunts WHERE day_id = d.id), 0) + 1, $2, d.date,
-              d.meeting_time, d.meeting_place, d.meeting_point, 'en_cours', app.current_user_id(), $3, $4, $5
+              d.meeting_time, d.meeting_place, d.meeting_point, $6::hunt_status, app.current_user_id(), $3, $4, $5
          FROM hunt_days d WHERE d.id = $1
        RETURNING id`,
-      [id, body.territory_id, body.wind?.from_deg ?? null, body.wind?.speed_kmh ?? null, body.wind?.gust_kmh ?? null],
+      [id, body.territory_id, body.wind?.from_deg ?? null, body.wind?.speed_kmh ?? null, body.wind?.gust_kmh ?? null, body.prepare ? 'brouillon' : 'en_cours'],
     );
     // Plan de chasse : celui choisi, sinon le seul (ou le premier) du territoire.
     await setHuntPlan(tx, huntId, body.territory_id, body.hunt_plan_id !== undefined ? body.hunt_plan_id : await defaultHuntPlanId(tx, body.territory_id));
@@ -397,7 +401,7 @@ dayRoutes.post('/days/:id/battues', async (c) => {
          SELECT $1, ss.species, ss.battue_quota FROM season_species ss JOIN hunt_days d ON d.season_id = ss.season_id WHERE d.id = $2`,
         [huntId, id]);
     }
-    await tx.execute('UPDATE hunt_days SET regroup_at = NULL WHERE id = $1', [id]);
+    if (!body.prepare) await tx.execute('UPDATE hunt_days SET regroup_at = NULL WHERE id = $1', [id]);
     return c.json({ hunt_id: huntId, ...(await dayDetail(tx, id)) }, 201);
   });
 });

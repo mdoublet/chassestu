@@ -34,9 +34,13 @@ export async function loadHunt(tx: Tx, id: string) {
   return notFoundIfNull(await tx.maybeOne<Record<string, any>>(`SELECT ${HUNT_SELECT} FROM ${HUNT_FROM} WHERE h.id = $1`, [id]), 'Battue');
 }
 
-/** Battue modifiable : en cours ; `notStarted` : avant le début de battue. */
-function requireOpen(hunt: Record<string, any>, action: string, notStarted = false) {
-  if (hunt.status !== 'en_cours') throw new AppError(409, 'HUNT_BAD_STATUS', `${action} impossible : la battue est terminée.`);
+/**
+ * Battue modifiable : en cours, ou en préparation (battue suivante préparée
+ * d'avance) ; `notStarted` : avant le début de battue ; `running` : en cours seulement.
+ */
+function requireOpen(hunt: Record<string, any>, action: string, notStarted = false, running = false) {
+  if (hunt.status === 'brouillon' && running) throw new AppError(409, 'HUNT_PREPARED', `${action} impossible : publiez d’abord les postes de cette battue.`);
+  if (!['en_cours', 'brouillon'].includes(hunt.status)) throw new AppError(409, 'HUNT_BAD_STATUS', `${action} impossible : la battue est terminée.`);
   if (notStarted && hunt.started_at) throw new AppError(409, 'HUNT_STARTED', `${action} impossible : la battue a commencé.`);
 }
 
@@ -82,7 +86,7 @@ export async function huntDetail(tx: Tx, id: string) {
     [id],
   );
   let proposal = null;
-  if (hunt.status === 'en_cours') {
+  if (hunt.status === 'en_cours' || hunt.status === 'brouillon') {
     const hunters = participants.filter((p: any) => p.present && POSTED.includes(p.role)).length;
     const plans = await loadPlans(tx, hunt.hunt_plan_id);
     proposal = proposePosts(hunters, plans, await availablePostIds(tx, hunt.territory_id));
@@ -247,7 +251,7 @@ huntRoutes.post('/hunts/:id/actions/:action{debut|fin}', (c) => {
     const lead = await tx.one<{ ok: boolean }>('SELECT app.can_lead_hunt($1) AS ok', [id]);
     if (!lead.ok) throw new AppError(403, 'FORBIDDEN', 'Seul le responsable de la battue (ou le président) peut la lancer ou l’arrêter.');
     const hunt = await loadHunt(tx, id);
-    requireOpen(hunt, action === 'debut' ? 'Début de battue' : 'Fin de battue');
+    requireOpen(hunt, action === 'debut' ? 'Début de battue' : 'Fin de battue', false, true);
     if (action === 'debut' && !hunt.assignments_published_at) {
       throw new AppError(422, 'ASSIGNMENTS_NOT_PUBLISHED', 'Publiez les postes avant de lancer la battue.');
     }
@@ -422,7 +426,19 @@ huntRoutes.post('/hunts/:id/draw', async (c) => {
 huntRoutes.post('/hunts/:id/publish-assignments', (c) => {
   const id = parseId(c.req.param('id'));
   return tenantTx(c, MANAGERS, async (tx) => {
-    requireOpen(await loadHunt(tx, id), 'Publication des postes');
+    const hunt = await loadHunt(tx, id);
+    requireOpen(hunt, 'Publication des postes');
+    if (hunt.status === 'brouillon') {
+      // Battue préparée : publier ses postes l'ouvre, une fois la précédente terminée.
+      if (await tx.maybeOne(`SELECT 1 FROM hunts WHERE day_id = $1 AND status = 'en_cours'`, [hunt.day_id])) {
+        throw new AppError(409, 'BATTUE_RUNNING', 'Terminez d’abord la battue en cours, puis publiez les postes de celle-ci.');
+      }
+      if (!(await tx.maybeOne(`SELECT 1 FROM hunt_days WHERE id = $1 AND status = 'en_cours'`, [hunt.day_id]))) {
+        throw new AppError(409, 'DAY_NOT_RUNNING', 'La journée n’est pas en cours.');
+      }
+      await tx.execute(`UPDATE hunts SET status = 'en_cours' WHERE id = $1`, [id]);
+      await tx.execute('UPDATE hunt_days SET regroup_at = NULL WHERE id = $1', [hunt.day_id]);
+    }
     await tx.execute('UPDATE hunts SET assignments_published_at = now() WHERE id = $1', [id]);
     const notified = await notifyHunt(c, tx, id, 'attributions');
     return c.json({ ...(await huntDetail(tx, id)), notified });

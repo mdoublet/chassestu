@@ -583,3 +583,8 @@ button.photo-icon.loading { opacity: 0.5; }
 .chasse-body > .card, .chasse-body > section.card { margin: 0.8rem; }
 .species-table { width: 100%; border-collapse: collapse; }
 .species-table th, .species-table td { text-align: left; padding: 0.35rem 0.4rem; border-bottom: 1px solid var(--border); }
+.battue-switch { display: flex; flex-wrap: wrap; gap: 0.35rem; margin: 0.5rem 0; }
+.battue-switch button { border-radius: 999px; padding: 0.35rem 0.8rem; min-height: 36px; }
+.battue-switch button.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+.battue.prepared { border-left: 4px dashed #8a6d00; padding-left: 0.5rem; }
+.status-brouillon { background: #fff3bf; color: #5c4a00; }

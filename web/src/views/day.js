@@ -97,8 +97,18 @@ export async function dayConsole(main, dayId) {
   const wind = liveWind(map, () => polygonCenter(windTerritory()?.geom), { onWind: () => render() });
   let fittedFor = null;
 
-  const current = () => dv.detail?.battues.at(-1) ?? null;
-  const running = () => current()?.status === 'en_cours' ? current() : null;
+  // Battues ouvertes : celle en cours (une au plus) et celles préparées d'avance
+  // (statut brouillon, invisibles des chasseurs). `dv.focus` : celle affichée.
+  const battues = () => dv.detail?.battues ?? [];
+  const running = () => battues().find((b) => b.status === 'en_cours') ?? null;
+  const prepared = () => battues().filter((b) => b.status === 'brouillon');
+  const lastEnded = () => battues().filter((b) => b.status === 'terminee').at(-1) ?? null;
+  const focused = () => {
+    const open = battues().filter((b) => b.status === 'en_cours' || b.status === 'brouillon');
+    return open.find((b) => b.id === dv.focus) ?? running() ?? open[0] ?? null;
+  };
+  // Battue chargée dans le panneau : l'ouverte choisie, sinon la dernière terminée (prélèvements).
+  const current = () => focused() ?? lastEnded();
 
   async function loadBattue() {
     const b = current();
@@ -451,14 +461,14 @@ export async function dayConsole(main, dayId) {
 
   function battuesList() {
     // La battue en cours a son propre bloc : seules les précédentes sont listées (repliées).
-    const battues = dv.detail.battues.filter((b) => b.status !== 'en_cours');
+    const battues = dv.detail.battues.filter((b) => b.status !== 'en_cours' && b.status !== 'brouillon');
     if (!battues.length) return null;
     return fold('Battues précédentes', { key: 'day.battues', extra: String(battues.length) }, h('ul.plain.battues', battues.map((b) => h('li', { class: b.status === 'en_cours' ? 'running' : '' },
       h('strong', `Battue n° ${b.number}`), ` · ${b.territory_name}${b.hunt_plan_name ? ` (${b.hunt_plan_name})` : ''} · ${b.participant_count} participant(s) · `,
       b.status === 'terminee' ? `terminée${b.ended_at ? ` à ${timeOf(b.ended_at)}` : ''}` : b.started_at ? `traque depuis ${timeOf(b.started_at)}` : b.assignments_published_at ? 'postes publiés' : 'en préparation'))));
   }
 
-  function newBattueForm() {
+  function newBattueForm(prepare = false) {
     const present = dv.detail.participants.filter((p) => p.present);
     const nb = dv.newBattue;
     nb.territory_id ??= dv.territoryId ?? dv.territories[0]?.id ?? null;
@@ -468,7 +478,8 @@ export async function dayConsole(main, dayId) {
       onchange: (e) => { if (e.target.checked) nb.excluded.delete(p.id); else nb.excluded.add(p.id); },
     }), p.name, p.guest ? h('span.badge', 'invité') : null));
     return h('section.card',
-      h('h2', `Battue n° ${dv.detail.battues.length + 1}`),
+      h('h2', prepare ? `Préparer la battue n° ${dv.detail.battues.length + 1}` : `Battue n° ${dv.detail.battues.length + 1}`),
+      prepare ? h('p.small.muted', 'Préparée pendant la battue en cours : invisible des chasseurs jusqu’à la publication de ses postes.') : null,
       h('label', 'Territoire', h('select', { onchange: (e) => { nb.territory_id = e.target.value; nb.hunt_plan_id = undefined; render(); } },
         dv.territories.map((t) => h('option', { value: t.id, selected: t.id === nb.territory_id }, t.name)))),
       (() => {
@@ -501,11 +512,49 @@ export async function dayConsole(main, dayId) {
         if (!ids.length) return toast('Choisissez au moins un volontaire.', 'error');
         const w = wind.current;
         const res = await act(() => api.post(`/days/${dayId}/battues`, {
-          territory_id: nb.territory_id, hunt_plan_id: nb.hunt_plan_id ?? null, participant_ids: ids,
+          territory_id: nb.territory_id, hunt_plan_id: nb.hunt_plan_id ?? null, participant_ids: ids, prepare: prepare || undefined,
           wind: w ? { from_deg: w.from_deg, speed_kmh: w.speed_kmh, gust_kmh: w.gust_kmh } : null,
-        }), 'Battue créée.');
-        if (res) { await takePlanPosts(); nb.excluded.clear(); nb.hunt_plan_id = undefined; nb.autoPlan = false; dv.regroup = { choice: null, place: '', time: '', point: null, when: 'now' }; }
-      } }, 'Créer la battue'));
+        }), prepare ? 'Battue préparée : choisissez ses postes.' : 'Battue créée.');
+        if (res) {
+          dv.focus = res.hunt_id;
+          dv.creating = false;
+          await loadBattue();
+          render();
+          await takePlanPosts(); nb.excluded.clear(); nb.hunt_plan_id = undefined; nb.autoPlan = false; dv.regroup = { choice: null, place: '', time: '', point: null, when: 'now' }; }
+      } }, prepare ? 'Préparer la battue' : 'Créer la battue'),
+      prepare ? h('button.link', { onclick: () => { dv.creating = false; render(); } }, 'Annuler') : null);
+  }
+
+  /** Battues ouvertes (en cours, préparées) : bascule de l'une à l'autre, et « préparer la suivante ». */
+  function battueSwitch() {
+    const open = battues().filter((b) => b.status === 'en_cours' || b.status === 'brouillon');
+    if (!open.length) return null;
+    const foc = focused();
+    const pick = async (id) => { dv.focus = id; dv.creating = false; dv.picked = null; await loadBattue(); render(); };
+    return h('nav.battue-switch', { 'aria-label': 'Battues ouvertes' },
+      open.map((b) => h('button', { class: !dv.creating && foc?.id === b.id ? 'active' : '', onclick: () => pick(b.id) },
+        `N° ${b.number} · `, b.status === 'brouillon' ? 'en préparation' : b.started_at ? 'traque en cours' : b.assignments_published_at ? 'postes publiés' : 'ouverte')),
+      h('button', { class: dv.creating ? 'active' : '', onclick: () => { dv.creating = true; render(); }, title: 'Préparer la battue suivante pendant celle-ci' }, '＋ Préparer la suivante'));
+  }
+
+  /**
+   * Après une battue terminée (aucune en cours) : annoncer un regroupement, ou
+   * publier directement les postes de la battue préparée.
+   */
+  function afterBattue() {
+    const ended = lastEnded();
+    const next = prepared()[0] ?? null;
+    if (!next) return regroupForm();
+    return h('section.card.after-battue',
+      h('h2', `Battue n° ${ended.number} terminée`),
+      h('p', 'Enchaînez directement : chaque chasseur reçoit son poste de la battue suivante.'),
+      h('button.primary', { onclick: async () => {
+        if (!(await confirmDialog(`Battue n° ${next.number}`, `Publier les postes de la battue n° ${next.number} (${next.territory_name}) ? Les chasseurs sont prévenus.`, 'Publier'))) return;
+        dv.focus = next.id;
+        act(() => api.post(`/hunts/${next.id}/publish-assignments`), `Battue n° ${next.number} : postes publiés, les chasseurs sont prévenus.`);
+      } }, `📣 Publier les postes de la battue n° ${next.number}`),
+      h('p.small.muted', 'Ou rassemblez d’abord les chasseurs :'),
+      regroupForm());
   }
 
   /** Regroupement : un lieu (lieux de l'association, parkings, ou point sur la carte), immédiat par défaut. */
@@ -556,6 +605,7 @@ export async function dayConsole(main, dayId) {
     if (hunt.leader_user_id && !candidates.has(hunt.leader_user_id)) candidates.set(hunt.leader_user_id, hunt.leader_name ?? '?');
     return h('div.battue-head',
       h('h2', `Battue n° ${hunt.number} · ${hunt.territory_name}`),
+      hunt.status === 'brouillon' ? h('p', h('span.status.status-brouillon', 'En préparation'), h('span.small.muted', ' invisible des chasseurs jusqu’à la publication des postes')) : null,
       hunt.started_at ? h('p', h('span.status.status-en_cours', `Traque depuis ${timeOf(hunt.started_at)}`)) : null,
       h('div.battue-roles',
         h('label.hunt-plan-choice', 'Plan de chasse ',
@@ -595,6 +645,16 @@ export async function dayConsole(main, dayId) {
           if (!(await confirmDialog('Supprimer', `Supprimer la battue n° ${hunt.number} (créée par erreur) ?`, 'Supprimer', true))) return;
           act(() => api.del(`/hunts/${hunt.id}`));
         } }, 'Annuler la battue') : null));
+  }
+
+  function preparedActions() {
+    const { hunt } = dv.hunt;
+    return h('section.card.battue-actions', h('div.buttons',
+      h('button.link.danger', { onclick: async () => {
+        if (!(await confirmDialog('Supprimer', `Supprimer la battue n° ${hunt.number} en préparation ?`, 'Supprimer', true))) return;
+        dv.focus = null;
+        act(() => api.del(`/hunts/${hunt.id}`), 'Battue en préparation supprimée.');
+      } }, 'Supprimer cette préparation')));
   }
 
   function volunteersSection() {
@@ -694,8 +754,13 @@ export async function dayConsole(main, dayId) {
             participants.some((p) => p.post_id) ? h('button.link', { onclick: () => act(() => api.del(`/hunts/${hunt.id}/assignments`)) }, 'Tout effacer') : null,
             proposal?.kind === 'too_many' ? h('label.check', h('input', { type: 'checkbox', checked: dv.allowDouble, onchange: (e) => { dv.allowDouble = e.target.checked; } }), 'Doublons') : null)
         : null,
-      editable ? h('button.primary', { disabled: !dayPosts.length, onclick: () => act(() => api.post(`/hunts/${hunt.id}/publish-assignments`), 'Postes publiés.') },
-        hunt.assignments_published_at ? 'Republier les postes' : 'Publier les postes') : null,
+      hunt.status === 'brouillon'
+        ? [h('button.primary', { disabled: !dayPosts.length || !!running(), title: running() ? `Après la fin de la battue n° ${running().number}` : '',
+            onclick: () => act(() => api.post(`/hunts/${hunt.id}/publish-assignments`), `Battue n° ${hunt.number} : postes publiés, les chasseurs sont prévenus.`) },
+            'Publier les postes et ouvrir la battue'),
+           running() ? h('span.small.muted', ` possible après la fin de la battue n° ${running().number}`) : null]
+        : editable ? h('button.primary', { disabled: !dayPosts.length, onclick: () => act(() => api.post(`/hunts/${hunt.id}/publish-assignments`), 'Postes publiés.') },
+          hunt.assignments_published_at ? 'Republier les postes' : 'Publier les postes') : null,
       hunt.assignments_published_at && editable ? h('span.small.muted', ` publiés à ${timeOf(hunt.assignments_published_at)}`) : null);
   }
 
@@ -812,6 +877,7 @@ export async function dayConsole(main, dayId) {
     const { day } = dv.detail;
     const run = running();
     const last = current();
+    const foc = focused();
     const mine = dv.detail.participants.find((p) => p.user_id === state.user.id);
     let sections;
     if (day.status === 'brouillon' || day.status === 'convoquee') {
@@ -820,12 +886,19 @@ export async function dayConsole(main, dayId) {
       sections = [
         presentsSection(),
         battuesList(),
-        run && dv.hunt
-          // Ordre des actions ; prélèvements seulement une fois la battue lancée.
-          ? [h('div.battue', battueHeader(), volunteersSection(), assignmentSection(), speciesEditor(), carpoolSection(), readinessSection(),
-              dv.hunt.hunt.started_at ? harvestSection() : null, battueActions())]
-          : [last?.status === 'terminee' ? regroupForm() : null, newBattueForm(),
-             last && dv.hunt ? harvestSection() : null],
+        battueSwitch(),
+        // Fin de battue sans battue en cours : regroupement, ou publication de la suivante préparée.
+        !run && lastEnded() && !dv.creating ? afterBattue() : null,
+        dv.creating || !foc
+          ? [newBattueForm(!!run), !foc && last && dv.hunt ? harvestSection() : null]
+          : foc.status === 'en_cours' && dv.hunt
+            // Ordre des actions ; prélèvements seulement une fois la battue lancée.
+            ? [h('div.battue', battueHeader(), volunteersSection(), assignmentSection(), speciesEditor(), carpoolSection(), readinessSection(),
+                dv.hunt.hunt.started_at ? harvestSection() : null, battueActions())]
+            : dv.hunt
+              // Battue préparée : plan, volontaires, postes, espèces ; publication à la fin de la battue en cours.
+              ? [h('div.battue.prepared', battueHeader(), volunteersSection(), assignmentSection(), speciesEditor(), preparedActions())]
+              : null,
         // Rendez-vous, déjeuner, consignes et convocations : acquis, la journée a commencé.
       ];
     } else {

@@ -278,6 +278,15 @@ sinon les espèces et quotas de la saison. Onglet par défaut : Journée quand u
 journée est démarrée (point rouge), Infos sinon. Le président et les
 responsables arrivent toujours sur les journées.
 
+**Battues préparées d'avance** (migration 0032) : pendant la journée, même
+pendant une battue, « ＋ Préparer la suivante » crée la battue suivante en
+préparation (statut brouillon) : plan, volontaires, postes, placement,
+espèces — invisible des chasseurs. Les battues ouvertes se choisissent d'un
+clic. À la fin de la battue en cours : « Publier les postes de la battue
+n° N » (elle s'ouvre, les chasseurs sont prévenus) ou annoncer un
+regroupement. Les préparations jamais publiées disparaissent à la fin de la
+journée.
+
 **Vent** (migration 0030) : chaque plan de chasse peut avoir une plage de vents
 favorables (d'où vient le vent, de … à … dans le sens horaire, 16 directions ;
 vide : tous vents). À la création d'une battue, le vent prévu au centre du
