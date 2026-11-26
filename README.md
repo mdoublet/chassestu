@@ -269,6 +269,15 @@ migration sont rattachées à un « Plan principal ». Les anciennes routes
 `/territories/:id/coverage-plans` restent en compatibilité (premier plan de
 chasse du territoire).
 
+**Ma chasse** (`#/chasse`, migration 0031) : écran d'arrivée du chasseur, en
+deux onglets. « 🎯 Journée » : la vue chasseur de la journée en cours (ou de la
+prochaine convocation) ; « 📅 Infos chasse » : la page d'informations de
+l'association (dates d'ouverture, espèces, règles), dont le président donne
+l'adresse https dans Paramètres → Association (affichée dans un cadre isolé),
+sinon les espèces et quotas de la saison. Onglet par défaut : Journée quand une
+journée est démarrée (point rouge), Infos sinon. Le président et les
+responsables arrivent toujours sur les journées.
+
 **Vent** (migration 0030) : chaque plan de chasse peut avoir une plage de vents
 favorables (d'où vient le vent, de … à … dans le sens horaire, 16 directions ;
 vide : tous vents). À la création d'une battue, le vent prévu au centre du

@@ -570,3 +570,17 @@ button.photo-icon.loading { opacity: 0.5; }
 .wind-range { display: flex; align-items: center; gap: 0.35rem; flex-wrap: wrap; margin: 0.4rem 0; }
 .wind-range select { width: auto; }
 .wind-range p { flex-basis: 100%; margin: 0; }
+/* Ma chasse : bascule Journée / Infos */
+.chasse { display: flex; flex-direction: column; flex: 1; min-width: 0; height: 100%; min-height: 0; }
+.seg-switch { display: flex; gap: 0.25rem; padding: 0.4rem; background: var(--surface); border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 500; }
+.seg-switch .seg { flex: 1; text-align: center; padding: 0.6rem 0.4rem; border-radius: 8px; text-decoration: none; color: var(--text); font-weight: 600; background: color-mix(in srgb, var(--text) 6%, transparent); }
+.seg-switch .seg.active { background: var(--primary); color: #fff; }
+.live-dot { display: inline-block; width: 0.55rem; height: 0.55rem; border-radius: 50%; background: #e03131; margin-left: 0.4rem; vertical-align: 0.1em; animation: pulse 0.9s infinite alternate; }
+.chasse-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.chasse-day { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.chasse-next { margin: 0.4rem 0.8rem 0; }
+.info-frame { flex: 1; width: 100%; min-height: 70vh; border: 0; background: #fff; }
+.info-open { text-align: center; margin: 0.3rem 0; }
+.chasse-body > .card, .chasse-body > section.card { margin: 0.8rem; }
+.species-table { width: 100%; border-collapse: collapse; }
+.species-table th, .species-table td { text-align: left; padding: 0.35rem 0.4rem; border-bottom: 1px solid var(--border); }

@@ -5,6 +5,7 @@ import { h, fill, errorMessage, toast } from '../ui.js';
 import { pushCard } from './notifications.js';
 import { every, localToday } from '../lib/live.js';
 import { formatHuntDate, formatTime } from '../lib/hunts.js';
+import { homeHref } from '../lib/nav.js';
 
 export async function homeView(main, { refreshMe, rerender }) {
   let stopRefresh = null;
@@ -34,9 +35,10 @@ export async function homeView(main, { refreshMe, rerender }) {
     return;
   }
 
-  // Membre d'une association : l'accueil ne ferait que répéter le menu, on ouvre les journées.
+  // Membre d'une association : l'accueil ne ferait que répéter le menu ; le
+  // chasseur arrive sur « Ma chasse », le président sur les journées.
   if (state.tenants.length) {
-    location.replace('#/journees');
+    location.replace(homeHref(state.role));
     return;
   }
 

@@ -132,6 +132,15 @@ describe('rôles', () => {
     expect(bad.status).toBe(400);
   });
 
+  it('page d’informations : https seulement, visible des membres, effaçable', async () => {
+    const url = 'https://exemple.org/chasse';
+    expect((await api('pres_a', 'PATCH', '/api/tenant', { tenant: tenantA, body: { info_url: 'http://exemple.org' } })).status).toBe(400);
+    expect((await api('pres_a', 'PATCH', '/api/tenant', { tenant: tenantA, body: { info_url: 'javascript:alert(1)' } })).status).toBe(400);
+    expect((await api('pres_a', 'PATCH', '/api/tenant', { tenant: tenantA, body: { info_url: url } })).body.tenant.info_url).toBe(url);
+    expect((await api('pres_a', 'GET', '/api/me')).body.tenants.find((t: any) => t.id === tenantA).info_url).toBe(url);
+    expect((await api('pres_a', 'PATCH', '/api/tenant', { tenant: tenantA, body: { info_url: '' } })).body.tenant.info_url).toBeNull();
+  });
+
   it('seul un super-admin crée un tenant', async () => {
     const res = await api('pres_a', 'POST', '/api/admin/tenants', { body: { name: 'Pirate' } });
     expect(res.status).toBe(403);

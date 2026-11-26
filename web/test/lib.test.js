@@ -194,16 +194,16 @@ describe('battues : libellés et messages', () => {
   });
 });
 
-import { APP_NAME, navItems, activeHref } from '../src/lib/nav.js';
+import { APP_NAME, navItems, activeHref, homeHref } from '../src/lib/nav.js';
 describe('menu principal', () => {
   it('nom de l’application', () => {
     expect(APP_NAME).toBe('Chasses-tu ?');
   });
   it('entrées selon le rôle', () => {
     const labels = (who) => navItems(who).map((i) => i.label);
-    expect(labels({ role: 'president', isSuperAdmin: true, hasTenant: true })).toEqual(['Journées', 'Territoires', 'Lieux', 'Membres', 'Paramètres', 'Mon profil', 'Administration']);
-    expect(labels({ role: 'responsable', isSuperAdmin: false, hasTenant: true })).toEqual(['Journées', 'Territoires', 'Lieux', 'Membres', 'Mon profil']);
-    expect(labels({ role: 'chasseur', isSuperAdmin: false, hasTenant: true })).toEqual(['Journées', 'Territoires', 'Lieux', 'Mon profil']);
+    expect(labels({ role: 'president', isSuperAdmin: true, hasTenant: true })).toEqual(['Ma chasse', 'Journées', 'Territoires', 'Lieux', 'Membres', 'Paramètres', 'Mon profil', 'Administration']);
+    expect(labels({ role: 'responsable', isSuperAdmin: false, hasTenant: true })).toEqual(['Ma chasse', 'Journées', 'Territoires', 'Lieux', 'Membres', 'Mon profil']);
+    expect(labels({ role: 'chasseur', isSuperAdmin: false, hasTenant: true })).toEqual(['Ma chasse', 'Territoires', 'Lieux', 'Mon profil']);
     expect(labels({ role: null, isSuperAdmin: false, hasTenant: false })).toEqual(['Accueil', 'Mon profil']);
   });
   it('entrée active, y compris pour les sous-pages', () => {
@@ -213,6 +213,13 @@ describe('menu principal', () => {
     expect(activeHref('#/carte/3f2b0c3e-1111-2222-3333-444455556666', items)).toBe('#/territoires');
     expect(activeHref('#/plans/3f2b0c3e-1111-2222-3333-444455556666', items)).toBe('#/territoires');
     expect(activeHref('#/invitation/abc', items)).toBeNull();
+    const hunter = navItems({ role: 'chasseur', isSuperAdmin: false, hasTenant: true });
+    expect(activeHref('#/journees/3f2b0c3e-1111-2222-3333-444455556666', hunter)).toBe('#/chasse');
+    expect(activeHref('#/chasse/infos', hunter)).toBe('#/chasse');
+  });
+  it('arrivée : gestion pour le président, « Ma chasse » pour le chasseur', () => {
+    expect(homeHref('president')).toBe('#/journees');
+    expect(homeHref('chasseur')).toBe('#/chasse');
   });
 });
 
@@ -464,5 +471,20 @@ describe('vent', () => {
   it('heure de prévision la plus proche', () => {
     const hourly = { time: ['2026-11-25T08:00', '2026-11-25T09:00'], wind_direction_10m: [265.4, 280], wind_speed_10m: [12.4, 15], wind_gusts_10m: [30, 33] };
     expect(pickHour(hourly, new Date('2026-11-25T08:20:00Z'))).toEqual({ time: '2026-11-25T08:00', from_deg: 265, speed_kmh: 12, gust_kmh: 30 });
+  });
+});
+
+import { pickDay } from '../src/lib/pick-day.js';
+describe('Ma chasse : journée à montrer', () => {
+  it('celle en cours où je suis convoqué, sinon la prochaine convocation', () => {
+    const days = [
+      { id: 'a', status: 'convoquee', date: '2026-12-05' },
+      { id: 'b', status: 'convoquee', date: '2026-11-28' },
+      { id: 'c', status: 'en_cours', date: '2026-11-26', convoked_me: false },
+      { id: 'd', status: 'convoquee', date: '2026-11-20' },
+    ];
+    expect(pickDay(days, '2026-11-26').id).toBe('b');
+    expect(pickDay([...days, { id: 'e', status: 'en_cours', date: '2026-11-26' }], '2026-11-26').id).toBe('e');
+    expect(pickDay([], '2026-11-26')).toBeNull();
   });
 });

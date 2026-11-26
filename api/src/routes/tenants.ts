@@ -10,7 +10,7 @@ import { deleteClerkUsers } from '../clerk-admin';
 export const tenantRoutes = new Hono<AppEnv>();
 
 const TENANT_COLUMNS = `id, name, kind, departement, buffer_distance_m, gps_tolerance_m,
-  position_retention_h, show_all_posts, post_max_outside_m, hunters_per_car, created_at`;
+  position_retention_h, show_all_posts, post_max_outside_m, hunters_per_car, info_url, created_at`;
 
 const tenantCreateSchema = z.object({
   name: z.string().trim().min(1).max(200),
@@ -94,6 +94,9 @@ const tenantPatchSchema = z
     show_all_posts: z.boolean(),
     post_max_outside_m: z.number().int().min(0).max(500),
     hunters_per_car: z.number().int().min(2).max(9),
+    // Page d'informations (dates, espèces, règles) : https uniquement ; '' ou null pour l'enlever.
+    info_url: z.union([z.literal(''), z.url({ protocol: /^https$/, error: 'Adresse https:// attendue.' }).max(500)]).nullable()
+      .transform((v) => v || null),
   })
   .partial()
   .strict();

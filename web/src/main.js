@@ -3,7 +3,7 @@ import { initAuth, isSignedIn, mountSignIn, signOut, onAuthChange } from './auth
 import { api } from './api.js';
 import { state } from './state.js';
 import { h, errorMessage, toast, ROLE_LABELS } from './ui.js';
-import { APP_NAME, navItems, activeHref } from './lib/nav.js';
+import { APP_NAME, navItems, activeHref, homeHref } from './lib/nav.js';
 import { registerServiceWorker, refreshPushSubscription } from './push-client.js';
 import { homeView } from './views/home.js';
 import { membersView } from './views/members.js';
@@ -30,6 +30,7 @@ const routes = [
   { re: /^#\/(?:journees|battues)$/, view: (el) => import('./views/days.js').then((m) => m.daysView(el)), tenant: true },
   // Anciennes adresses de battue : la journée convertie garde le même identifiant.
   { re: /^#\/(?:journees|battues)\/([0-9a-f-]{36})(?:\/ma-fiche)?$/, view: (el, id) => import('./views/day.js').then((m) => m.dayView(el, id)), tenant: true, full: true },
+  { re: /^#\/chasse(?:\/(journee|infos))?$/, view: (el, tab) => import('./views/chasse.js').then((m) => m.chasseView(el, tab ?? null)), tenant: true, full: true },
   { re: /^#\/notifications$/, view: (el, opts) => import('./views/notifications.js').then((m) => m.notificationsView(el, opts)) },
   { re: /^#\/profil$/, view: (el, opts) => import('./views/profile.js').then((m) => m.profileView(el, opts)) },
   { re: /^#\/lieux(?:\/([0-9a-f-]{36}))?$/, view: (el, id) => import('./views/places.js').then((m) => m.placesView(el, id)), tenant: true },
@@ -107,7 +108,7 @@ function header() {
     : null;
   const bar = h(
     'header.topbar',
-    h('a.brand', { href: state.tenants.length ? '#/journees' : '#/' }, APP_NAME),
+    h('a.brand', { href: state.tenants.length ? homeHref(state.role) : '#/' }, APP_NAME),
     tenantSelect,
     state.role ? h('span.role-badge', state.tenant?.deputy_until ? 'Président adjoint' : ROLE_LABELS[state.role]) : null,
     h('span.spacer'),

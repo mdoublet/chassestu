@@ -4202,4 +4202,20 @@ ALTER TABLE hunts
 
 INSERT INTO schema_migrations (name, checksum) VALUES ('0030_vent.sql', '5aea43c42b1112128b0284db990b43bc92af446409c9f5e496a47e3ab22e1b7e');
 
+DO $guard$
+BEGIN
+  IF EXISTS (SELECT 1 FROM schema_migrations WHERE name = '0031_page_infos.sql') THEN
+    RAISE EXCEPTION 'La migration % est déjà appliquée : rien à faire.', '0031_page_infos.sql';
+  END IF;
+END $guard$;
+
+-- ==================== 0031_page_infos.sql ====================
+-- Page d'informations de l'association (dates d'ouverture, espèces
+-- chassables, règles…), affichée dans l'onglet « Infos chasse » des membres.
+-- Adresse https choisie par le président ; vide : pas de page.
+ALTER TABLE tenants ADD COLUMN info_url text CHECK (info_url IS NULL OR (info_url ~ '^https://' AND length(info_url) <= 500));
+GRANT UPDATE (info_url) ON tenants TO app_rls;
+
+INSERT INTO schema_migrations (name, checksum) VALUES ('0031_page_infos.sql', '2b60dbaf6a10f3257a0ca66a0ff97d020ee42ef23a31c1354b710d15cb39718a');
+
 COMMIT;
