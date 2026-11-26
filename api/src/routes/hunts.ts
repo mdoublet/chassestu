@@ -199,8 +199,9 @@ export async function setSelection(tx: Tx, huntId: string, dayParticipantIds: st
                        ORDER BY ph.number DESC LIMIT 1),
                      CASE WHEN (SELECT m.usual_role FROM memberships m WHERE m.user_id = dp.user_id AND m.tenant_id = dp.tenant_id) = 'traqueur'
                           THEN 'traqueur'::hunt_role ELSE 'poste'::hunt_role END)
-       FROM day_participants dp
-      WHERE dp.day_id = $3 AND dp.present AND dp.id = ANY($2)
+       FROM day_participants dp JOIN hunt_days d ON d.id = dp.day_id
+      -- Avant le jour J (battue préparée) : ceux qui ont répondu présent.
+      WHERE dp.day_id = $3 AND (dp.present OR (d.status <> 'en_cours' AND dp.response = 'present')) AND dp.id = ANY($2)
      ON CONFLICT (hunt_id, day_participant_id) DO NOTHING
      RETURNING id`,
     [huntId, dayParticipantIds, hunt.day_id],
@@ -210,7 +211,7 @@ export async function setSelection(tx: Tx, huntId: string, dayParticipantIds: st
       WHERE NOT EXISTS (SELECT 1 FROM hunt_participants hp WHERE hp.hunt_id = $1 AND hp.day_participant_id = x.id)`,
     [huntId, dayParticipantIds],
   );
-  if (missing.n) throw new AppError(422, 'NOT_PRESENT', 'Seuls les présents de la journée peuvent participer à une battue.');
+  if (missing.n) throw new AppError(422, 'NOT_PRESENT', 'Seuls les présents de la journée (ou, avant le jour J, ceux qui ont répondu présent) peuvent participer à une battue.');
   return added.length;
 }
 

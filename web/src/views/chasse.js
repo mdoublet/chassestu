@@ -14,7 +14,7 @@ import { pickDay } from '../lib/pick-day.js';
 
 const MANAGERS = ['president', 'responsable'];
 
-export async function chasseView(main, tab = null) {
+export async function chasseView(main, tab = null, dayId = null) {
   const manager = MANAGERS.includes(state.role);
   let days = [];
   try {
@@ -23,14 +23,15 @@ export async function chasseView(main, tab = null) {
     main.append(h('p.error', errorMessage(err)));
     return null;
   }
-  const day = pickDay(days, localToday(), { manager });
+  // Journée choisie (lien « Gérer dans Ma chasse »), sinon celle du moment.
+  const day = (dayId && days.find((d) => d.id === dayId)) || pickDay(days, localToday(), { manager });
   const running = day?.status === 'en_cours';
   if (tab === 'journee') tab = 'encours'; // ancienne adresse
   if (tab === 'gestion' && !manager) tab = null;
   // Par défaut : la journée démarrée (Gestion pour le président), sinon les infos.
   const current = tab ?? (running ? (manager ? 'gestion' : 'encours') : 'infos');
 
-  const seg = (key, label, extra = null) => h('a.seg', { href: `#/chasse/${key}`, class: key === current ? 'active' : '', 'aria-current': key === current ? 'page' : null }, label, extra);
+  const seg = (key, label, extra = null) => h('a.seg', { href: `#/chasse/${key}${dayId && key !== 'infos' ? `/${dayId}` : ''}`, class: key === current ? 'active' : '', 'aria-current': key === current ? 'page' : null }, label, extra);
   const dot = running ? h('span.live-dot', { title: 'Journée de chasse démarrée' }) : null;
   const switcher = h('nav.seg-switch', { 'aria-label': 'Ma chasse' },
     seg('encours', '🎯 En cours', dot),

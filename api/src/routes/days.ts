@@ -288,6 +288,12 @@ dayRoutes.patch('/days/:id/participants/:pid', async (c) => {
     const sets = entries.map(([k], i) => `${k} = $${i + 3}`).join(', ');
     const n = await tx.execute(`UPDATE day_participants SET ${sets} WHERE id = $2 AND day_id = $1`, [id, pid, ...entries.map(([, v]) => v)]);
     if (!n) throw new AppError(404, 'NOT_FOUND', 'Participant introuvable.');
+    if (body.present === false) {
+      // Absent finalement : retiré des battues préparées.
+      await tx.execute(
+        `DELETE FROM hunt_participants hp USING hunts h
+          WHERE hp.hunt_id = h.id AND h.day_id = $1 AND h.status = 'brouillon' AND hp.day_participant_id = $2`, [id, pid]);
+    }
     return c.json(await dayDetail(tx, id));
   });
 });
@@ -338,6 +344,10 @@ dayRoutes.post('/days/:id/actions/:action{convoquer|brouillon|demarrer|terminer|
         // Jour J : présents pré-cochés d'après les réponses (ajustables ensuite).
         await tx.execute(`UPDATE hunt_days SET status = 'en_cours' WHERE id = $1`, [id]);
         await tx.execute(`UPDATE day_participants SET present = true WHERE day_id = $1 AND response = 'present'`, [id]);
+        // Battues préparées : seuls les présents du jour y restent.
+        await tx.execute(
+          `DELETE FROM hunt_participants hp USING hunts h, day_participants dp
+            WHERE hp.hunt_id = h.id AND h.day_id = $1 AND h.status = 'brouillon' AND dp.id = hp.day_participant_id AND NOT dp.present`, [id]);
         break;
       case 'terminer':
         // Battues préparées jamais publiées : supprimées avec la fin de la journée.
@@ -345,6 +355,7 @@ dayRoutes.post('/days/:id/actions/:action{convoquer|brouillon|demarrer|terminer|
         await tx.execute(`UPDATE hunt_days SET status = 'terminee' WHERE id = $1`, [id]);
         break;
       case 'annuler':
+        await tx.execute(`DELETE FROM hunts WHERE day_id = $1 AND status = 'brouillon'`, [id]);
         await tx.execute(`UPDATE hunt_days SET status = 'annulee' WHERE id = $1`, [id]);
         if (day.status === 'convoquee') await notifyDay(c, tx, id, 'annulation'); // un brouillon n'a prévenu personne
         break;
@@ -373,7 +384,9 @@ dayRoutes.post('/days/:id/battues', async (c) => {
   }).strict().parse(await c.req.json());
   return tenantTx(c, MANAGERS, async (tx) => {
     const day = await loadDay(tx, id);
-    requireStatus(day, ['en_cours'], 'Nouvelle battue');
+    // Avant le jour J (journée en brouillon ou convoquée) : préparation seulement.
+    if (day.status !== 'en_cours') body.prepare = true;
+    requireStatus(day, body.prepare ? ['brouillon', 'convoquee', 'en_cours'] : ['en_cours'], 'Nouvelle battue');
     if (!body.prepare && await tx.maybeOne(`SELECT 1 FROM hunts WHERE day_id = $1 AND status = 'en_cours'`, [id])) {
       throw new AppError(409, 'BATTUE_RUNNING', 'Terminez d’abord la battue en cours, ou préparez la suivante.');
     }
@@ -382,7 +395,8 @@ dayRoutes.post('/days/:id/battues', async (c) => {
       `INSERT INTO hunts (day_id, number, territory_id, date, meeting_time, meeting_place, meeting_point, status, leader_user_id,
                           wind_from_deg, wind_speed_kmh, wind_gust_kmh)
        SELECT d.id, coalesce((SELECT max(number) FROM hunts WHERE day_id = d.id), 0) + 1, $2, d.date,
-              d.meeting_time, d.meeting_place, d.meeting_point, $6::hunt_status, app.current_user_id(), $3, $4, $5
+              d.meeting_time, d.meeting_place, d.meeting_point, $6::hunt_status,
+              coalesce(d.leader_user_id, app.current_user_id()), $3, $4, $5
          FROM hunt_days d WHERE d.id = $1
        RETURNING id`,
       [id, body.territory_id, body.wind?.from_deg ?? null, body.wind?.speed_kmh ?? null, body.wind?.gust_kmh ?? null, body.prepare ? 'brouillon' : 'en_cours'],
@@ -390,7 +404,9 @@ dayRoutes.post('/days/:id/battues', async (c) => {
     // Plan de chasse : celui choisi, sinon le seul (ou le premier) du territoire.
     await setHuntPlan(tx, huntId, body.territory_id, body.hunt_plan_id !== undefined ? body.hunt_plan_id : await defaultHuntPlanId(tx, body.territory_id));
     const ids = body.participant_ids
-      ?? (await tx.query<{ id: string }>('SELECT id FROM day_participants WHERE day_id = $1 AND present', [id])).map((r) => r.id);
+      // Par défaut : les présents ; avant le jour J, ceux qui ont répondu présent.
+      ?? (await tx.query<{ id: string }>(
+        `SELECT id FROM day_participants WHERE day_id = $1 AND (present OR ($2 AND response = 'present'))`, [id, day.status !== 'en_cours'])).map((r) => r.id);
     await setSelection(tx, huntId, ids);
     if (previous) {
       await tx.execute('INSERT INTO hunt_species (hunt_id, species, quota) SELECT $1, species, quota FROM hunt_species WHERE hunt_id = $2', [huntId, previous.id]);

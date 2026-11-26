@@ -112,9 +112,12 @@ describe('battues successives avec volontaires', () => {
     expect((await as(R, 'POST', `/api/days/${dayId}/actions/terminer`)).body.day.status).toBe('terminee');
   });
 
-  it('pas de battue avant le jour J', async () => {
+  it('avant le jour J, une battue ne peut qu’être préparée (invisible, non publiable)', async () => {
     const created = await as(R, 'POST', '/api/days', { date: '2027-01-02', participant_user_ids: ['dev_ch1'] });
-    expect((await as(R, 'POST', `/api/days/${created.body.day.id}/battues`, { territory_id: territoryId })).status).toBe(409);
+    const res = await as(R, 'POST', `/api/days/${created.body.day.id}/battues`, { territory_id: territoryId });
+    expect(res.status).toBe(201);
+    expect(res.body.battues[0].status).toBe('brouillon');
+    expect((await as(R, 'POST', `/api/hunts/${res.body.hunt_id}/publish-assignments`)).status).toBe(409);
   });
 });
 

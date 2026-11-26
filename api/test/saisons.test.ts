@@ -1,6 +1,8 @@
 // Saisons : saison initiale, espèces et quotas, rattachements, nouvelle saison
 // reprenant la précédente, journées de la saison, récapitulatif.
 import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { api, asOwner, createTenant, newBattue, point, runningDay, square } from './helpers';
 
@@ -91,7 +93,7 @@ describe('saisons', () => {
 
 describe('infos de chasse de la saison', () => {
   it('le président enregistre les infos (modèle Fontcouverte), les membres les lisent ; reprises dans la saison suivante', async () => {
-    const model = JSON.parse(readFileSync(new URL('../../web/src/data/fontcouverte-2026-2027.json', import.meta.url), 'utf8'));
+    const model = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../../web/src/data/fontcouverte-2026-2027.json'), 'utf8'));
     const cur = (await as(P, 'GET', '/api/seasons')).body.current;
     expect((await as('sai1', 'PUT', `/api/seasons/${cur.id}/regulations`, { regulations: model })).status).toBe(403);
     const put = await as(P, 'PUT', `/api/seasons/${cur.id}/regulations`, { regulations: model });

@@ -712,3 +712,5 @@ details.infos-sp > summary { cursor: pointer; font-weight: 600; }
 .infos .battue-cal tr.today td { font-weight: 700; color: var(--i-blaze); }
 .infos-tabs button { padding: 0 .3rem; font-size: .8rem; }
 .infos-empty { margin: 0.8rem; }
+.hunt-layout.prep .hunt-map, .hunt-layout.prep .resizer { display: none; }
+.hunt-layout.prep .hunt-console { max-width: 760px; margin: 0 auto; width: 100%; }

@@ -292,8 +292,15 @@ Fontcouverte 2026-2027 (`web/src/data/`), vérifié jour par jour contre la page
 d'origine (`web/test/fontcouverte-oracle.json`). Sans infos : la page
 d'informations (adresse dans Paramètres), sinon les espèces et quotas.
 
-**Battues préparées d'avance** (migration 0032) : pendant la journée, même
-pendant une battue, « ＋ Préparer la suivante » crée la battue suivante en
+**Journées (président, responsables)** : préparation seulement, sans carte
+ni vue chasseur — rendez-vous, déjeuner, consignes, responsable de la journée
+(proposé comme responsable de chaque battue), convocations. Une fois les
+convocations envoyées : « Gérer dans Ma chasse » (`#/chasse/gestion/<id>`),
+où l'on prépare les battues, lance la journée et mène les battues.
+
+**Battues préparées d'avance** (migration 0032) : avant le jour J (avec ceux
+qui ont répondu présent ; les absents du jour J en sont retirés au lancement)
+ou pendant la journée, même pendant une battue, « ＋ Préparer la suivante » crée la battue suivante en
 préparation (statut brouillon) : plan, volontaires, postes, placement,
 espèces — invisible des chasseurs. Les battues ouvertes se choisissent d'un
 clic. À la fin de la battue en cours : « Publier les postes de la battue

@@ -24,38 +24,15 @@ import { placeSelect } from './place-picker.js';
 import { panelResizer } from '../map/resizer.js';
 
 const MANAGERS = ['president', 'responsable'];
-const TAB_KEY = 'chassestu.huntTab';
 
 export async function dayView(main, dayId) {
   if (!MANAGERS.includes(state.role)) {
     main.classList.remove('full');
     return memberDayView(main, dayId);
   }
-  let tab = 'gestion';
-  try {
-    tab = localStorage.getItem(TAB_KEY) === 'chasseur' ? 'chasseur' : 'gestion';
-  } catch { /* préférence non mémorisée */ }
-  const tabs = h('nav.hunt-tabs', { role: 'tablist' });
-  const body = h('div.hunt-body');
-  main.classList.add('with-tabs');
-  main.append(tabs, body);
-  let cleanup = null;
-
-  async function show(next) {
-    cleanup?.();
-    cleanup = null;
-    tab = next;
-    try { localStorage.setItem(TAB_KEY, tab); } catch { /* rien */ }
-    fill(tabs,
-      h('a', { role: 'tab', href: '#/journees', class: 'back' }, '←'),
-      ...[['chasseur', '👁 Vue chasseur'], ['gestion', '⚙ Gestion']].map(([id, label]) =>
-        h('button', { role: 'tab', 'aria-selected': String(tab === id), class: tab === id ? 'active' : '', onclick: () => tab !== id && show(id) }, label)));
-    body.replaceChildren();
-    body.className = `hunt-body ${tab}`;
-    cleanup = tab === 'chasseur' ? await memberDayView(body, dayId) : await dayConsole(body, dayId);
-  }
-  await show(tab);
-  return () => cleanup?.();
+  // Journées : préparation (rendez-vous, responsable, convocations). La suite
+  // (lancement, battues) se gère dans Ma chasse → Gestion.
+  return dayConsole(main, dayId, { prep: true });
 }
 
 const WALK_SHORT = { 1: '1', 2: '2', 3: '3', 4: '4', 5: '5' };
@@ -64,7 +41,7 @@ const timeOf = (iso) => new Date(iso).toLocaleTimeString('fr-FR', { hour: '2-dig
 const NAMES_KEY = 'chassestu.showPostNames';
 const POSTED_ROLES = ['poste', 'chef_de_ligne']; // le chef de ligne est un chasseur posté
 
-export async function dayConsole(main, dayId) {
+export async function dayConsole(main, dayId, { prep = false } = {}) {
   ensureHatchPattern();
   const dv = {
     detail: null, hunt: null, territory: null, territoryId: null, carpool: null,
@@ -80,6 +57,7 @@ export async function dayConsole(main, dayId) {
   const MAP_KEY = 'chassestu.dayMapHidden';
   const layout = h('div.hunt-layout', box, resizer, mapEl);
   try { if (localStorage.getItem(MAP_KEY) === '1') layout.classList.add('map-hidden'); } catch { /* rien */ }
+  if (prep) layout.classList.add('map-hidden', 'prep'); // préparation : pas de carte
   const mapToggle = h('button.map-toggle', { type: 'button', onclick: () => {
     layout.classList.toggle('map-hidden');
     const hidden = layout.classList.contains('map-hidden');
@@ -102,6 +80,11 @@ export async function dayConsole(main, dayId) {
   const battues = () => dv.detail?.battues ?? [];
   const running = () => battues().find((b) => b.status === 'en_cours') ?? null;
   const prepared = () => battues().filter((b) => b.status === 'brouillon');
+  // Participants possibles d'une battue : les présents ; avant le jour J, ceux qui ont répondu présent.
+  const available = () => {
+    const { day, participants } = dv.detail;
+    return participants.filter((p) => (day.status === 'en_cours' ? p.present : p.present || p.response === 'present'));
+  };
   const lastEnded = () => battues().filter((b) => b.status === 'terminee').at(-1) ?? null;
   const focused = () => {
     const open = battues().filter((b) => b.status === 'en_cours' || b.status === 'brouillon');
@@ -286,7 +269,8 @@ export async function dayConsole(main, dayId) {
           if (!(await confirmDialog('Supprimer', 'Supprimer cette journée (brouillon) ?', 'Supprimer', true))) return;
           try { await api.del(`/days/${dayId}`); location.hash = '#/journees'; } catch (err) { toast(errorMessage(err), 'error'); }
         } }, 'Supprimer')],
-      convoquee: [h('button.primary', { onclick: go('demarrer', 'Journée commencée : ajustez les présents.') }, 'Commencer la journée (jour J)'),
+      convoquee: [prep ? h('a.button.primary', { href: `#/chasse/gestion/${dayId}` }, '⚙ Gérer dans Ma chasse (lancer, battues)')
+          : h('button.primary', { onclick: go('demarrer', 'Journée commencée : ajustez les présents.') }, 'Commencer la journée (jour J)'),
         h('button', { onclick: go('brouillon') }, 'Repasser en brouillon'),
         h('button.danger', { onclick: go('annuler', 'Journée annulée.', 'Annuler la journée ? Les convoqués seront prévenus.') }, 'Annuler la journée')],
       en_cours: [running() ? null : h('button', { onclick: go('terminer', 'Journée terminée.', 'Terminer la journée ? Les liens invités cesseront de fonctionner.') }, 'Terminer la journée')],
@@ -312,10 +296,23 @@ export async function dayConsole(main, dayId) {
         onpick: (c) => c && c !== 'other' && act(() => api.patch(`/days/${dayId}`, { meeting_place: c.name, meeting_point: c.point }), 'Rendez-vous enregistré.'),
       })) : null,
       field('meeting_place', 'Lieu du rendez-vous (texte)', { maxlength: 200 }),
-      editable ? h('button.link', { onclick: () => { dv.placing = 'meeting'; toast('Cliquez sur la carte à l’endroit du rendez-vous.'); } }, day.meeting_point ? 'Déplacer le point de rendez-vous' : 'Placer le rendez-vous sur la carte') : null,
+      editable && !prep ? h('button.link', { onclick: () => { dv.placing = 'meeting'; toast('Cliquez sur la carte à l’endroit du rendez-vous.'); } }, day.meeting_point ? 'Déplacer le point de rendez-vous' : 'Placer le rendez-vous sur la carte') : null,
       field('lunch_offered', 'Déjeuner proposé (inscription facultative)', { type: 'checkbox' }),
       day.lunch_offered ? field('lunch_info', 'Déjeuner : lieu, prix…', { maxlength: 300 }) : null,
       field('briefing', 'Consignes de la journée', { rows: 3, maxlength: 5000 }, 'textarea'));
+  }
+
+  /** Responsable de la journée : responsable par défaut de ses battues (le président le reste toujours). */
+  function leaderSection() {
+    const { day } = dv.detail;
+    const editable = ['brouillon', 'convoquee', 'en_cours'].includes(day.status);
+    const people = dv.members.filter((m) => m.in_season !== false || m.id === day.leader_user_id);
+    return h('section.card.day-leader',
+      h('label', 'Responsable de la journée',
+        h('select', { disabled: !editable, onchange: (e) => act(() => api.patch(`/days/${dayId}`, { leader_user_id: e.target.value }), 'Responsable de la journée enregistré.') },
+          day.leader_user_id ? null : h('option', { value: '', selected: true, disabled: true }, '— choisir —'),
+          people.map((m) => h('option', { value: m.id, selected: m.id === day.leader_user_id }, m.id === state.user.id ? `${m.display_name} (moi)` : m.display_name)))),
+      h('p.small.muted', 'Il est proposé comme responsable de chaque battue (modifiable battue par battue).'));
   }
 
   function convocationSection() {
@@ -469,7 +466,7 @@ export async function dayConsole(main, dayId) {
   }
 
   function newBattueForm(prepare = false) {
-    const present = dv.detail.participants.filter((p) => p.present);
+    const present = available();
     const nb = dv.newBattue;
     nb.territory_id ??= dv.territoryId ?? dv.territories[0]?.id ?? null;
     if (!dv.territories.length) return h('p.muted', 'Créez d’abord un territoire dans la cartographie.');
@@ -479,7 +476,9 @@ export async function dayConsole(main, dayId) {
     }), p.name, p.guest ? h('span.badge', 'invité') : null));
     return h('section.card',
       h('h2', prepare ? `Préparer la battue n° ${dv.detail.battues.length + 1}` : `Battue n° ${dv.detail.battues.length + 1}`),
-      prepare ? h('p.small.muted', 'Préparée pendant la battue en cours : invisible des chasseurs jusqu’à la publication de ses postes.') : null,
+      prepare ? h('p.small.muted', dv.detail.day.status === 'en_cours'
+        ? 'Préparée pendant la battue en cours : invisible des chasseurs jusqu’à la publication de ses postes.'
+        : 'Préparée avant le jour J avec ceux qui ont répondu présent : invisible des chasseurs ; ses postes se publient une fois la journée lancée.') : null,
       h('label', 'Territoire', h('select', { onchange: (e) => { nb.territory_id = e.target.value; nb.hunt_plan_id = undefined; render(); } },
         dv.territories.map((t) => h('option', { value: t.id, selected: t.id === nb.territory_id }, t.name)))),
       (() => {
@@ -505,6 +504,7 @@ export async function dayConsole(main, dayId) {
             : h('p.small.muted', 'Le plan de chasse (sens de la traque) donne les postes à pourvoir en priorité.'),
         ];
       })(),
+      present.length ? null : h('p.small.alert', 'Personne n’a encore répondu présent.'),
       h('fieldset.members', h('legend', `Volontaires (${present.length - nb.excluded.size} sur ${present.length} présents)`), checks),
       h('p.small.muted', 'Décochez les présents qui ne font pas cette battue.'),
       h('button.primary', { onclick: async () => {
@@ -660,7 +660,7 @@ export async function dayConsole(main, dayId) {
   function volunteersSection() {
     const { hunt, participants } = dv.hunt;
     const selected = new Map(participants.map((p) => [p.day_participant_id, p]));
-    const present = dv.detail.participants.filter((p) => p.present);
+    const present = available();
     const editable = !hunt.started_at;
     const { posted } = postedSummary(participants);
     return step('participants', '1. Participants', `${participants.length} · ${posted} posté(s)`, false,
@@ -755,10 +755,11 @@ export async function dayConsole(main, dayId) {
             proposal?.kind === 'too_many' ? h('label.check', h('input', { type: 'checkbox', checked: dv.allowDouble, onchange: (e) => { dv.allowDouble = e.target.checked; } }), 'Doublons') : null)
         : null,
       hunt.status === 'brouillon'
-        ? [h('button.primary', { disabled: !dayPosts.length || !!running(), title: running() ? `Après la fin de la battue n° ${running().number}` : '',
+        ? [h('button.primary', { disabled: !dayPosts.length || !!running() || dv.detail.day.status !== 'en_cours', title: running() ? `Après la fin de la battue n° ${running().number}` : '',
             onclick: () => act(() => api.post(`/hunts/${hunt.id}/publish-assignments`), `Battue n° ${hunt.number} : postes publiés, les chasseurs sont prévenus.`) },
             'Publier les postes et ouvrir la battue'),
-           running() ? h('span.small.muted', ` possible après la fin de la battue n° ${running().number}`) : null]
+           dv.detail.day.status !== 'en_cours' ? h('span.small.muted', ' possible une fois la journée lancée')
+             : running() ? h('span.small.muted', ` possible après la fin de la battue n° ${running().number}`) : null]
         : editable ? h('button.primary', { disabled: !dayPosts.length, onclick: () => act(() => api.post(`/hunts/${hunt.id}/publish-assignments`), 'Postes publiés.') },
           hunt.assignments_published_at ? 'Republier les postes' : 'Publier les postes') : null,
       hunt.assignments_published_at && editable ? h('span.small.muted', ` publiés à ${timeOf(hunt.assignments_published_at)}`) : null);
@@ -879,37 +880,49 @@ export async function dayConsole(main, dayId) {
     const last = current();
     const foc = focused();
     const mine = dv.detail.participants.find((p) => p.user_id === state.user.id);
+    const manage = h('a.button.primary', { href: `#/chasse/gestion/${dayId}` }, '⚙ Gérer la journée dans Ma chasse');
+    // Battues : bascule, préparation (avant le jour J ou pendant une battue), battue ouverte.
+    const battueArea = () => [
+      battueSwitch(),
+      day.status === 'en_cours' && !run && lastEnded() && !dv.creating ? afterBattue() : null,
+      dv.creating || !foc
+        ? (day.status === 'en_cours' || dv.creating
+            ? [newBattueForm(day.status !== 'en_cours' || !!run), !foc && last && dv.hunt ? harvestSection() : null]
+            : h('section.card', h('h2', 'Battues'),
+                h('p.small.muted', 'Préparez dès maintenant les battues de la journée (plan, volontaires, postes) avec ceux qui ont répondu présent. Leurs postes se publient une fois la journée lancée.'),
+                h('button', { onclick: () => { dv.creating = true; render(); } }, '＋ Préparer une battue')))
+        : foc.status === 'en_cours' && dv.hunt
+          // Ordre des actions ; prélèvements seulement une fois la battue lancée.
+          ? [h('div.battue', battueHeader(), volunteersSection(), assignmentSection(), speciesEditor(), carpoolSection(), readinessSection(),
+              dv.hunt.hunt.started_at ? harvestSection() : null, battueActions())]
+          : dv.hunt
+            // Battue préparée : plan, volontaires, postes, espèces ; publication à la fin de la battue en cours.
+            ? [h('div.battue.prepared', battueHeader(), volunteersSection(), assignmentSection(), speciesEditor(), preparedActions())]
+            : null,
+    ];
     let sections;
-    if (day.status === 'brouillon' || day.status === 'convoquee') {
-      sections = [infoSection(true), convocationSection()];
+    let actionsFirst;
+    if (prep) {
+      // Journées : préparation seulement ; la suite se gère dans Ma chasse.
+      actionsFirst = false;
+      sections = ['brouillon', 'convoquee'].includes(day.status)
+        ? [infoSection(true), leaderSection(), convocationSection()]
+        : [battuesList(), day.status === 'en_cours' ? h('p', manage) : null];
+    } else if (day.status === 'brouillon' || day.status === 'convoquee') {
+      actionsFirst = true;
+      sections = [leaderSection(), infoSection(false), convocationSection(), battueArea()];
     } else if (day.status === 'en_cours') {
-      sections = [
-        presentsSection(),
-        battuesList(),
-        battueSwitch(),
-        // Fin de battue sans battue en cours : regroupement, ou publication de la suivante préparée.
-        !run && lastEnded() && !dv.creating ? afterBattue() : null,
-        dv.creating || !foc
-          ? [newBattueForm(!!run), !foc && last && dv.hunt ? harvestSection() : null]
-          : foc.status === 'en_cours' && dv.hunt
-            // Ordre des actions ; prélèvements seulement une fois la battue lancée.
-            ? [h('div.battue', battueHeader(), volunteersSection(), assignmentSection(), speciesEditor(), carpoolSection(), readinessSection(),
-                dv.hunt.hunt.started_at ? harvestSection() : null, battueActions())]
-            : dv.hunt
-              // Battue préparée : plan, volontaires, postes, espèces ; publication à la fin de la battue en cours.
-              ? [h('div.battue.prepared', battueHeader(), volunteersSection(), assignmentSection(), speciesEditor(), preparedActions())]
-              : null,
-        // Rendez-vous, déjeuner, consignes et convocations : acquis, la journée a commencé.
-      ];
+      actionsFirst = true;
+      sections = [presentsSection(), battuesList(), battueArea()];
     } else {
+      actionsFirst = true;
       sections = [battuesList(), last && dv.hunt ? harvestSection() : null];
     }
     fill(box,
-      mapToggle,
+      prep ? null : mapToggle,
       h('h1', `Journée du ${formatHuntDate(day.date)}`),
       h('p', `Rendez-vous à ${formatTime(day.meeting_time)}${day.meeting_place ? `, ${day.meeting_place}` : ''} · `, h('span.status', { class: `status-${day.status}` }, DAY_STATUS_LABELS[day.status])),
-      // En préparation : on règle d'abord, les boutons (envoyer, supprimer…) viennent en bas.
-      ['brouillon', 'convoquee'].includes(day.status) ? [sections, actionsSection()] : [actionsSection(), sections],
+      actionsFirst ? [actionsSection(), sections] : [sections, actionsSection()],
     );
     renderMap();
   }
