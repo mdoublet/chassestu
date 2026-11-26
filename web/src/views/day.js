@@ -12,7 +12,7 @@ import { polygonCenter, rankPlans, rangeLabel, windPhrase, compassName } from '.
 import { escapeHtml, toLatLng, ensureHatchPattern, postIcon, traqueLayers } from '../map/shapes.js';
 import { api } from '../api.js';
 import { state } from '../state.js';
-import { h, fill, toast, errorMessage, confirmDialog, copyText, modal, fold } from '../ui.js';
+import { h, fill, toast, errorMessage, confirmDialog, copyText, modal, fold, keepOpen } from '../ui.js';
 import {
   DAY_STATUS_LABELS, ROLE_LABELS, CATEGORY_LABELS, OUTCOME_LABELS, OUTCOME_ICONS, COMMON_SPECIES, DIFFICULTY_LABELS,
   formatHuntDate, formatTime, postedSummary,
@@ -288,7 +288,7 @@ export async function dayConsole(main, dayId, { prep = false } = {}) {
       el.addEventListener('change', () => act(() => api.patch(`/days/${dayId}`, { [name]: attrs.type === 'checkbox' ? el.checked : el.value }), 'Enregistré.'));
       return attrs.type === 'checkbox' ? h('label.check', el, label) : h('label', label, el);
     };
-    return h('details.card', { open },
+    return keepOpen(h('details.card',
       h('summary', 'Rendez-vous, déjeuner et consignes'),
       h('div.row', field('date', 'Date', { type: 'date' }), field('meeting_time', 'Heure du rendez-vous', { type: 'time' })),
       editable ? h('label', 'Choisir le lieu du rendez-vous', placeSelect(dv.places, {
@@ -299,7 +299,7 @@ export async function dayConsole(main, dayId, { prep = false } = {}) {
       editable && !prep ? h('button.link', { onclick: () => { dv.placing = 'meeting'; toast('Cliquez sur la carte à l’endroit du rendez-vous.'); } }, day.meeting_point ? 'Déplacer le point de rendez-vous' : 'Placer le rendez-vous sur la carte') : null,
       field('lunch_offered', 'Déjeuner proposé (inscription facultative)', { type: 'checkbox' }),
       day.lunch_offered ? field('lunch_info', 'Déjeuner : lieu, prix…', { maxlength: 300 }) : null,
-      field('briefing', 'Consignes de la journée', { rows: 3, maxlength: 5000 }, 'textarea'));
+      field('briefing', 'Consignes de la journée', { rows: 3, maxlength: 5000 }, 'textarea')), `day.info.${prep ? 'prep' : 'console'}`, open);
   }
 
   /** Responsable de la journée : responsable par défaut de ses battues (le président le reste toujours). */
@@ -376,7 +376,7 @@ export async function dayConsole(main, dayId, { prep = false } = {}) {
     const guestWalk = walkSelect(null, 'Marche de l’invité', () => {});
     const guestCar = h('input', { type: 'checkbox', 'aria-label': 'Invité en voiture' });
     const guestSeats = h('input', { type: 'number', min: 0, max: 8, placeholder: 'places', 'aria-label': 'Places libres de l’invité', style: 'width:6rem' });
-    return h('details.card', { open: !dv.detail.battues.length },
+    return keepOpen(h('details.card',
       h('summary', `Présents du jour · ${present.length}${day.lunch_offered ? ` · 🍽 ${participants.filter((p) => p.lunch).length}` : ''}`),
       h('table.list.compact.presents', h('thead', h('tr', h('th', ''), h('th', 'Nom'), h('th', 'Marche'), h('th', 'Voiture'), h('th', 'Places'), day.lunch_offered ? h('th', '🍽') : null)),
         h('tbody', participants.map((p) => h('tr', { class: p.present ? '' : 'absent' },
@@ -399,7 +399,7 @@ export async function dayConsole(main, dayId, { prep = false } = {}) {
           link: false,
         }), 'Invité ajouté : envoyez-lui son lien avec 📨 quand vous voulez.');
       } }, guestName, guestWalk, h('label.check', guestCar, 'voiture'), guestSeats, h('button', { type: 'submit' }, 'Ajouter un invité')),
-      guestLinks());
+      guestLinks()), 'day.presents', !dv.detail.battues.length);
   }
 
   /** Lien affiché une seule fois : partage du téléphone, sinon copie / SMS / WhatsApp. */
@@ -729,7 +729,7 @@ export async function dayConsole(main, dayId, { prep = false } = {}) {
             proposal.plan_count ? `Prendre les postes du plan « ${hunt.hunt_plan_name} » à ${proposal.plan_count} chasseurs (${proposal.post_ids.length})` : `Prendre la proposition (${proposal.post_ids.length} postes)`)
         : null,
       editable ? (picked ? h('p.small.alert.muted', `Touchez le poste où placer ${picked.name}.`)
-        : h('details.legend.small.muted', h('summary', 'ⓘ Aide'), 'Touchez un nom puis un poste pour le déplacer (échange si occupé). Postes : ajout et retrait sur la carte. ⛰ difficulté d’accès · 🥾 marche · ★ chef de ligne.')) : null,
+        : keepOpen(h('details.legend.small.muted', h('summary', 'ⓘ Aide'), 'Touchez un nom puis un poste pour le déplacer (échange si occupé). Postes : ajout et retrait sur la carte. ⛰ difficulté d’accès · 🥾 marche · ★ chef de ligne.'), 'day.assignHelp')) : null,
       h('label.check.small', h('input', { type: 'checkbox', checked: dv.showPostNames, onchange: (e) => {
         dv.showPostNames = e.target.checked;
         try { localStorage.setItem(NAMES_KEY, e.target.checked ? '1' : '0'); } catch { /* rien */ }

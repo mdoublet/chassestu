@@ -13,7 +13,7 @@ import { polygonCenter } from '../lib/wind.js';
 import { escapeHtml, toLatLng, ensureHatchPattern, postIcon, parkingIcon } from '../map/shapes.js';
 import { api } from '../api.js';
 import { state } from '../state.js';
-import { h, fill, toast, errorMessage, confirmDialog } from '../ui.js';
+import { h, fill, toast, errorMessage, confirmDialog, keepOpen } from '../ui.js';
 import { watchRevision, every } from '../lib/live.js';
 import {
   DAY_STATUS_LABELS, ROLE_LABELS, CATEGORY_LABELS, OUTCOME_LABELS, OUTCOME_ICONS, COMMON_SPECIES,
@@ -178,10 +178,10 @@ export function createDaySheet(container, opts = {}) {
     if (!cur?.neighbors?.length) return null;
     const me = cur.me;
     const items = cur.neighbors.map((n) => `${n.side === 'gauche' ? '◀ ' : n.side === 'droite' ? '▶ ' : ''}Poste ${n.number}${n.name && !compact ? ` · ${n.name}` : ''} : ${n.occupant ?? 'libre'}`);
-    return h('details.card',
+    return keepOpen(h('details.card',
       h('summary', me && !cur.show_all_posts ? 'Vos voisins' : 'Ligne de postes'),
       compact ? h('p', items.join(' · ')) : h('ul.plain', items.map((t) => h('li', t))),
-      me ? h('p.small.muted', 'Ne tirez jamais vers vos voisins.') : null);
+      me ? h('p.small.muted', 'Ne tirez jamais vers vos voisins.') : null), 'sheet.neighbors');
   }
 
   /**
@@ -221,16 +221,16 @@ export function createDaySheet(container, opts = {}) {
   function briefing(view) {
     const text = [view.day.briefing, view.current?.hunt?.briefing].filter(Boolean).join('\n\n');
     if (!text) return null;
-    return h('details.card', h('summary', 'Consignes'), h('p.pre', text));
+    return keepOpen(h('details.card', h('summary', 'Consignes'), h('p.pre', text)), 'sheet.briefing');
   }
 
   function battuesSummary(view) {
     if (!view.battues?.length) return null;
-    return h('details.card',
+    return keepOpen(h('details.card',
       h('summary', `Battues de la journée (${view.battues.length})`),
       h('ul.plain', view.battues.map((b) => h('li',
         `N° ${b.number} · ${b.territory_name} · ${b.status === 'terminee' ? `terminée${b.ended_at ? ` à ${time(b.ended_at)}` : ''}` : b.started_at ? 'traque en cours' : 'en préparation'}`,
-        view.me && !b.selected ? h('span.small.muted', ' (sans vous)') : null))));
+        view.me && !b.selected ? h('span.small.muted', ' (sans vous)') : null)))), 'sheet.battues');
   }
 
   function renderInfo(view, carpool, step) {

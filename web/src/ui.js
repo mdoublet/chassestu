@@ -137,6 +137,22 @@ export function formatDate(iso) {
  * droite (nombre, alerte), contenu masqué tant qu'elle est fermée. `key` :
  * l'état ouvert/fermé est gardé pendant la session (re-rendus, retours).
  */
+/**
+ * Section dépliable qui garde son état (ouverte / fermée) d'un rafraîchissement
+ * à l'autre tant que l'utilisateur ne la change pas : `defaultOpen` ne sert
+ * qu'au premier affichage.
+ */
+export function keepOpen(details, key, defaultOpen = false) {
+  let open = defaultOpen;
+  try {
+    const v = sessionStorage.getItem(`fold.${key}`);
+    if (v !== null) open = v === '1';
+  } catch { /* rien */ }
+  details.open = open;
+  details.addEventListener('toggle', () => { try { sessionStorage.setItem(`fold.${key}`, details.open ? '1' : '0'); } catch { /* rien */ } });
+  return details;
+}
+
 export function fold(title, { key = null, extra = null, open = false, className = '' } = {}, ...content) {
   let isOpen = open;
   if (key) {
