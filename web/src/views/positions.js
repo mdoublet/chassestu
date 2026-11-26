@@ -65,6 +65,20 @@ export function positionPanel(map, { dayId, guestToken, canSeeAll = false, onCha
   let busy = false;
 
   const canShare = () => !isGuest && !!ctx.me && !ctx.me.guest && ctx.dayRunning;
+  // Tableau de bord : « Partager » est coché d'office ; le partage démarre au
+  // premier geste du chasseur (guidage à pied ou « Je suis en place »), sauf
+  // s'il l'a décoché (choix mémorisé pour la journée sur ce téléphone).
+  const NO_SHARE_KEY = `chassestu.noShare.${dayId}`;
+  let wantShare = (() => { try { return localStorage.getItem(NO_SHARE_KEY) !== '1'; } catch { return true; } })();
+  const shareIfWanted = () => { if (wantShare && !sharing && canShare()) setSharing(true); };
+  function shareToggle() {
+    if (!canShare()) return null;
+    return h('label.check.share', h('input', { type: 'checkbox', checked: sharing || wantShare, onchange: (e) => {
+      wantShare = e.target.checked;
+      try { if (wantShare) localStorage.removeItem(NO_SHARE_KEY); else localStorage.setItem(NO_SHARE_KEY, '1'); } catch { /* rien */ }
+      if (wantShare) setSharing(true); else if (sharing) setSharing(false);
+    } }), 'Partager ma position', h('span.small.muted', ' avec le responsable'));
+  }
   const targetCoords = () => ctx.target?.coords ?? null;
   const targetKey = (t) => (t ? `${t.kind}:${t.number ?? ''}:${t.coords.join(',')}` : '');
 
@@ -385,12 +399,12 @@ export function positionPanel(map, { dayId, guestToken, canSeeAll = false, onCha
     if (line && !guiding) {
       return line.done
         ? h('div.in-place.done', h('strong', '✅ Ligne en place'), line.undo ? h('button.link', { onclick: line.undo }, 'Annuler') : null)
-        : h('button.primary.in-place', { onclick: line.confirm }, '✅ Ligne en place');
+        : h('button.primary.in-place', { onclick: () => { shareIfWanted(); line.confirm(); } }, '✅ Ligne en place');
     }
     return ctx.me?.in_place
       ? h('div.in-place.done', h('strong', '✅ Vous avez confirmé être en place'),
           h('button.link', { onclick: () => setInPlace(false), disabled: busy }, 'Annuler'))
-      : h('button', { class: onPost?.status === 'sur_poste' ? 'primary in-place' : 'in-place', onclick: () => setInPlace(true), disabled: busy }, '✅ Je suis en place');
+      : h('button', { class: onPost?.status === 'sur_poste' || ctx.join ? 'primary in-place' : 'in-place', onclick: () => { if (ctx.join) shareIfWanted(); setInPlace(true); }, disabled: busy }, '✅ Je suis en place');
   }
 
   function guidanceBlock() {
@@ -398,24 +412,24 @@ export function positionPanel(map, { dayId, guestToken, canSeeAll = false, onCha
     const isPost = t.kind === 'post';
     const title = isPost ? `Poste n° ${t.number}${t.name ? ` · ${t.name}` : ''}` : t.title;
     const confirm = confirmBlock();
-    if (!guiding && isPost && ctx.compact && ctx.me?.in_place) {
-      return { top: [h('h3', `Poste n° ${t.number}`), confirm], bottom: null };
-    }
-    // Carte unique « Rejoignez votre poste » : poste (guidage à pied), parking,
-    // covoiturage, puis « En place » et le partage de position.
+    // Tableau de bord « Rejoignez votre poste » : 4 cases (poste, ligne,
+    // parking, covoiturage), « Je suis en place » + partage, puis la suite
+    // (participants, lancement pour le responsable).
     if (!guiding && isPost && ctx.join) {
+      const go = () => { shareIfWanted(); startGuiding(); };
       return {
         top: [
-          h('h2.join-title', ctx.join.title),
-          ctx.join.note ? h('p.small.muted', ctx.join.note) : null,
-          h('div.join-row',
-            h('span', h('b', 'Poste : '), `${t.number}${t.name ? ` · ${t.name}` : ''}`, ctx.join.postExtra ? h('span.small.muted', ` · ${ctx.join.postExtra}`) : null),
-            h('button.walk-icon', { type: 'button', onclick: startGuiding, title: 'Guidage à pied jusqu’au poste', 'aria-label': 'Guidage à pied jusqu’au poste' }, '🥾')),
-          ctx.join.rows,
-          confirm,
+          h('h2.join-title', ctx.me?.in_place ? 'Vous êtes en place' : ctx.join.title),
+          h('div.join-grid', ctx.join.tiles(go)),
+          ctx.join.alert ?? null,
+          h('div.join-actions', confirm, shareToggle()),
+          ctx.join.after ?? null,
         ],
         bottom: null,
       };
+    }
+    if (!guiding && isPost && ctx.compact && ctx.me?.in_place) {
+      return { top: [h('h3', `Poste n° ${t.number}`), confirm], bottom: null };
     }
     if (!guiding) {
       return {
@@ -470,7 +484,8 @@ export function positionPanel(map, { dayId, guestToken, canSeeAll = false, onCha
     }
     el.hidden = false;
 
-    const share = canShare()
+    const dashboard = !!ctx.join && !guiding && ctx.target?.kind === 'post';
+    const share = canShare() && !dashboard
       ? [
           h('label.check.share',
             h('input', { type: 'checkbox', checked: sharing, onchange: (e) => setSharing(e.target.checked) }),
@@ -492,7 +507,9 @@ export function positionPanel(map, { dayId, guestToken, canSeeAll = false, onCha
         ]
       : null;
 
-    const list = showList && others.length
+    const list = dashboard
+      ? (showList ? h('button', { onclick: fitEveryone }, '🗺 Voir les positions de tout le monde') : null)
+      : showList && others.length
       ? (() => {
           const shared = others.filter((p) => p.shared);
           const ready = others.filter((p) => p.status === 'sur_poste' || p.status === 'confirme').length;

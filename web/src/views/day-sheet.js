@@ -32,13 +32,13 @@ const time = (iso) => new Date(iso).toLocaleTimeString('fr-FR', { hour: '2-digit
 export function carpoolLine(carpool, myParticipantId) {
   if (!carpool || !myParticipantId) return null;
   const asDriver = carpool.cars.find((c) => c.driver.id === myParticipantId);
-  if (asDriver) return asDriver.passengers.length ? `vous conduisez ${asDriver.passengers.map((p) => p.name).join(', ')}` : 'vous prenez votre voiture (seul)';
+  if (asDriver) return asDriver.passengers.length ? `vous conduisez ${asDriver.passengers.map((p) => p.name).join(', ')}` : 'seul';
   const asPassenger = carpool.cars.find((c) => c.passengers.some((p) => p.id === myParticipantId));
   if (asPassenger) {
     const me = asPassenger.passengers.find((p) => p.id === myParticipantId);
     return `avec ${asPassenger.driver.name} (chauffeur)${me.detour ? `, déposé au ${me.destinationName}` : ''}`;
   }
-  if (carpool.unseated.some((p) => p.id === myParticipantId)) return '⚠ pas de place trouvée : voyez l’organisateur';
+  if (carpool.unseated.some((p) => p.id === myParticipantId)) return '⚠ pas de place : voyez l’organisateur';
   return 'non';
 }
 
@@ -252,7 +252,7 @@ export function createDaySheet(container, opts = {}) {
     const cur = view.current;
     const phase = step.phase;
     const placed = !!cur?.me?.in_place;
-    const joining = phase === 'rejoindre' && !placed && !!cur?.post;
+    const joining = phase === 'rejoindre' && !!cur?.post;
     let top = [];
     switch (phase) {
       case 'reponse': case 'rdv': case 'absent': case 'convoque':
@@ -270,7 +270,7 @@ export function createDaySheet(container, opts = {}) {
       case 'rejoindre':
         // Une seule carte : poste, parking, covoiturage, « En place », partage (panneau de guidage).
         // Une fois en place, parking, chemin et covoiturage ne servent plus.
-        top = placed || !cur?.post ? [panel.el, speciesBox(cur)] : [panel.el, opts.leadCard?.() ?? null, speciesBox(cur)];
+        top = !cur?.post ? [opts.leadCard?.() ?? null, panel.el, speciesBox(cur)] : [panel.el, speciesBox(cur)];
         break;
       case 'traque':
         // Pendant la traque : déclarer un animal tué, sa place, la fin annoncée.
@@ -302,7 +302,8 @@ export function createDaySheet(container, opts = {}) {
     );
     fill(
       more,
-      ['rejoindre', 'traque', 'preparation'].includes(phase) ? neighborsCard(cur, phase === 'traque') : null,
+      // Pendant « rejoindre », les voisins sont dans le tableau de bord.
+      ['rejoindre', 'traque', 'preparation'].includes(phase) && !joining ? neighborsCard(cur, phase === 'traque') : null,
       briefing(view),
       day.status === 'en_cours' || day.status === 'terminee' ? battuesSummary(view) : null,
       h('p.small.muted.live', `Mis à jour à ${new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`),
@@ -359,28 +360,36 @@ export function createDaySheet(container, opts = {}) {
     } else if (step.phase === 'regroupement' && view.day.regroup?.point) {
       target = { kind: 'point', title: `Regroupement${view.day.regroup.place ? ` · ${view.day.regroup.place}` : ''}`, coords: view.day.regroup.point.coordinates };
     }
-    const joining = step.phase === 'rejoindre' && post && !cur?.me?.in_place;
+    const joining = step.phase === 'rejoindre' && post;
     let join = null;
     if (joining) {
       const line = cur.line;
-      const nav = (label, coords, what) => h('div.join-row', h('span', label), navIcon(coords, what));
-      const lineMembers = line?.chief && line.name ? line.members : null;
+      const chiefs = (line?.chiefs ?? []).filter((c) => !c.me);
+      const tile = (label, ...content) => h('div.join-tile', h('span.join-label', label), ...content);
+      const lead = opts.leadParts?.() ?? null;
+      // Participants : tous les postes (responsable, ou si l'association le permet), sinon les voisins.
+      const dot = (ok) => h('span.pdot', { class: ok ? 'ok' : '', title: ok ? 'Déclaré en place' : 'Pas encore déclaré' });
+      const own = { number: post.number, name: post.name, occupant: cur.me?.name ? `${cur.me.name} (vous)` : 'vous', in_place: !!cur.me?.in_place };
+      const rows = [own, ...(cur.neighbors ?? [])].filter((n) => n.occupant).sort((a, b) => a.number - b.number);
+      const participants = lead?.list ?? (rows.length > 1 ? h('div.join-people',
+        h('h3', cur.show_all_posts ? 'Participants' : 'Vos voisins'),
+        h('ul.plain.people', rows.map((n) => h('li', dot(n.in_place), h('b', `Poste ${n.number}`), n.name ? h('span.small.muted', ` ${n.name}`) : null, ` · ${n.occupant}`)))) : null);
       join = {
         title: 'Rejoignez votre poste',
-        note: 'Chargez votre arme seulement au poste.',
-        postExtra: [post.access_path ? `${post.access_path_length_m} m à pied` : null, post.shared_with?.length ? `partagé avec ${post.shared_with.join(', ')}` : null].filter(Boolean).join(' · '),
-        rows: [
-          post.instructions ? h('p.alert.warn', post.instructions) : null,
-          post.parking
-            ? nav(h('span', h('b', 'Parking : '), post.parking.name), post.parking.geom.coordinates, `parking ${post.parking.name}`)
-            : nav(h('span', h('b', 'Parking : '), h('span.muted', 'aucun, jusqu’au poste')), post.geom.coordinates, `poste ${post.number}`),
-          h('div.join-row', h('span', h('b', 'Covoiturage : '), view.carpoolText ?? '—')),
-          line?.name && !line.chief
-            ? h('div.join-row', h('span', h('b', 'Ligne : '), line.name, line.chiefs.filter((c) => !c.me).length
-              ? ` · chef : ${line.chiefs.filter((c) => !c.me).map((c) => `${c.name} (poste ${c.post_number})`).join(', ')}` : h('span.muted', ' · pas de chef de ligne'))) : null,
+        tiles: (go) => [
+          tile('Poste', h('div.join-main', h('b.big', String(post.number)), post.name ? h('span', post.name) : null,
+            post.access_path ? h('span.small.muted', `${post.access_path_length_m} m à pied`) : null),
+            h('button.walk-icon', { type: 'button', onclick: go, title: 'Guidage à pied jusqu’au poste', 'aria-label': 'Guidage à pied jusqu’au poste' }, '🥾')),
+          tile('Ligne', h('div.join-main', line?.name ? h('b', line.name) : h('span.muted', 'Aucune'),
+            line?.name ? h('span.small', line.chief ? 'vous êtes chef de ligne' : chiefs.length ? `chef : ${chiefs.map((c) => c.name).join(', ')}` : 'pas de chef') : null)),
+          tile('Parking', h('div.join-main', post.parking ? h('b', post.parking.name) : h('span.muted', 'Aucun : jusqu’au poste')),
+            navIcon(post.parking ? post.parking.geom.coordinates : post.geom.coordinates, post.parking ? `parking ${post.parking.name}` : `poste ${post.number}`)),
+          tile('Covoiturage', h('div.join-main', h('span', view.carpoolText ?? '—'))),
         ],
-        line: lineMembers && opts.onLineInPlace && !cur.hunt?.started_at
-          ? { done: lineMembers.every((m) => m.in_place_at), confirm: () => opts.onLineInPlace(cur.hunt.id, null, true) }
+        alert: post.instructions ? h('p.alert.warn', post.instructions) : null,
+        after: [participants, lead?.actions ?? null],
+        line: line?.chief && line.name && opts.onLineInPlace && !cur.hunt?.started_at
+          ? { done: line.members.every((m) => m.in_place_at), confirm: () => opts.onLineInPlace(cur.hunt.id, null, true) }
           : null,
       };
     }
@@ -452,6 +461,37 @@ export async function memberDayView(main, dayId) {
     view.update(res.view, res.carpool);
   };
 
+  /** Responsable (ou président) dans le tableau de bord : tous les postes (point vert / orange), lancer la battue. */
+  function leadParts() {
+    if (!lead) return null;
+    const { hunt, readiness } = lead;
+    const posts = new Map();
+    for (const r of readiness) {
+      if (!posts.has(r.post_number)) posts.set(r.post_number, { number: r.post_number, name: r.post_name, people: [] });
+      if (r.participant_name) posts.get(r.post_number).people.push(r);
+    }
+    const rows = [...posts.values()].filter((p) => p.people.length);
+    const ok = (p) => p.people.every((x) => x.in_place_at);
+    const ready = rows.filter(ok).length;
+    const go = (action, msg, confirmText) => async () => {
+      if (!(await confirmDialog(`Battue n° ${hunt.number}`, confirmText, 'Confirmer'))) return;
+      act(() => api.post(`/hunts/${hunt.id}/actions/${action}`), msg);
+    };
+    return {
+      list: h('div.join-people',
+        h('h3', `Participants · ${ready}/${rows.length} en place`),
+        h('ul.plain.people', rows.map((p) => h('li', h('span.pdot', { class: ok(p) ? 'ok' : '' }),
+          h('b', `Poste ${p.number}`), p.name ? h('span.small.muted', ` ${p.name}`) : null,
+          ` · ${p.people.map((x) => x.participant_name).join(' et ')}`)))),
+      actions: hunt.assignments_published_at && !hunt.started_at
+        ? h('div.join-lead',
+            h('p.small.muted', lead.as_leader ? `Vous êtes responsable de la battue n° ${hunt.number}.` : `Responsable : ${hunt.leader_name ?? '—'} ; vous pouvez lancer la battue à sa place.`),
+            h('button.primary', { onclick: go('debut', 'Début de battue : les chasseurs sont prévenus.',
+              ready === rows.length ? 'Lancer la battue ? Les chasseurs seront prévenus.' : `Seulement ${ready}/${rows.length} poste(s) en place. Lancer quand même la battue ?`) }, '🎯 Lancer la battue'))
+        : null,
+    };
+  }
+
   /** Carte du responsable de battue : qui est en place, lancer / arrêter la battue. */
   function leadCard() {
     if (!lead) return null;
@@ -508,6 +548,7 @@ export async function memberDayView(main, dayId) {
     dayId,
     placeOf: (name) => places.find((p) => p.name === name) ?? null,
     leadCard,
+    leadParts,
     canSeeAll: ['president', 'responsable'].includes(state.role),
     onRespond: (response, lunch) => act(() => api.post(`/days/${dayId}/respond`, { response, lunch: !!lunch }), 'Réponse enregistrée.'),
     onDeclare: (huntId, body) => act(() => api.post(`/hunts/${huntId}/harvests`, body), `${body.species} ${OUTCOME_LABELS[body.outcome ?? 'tue'].toLowerCase()} : les participants sont prévenus.`),

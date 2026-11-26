@@ -721,3 +721,17 @@ details.infos-sp > summary { cursor: pointer; font-weight: 600; }
 button.walk-icon { flex: none; width: 44px; height: 44px; border-radius: 50%; padding: 0; font-size: 1.5rem; background: none; border: 0; min-height: 0; cursor: pointer; }
 button.walk-icon:hover { background: color-mix(in srgb, var(--text) 8%, transparent); }
 .positions .in-place { margin-top: 0.6rem; }
+/* Tableau de bord « Rejoignez votre poste » */
+.join-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; margin: 0.4rem 0 0.6rem; }
+.join-tile { position: relative; border: 1px solid var(--border); border-radius: 10px; padding: 0.45rem 0.55rem; min-height: 4.6rem; display: flex; align-items: flex-start; justify-content: space-between; gap: 0.3rem; }
+.join-label { position: absolute; top: 0.3rem; left: 0.55rem; font-size: 0.72rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+.join-main { display: flex; flex-direction: column; margin-top: 1.05rem; min-width: 0; line-height: 1.25; overflow-wrap: anywhere; }
+.join-main .big { font-size: 1.6rem; line-height: 1; }
+.join-tile .walk-icon, .join-tile .nav-icon { margin-top: 0.6rem; }
+.join-actions { display: flex; align-items: center; gap: 0.8rem; flex-wrap: wrap; }
+.join-actions .in-place { margin: 0; }
+.join-people h3 { font-size: 0.95rem; margin: 0.9rem 0 0.3rem; }
+ul.people li { display: flex; align-items: center; gap: 0.4rem; padding: 0.25rem 0; border-bottom: 1px solid var(--border); }
+.pdot { flex: none; width: 0.75rem; height: 0.75rem; border-radius: 50%; background: #f08c00; }
+.pdot.ok { background: #2f9e44; }
+.join-lead { margin-top: 0.7rem; }
