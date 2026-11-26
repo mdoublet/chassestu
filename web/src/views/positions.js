@@ -380,6 +380,13 @@ export function positionPanel(map, { dayId, guestToken, canSeeAll = false, onCha
   function confirmBlock() {
     const t = ctx.target;
     if (t?.kind !== 'post' || !t.canConfirm) return null;
+    // Chef de ligne : il confirme toute sa ligne (lui compris).
+    const line = ctx.join?.line;
+    if (line && !guiding) {
+      return line.done
+        ? h('div.in-place.done', h('strong', '✅ Ligne en place'), line.undo ? h('button.link', { onclick: line.undo }, 'Annuler') : null)
+        : h('button.primary.in-place', { onclick: line.confirm }, '✅ Ligne en place');
+    }
     return ctx.me?.in_place
       ? h('div.in-place.done', h('strong', '✅ Vous avez confirmé être en place'),
           h('button.link', { onclick: () => setInPlace(false), disabled: busy }, 'Annuler'))
@@ -393,6 +400,22 @@ export function positionPanel(map, { dayId, guestToken, canSeeAll = false, onCha
     const confirm = confirmBlock();
     if (!guiding && isPost && ctx.compact && ctx.me?.in_place) {
       return { top: [h('h3', `Poste n° ${t.number}`), confirm], bottom: null };
+    }
+    // Carte unique « Rejoignez votre poste » : poste (guidage à pied), parking,
+    // covoiturage, puis « En place » et le partage de position.
+    if (!guiding && isPost && ctx.join) {
+      return {
+        top: [
+          h('h2.join-title', ctx.join.title),
+          ctx.join.note ? h('p.small.muted', ctx.join.note) : null,
+          h('div.join-row',
+            h('span', h('b', 'Poste : '), `${t.number}${t.name ? ` · ${t.name}` : ''}`, ctx.join.postExtra ? h('span.small.muted', ` · ${ctx.join.postExtra}`) : null),
+            h('button.walk-icon', { type: 'button', onclick: startGuiding, title: 'Guidage à pied jusqu’au poste', 'aria-label': 'Guidage à pied jusqu’au poste' }, '🥾')),
+          ctx.join.rows,
+          confirm,
+        ],
+        bottom: null,
+      };
     }
     if (!guiding) {
       return {

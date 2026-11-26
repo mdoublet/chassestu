@@ -20,13 +20,27 @@ import {
   formatHuntDate, formatTime, dayPhase,
 } from '../lib/hunts.js';
 import { positionPanel } from './positions.js';
-import { navLine } from '../lib/navigation.js';
+import { navLine, navIcon } from '../lib/navigation.js';
 import { photoIcon } from '../lib/photo.js';
 
 /** Destination + icône de navigation (appli choisie dans le profil). */
 const navButtons = (label, coords) => navLine(label, coords, '');
 
 const time = (iso) => new Date(iso).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+
+/** Covoiturage en une ligne : « Non », « Vous conduisez : A, B », « Avec X (chauffeur) ». */
+export function carpoolLine(carpool, myParticipantId) {
+  if (!carpool || !myParticipantId) return null;
+  const asDriver = carpool.cars.find((c) => c.driver.id === myParticipantId);
+  if (asDriver) return asDriver.passengers.length ? `vous conduisez ${asDriver.passengers.map((p) => p.name).join(', ')}` : 'vous prenez votre voiture (seul)';
+  const asPassenger = carpool.cars.find((c) => c.passengers.some((p) => p.id === myParticipantId));
+  if (asPassenger) {
+    const me = asPassenger.passengers.find((p) => p.id === myParticipantId);
+    return `avec ${asPassenger.driver.name} (chauffeur)${me.detour ? `, déposé au ${me.destinationName}` : ''}`;
+  }
+  if (carpool.unseated.some((p) => p.id === myParticipantId)) return '⚠ pas de place trouvée : voyez l’organisateur';
+  return 'non';
+}
 
 /** Ma voiture dans le plan de covoiturage. */
 function carpoolCard(carpool, myParticipantId) {
@@ -188,7 +202,7 @@ export function createDaySheet(container, opts = {}) {
    * Ligne de postes : le posté voit son chef de ligne ; le chef de ligne voit
    * les chasseurs de sa ligne (lui compris) et leur mise en place.
    */
-  function lineCard(cur) {
+  function lineCard(cur, inJoinCard = false) {
     const line = cur?.line;
     if (!line) return null;
     const hm = (iso) => new Date(iso).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
@@ -208,7 +222,7 @@ export function createDaySheet(container, opts = {}) {
           opts.onLineInPlace && !cur.hunt?.started_at
             ? h('button.small', { onclick: () => set(m.participant_id, !m.in_place_at), title: m.in_place_at ? 'Annuler' : 'Confirmer qu’il est en place' }, m.in_place_at ? 'Annuler' : 'En place')
             : null))),
-        opts.onLineInPlace && ready < line.members.length && !cur.hunt?.started_at
+        opts.onLineInPlace && ready < line.members.length && !cur.hunt?.started_at && !inJoinCard
           ? h('button.primary', { onclick: () => set(null, true) }, '✅ Toute ma ligne est en place')
           : null);
     }
@@ -238,6 +252,7 @@ export function createDaySheet(container, opts = {}) {
     const cur = view.current;
     const phase = step.phase;
     const placed = !!cur?.me?.in_place;
+    const joining = phase === 'rejoindre' && !placed && !!cur?.post;
     let top = [];
     switch (phase) {
       case 'reponse': case 'rdv': case 'absent': case 'convoque':
@@ -253,10 +268,9 @@ export function createDaySheet(container, opts = {}) {
         top = [postCard(cur), speciesBox(cur), panel.el];
         break;
       case 'rejoindre':
+        // Une seule carte : poste, parking, covoiturage, « En place », partage (panneau de guidage).
         // Une fois en place, parking, chemin et covoiturage ne servent plus.
-        top = placed
-          ? [panel.el, speciesBox(cur)]
-          : [postCard(cur), carpoolCard(carpool, cur?.me?.participant_id), panel.el, speciesBox(cur)];
+        top = placed || !cur?.post ? [panel.el, speciesBox(cur)] : [panel.el, opts.leadCard?.() ?? null, speciesBox(cur)];
         break;
       case 'traque':
         // Pendant la traque : déclarer un animal tué, sa place, la fin annoncée.
@@ -275,13 +289,15 @@ export function createDaySheet(container, opts = {}) {
     fill(
       info,
       me?.guest ? h('p.notice', `Bonjour ${me.name} (accès invité pour la journée).`) : null,
-      h('section.status-banner', { class: `tone-${step.tone}` }, h('strong', step.title), step.text ? h('span', step.text) : null, respondBox(view)),
-      opts.leadCard?.() ?? null, // responsable désigné de la battue en cours
+      // « Rejoindre » : le titre et les consignes sont dans la carte unique du poste.
+      joining ? null : h('section.status-banner', { class: `tone-${step.tone}` }, h('strong', step.title), step.text ? h('span', step.text) : null, respondBox(view)),
+      joining ? null : opts.leadCard?.() ?? null, // responsable désigné de la battue en cours
       h('p.small.day-line', h('span.status', { class: `status-${day.status}` }, DAY_STATUS_LABELS[day.status]),
         ` ${formatHuntDate(day.date)}`,
         lastBattue && day.status === 'en_cours' ? ` · battue n° ${lastBattue.number} (${lastBattue.territory_name})` : '',
         cur?.me ? ` · ${ROLE_LABELS[cur.me.role].toLowerCase()}` : ''),
-      ['rejoindre', 'traque'].includes(phase) ? lineCard(cur) : null,
+      // Ligne : le posté la voit dans sa carte ; le chef de ligne garde la liste de ses chasseurs.
+      ['rejoindre', 'traque'].includes(phase) && !(joining && !cur?.line?.chief) ? lineCard(cur, joining) : null,
       top,
     );
     fill(
@@ -343,7 +359,33 @@ export function createDaySheet(container, opts = {}) {
     } else if (step.phase === 'regroupement' && view.day.regroup?.point) {
       target = { kind: 'point', title: `Regroupement${view.day.regroup.place ? ` · ${view.day.regroup.place}` : ''}`, coords: view.day.regroup.point.coordinates };
     }
+    const joining = step.phase === 'rejoindre' && post && !cur?.me?.in_place;
+    let join = null;
+    if (joining) {
+      const line = cur.line;
+      const nav = (label, coords, what) => h('div.join-row', h('span', label), navIcon(coords, what));
+      const lineMembers = line?.chief && line.name ? line.members : null;
+      join = {
+        title: 'Rejoignez votre poste',
+        note: 'Chargez votre arme seulement au poste.',
+        postExtra: [post.access_path ? `${post.access_path_length_m} m à pied` : null, post.shared_with?.length ? `partagé avec ${post.shared_with.join(', ')}` : null].filter(Boolean).join(' · '),
+        rows: [
+          post.instructions ? h('p.alert.warn', post.instructions) : null,
+          post.parking
+            ? nav(h('span', h('b', 'Parking : '), post.parking.name), post.parking.geom.coordinates, `parking ${post.parking.name}`)
+            : nav(h('span', h('b', 'Parking : '), h('span.muted', 'aucun, jusqu’au poste')), post.geom.coordinates, `poste ${post.number}`),
+          h('div.join-row', h('span', h('b', 'Covoiturage : '), view.carpoolText ?? '—')),
+          line?.name && !line.chief
+            ? h('div.join-row', h('span', h('b', 'Ligne : '), line.name, line.chiefs.filter((c) => !c.me).length
+              ? ` · chef : ${line.chiefs.filter((c) => !c.me).map((c) => `${c.name} (poste ${c.post_number})`).join(', ')}` : h('span.muted', ' · pas de chef de ligne'))) : null,
+        ],
+        line: lineMembers && opts.onLineInPlace && !cur.hunt?.started_at
+          ? { done: lineMembers.every((m) => m.in_place_at), confirm: () => opts.onLineInPlace(cur.hunt.id, null, true) }
+          : null,
+      };
+    }
     return {
+      join,
       huntId: cur?.hunt?.id ?? view.battues?.[view.battues.length - 1]?.id ?? null,
       running,
       dayRunning: view.day.status === 'en_cours',
@@ -371,6 +413,7 @@ export function createDaySheet(container, opts = {}) {
       return;
     }
     pending = null;
+    view.carpoolText = carpoolLine(carpool, view.current?.me?.participant_id);
     const step = dayPhase(view);
     panel.update(panelContext(view, step));
     renderInfo(view, carpool, step);

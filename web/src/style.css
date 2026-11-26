@@ -714,3 +714,10 @@ details.infos-sp > summary { cursor: pointer; font-weight: 600; }
 .infos-empty { margin: 0.8rem; }
 .hunt-layout.prep .hunt-map, .hunt-layout.prep .resizer { display: none; }
 .hunt-layout.prep .hunt-console { max-width: 760px; margin: 0 auto; width: 100%; }
+/* Carte unique « Rejoignez votre poste » */
+.join-title { margin: 0 0 0.2rem; font-size: 1.25rem; }
+.join-row { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; padding: 0.35rem 0; border-bottom: 1px solid var(--border); min-height: 44px; }
+.join-row:last-of-type { border-bottom: 0; }
+button.walk-icon { flex: none; width: 44px; height: 44px; border-radius: 50%; padding: 0; font-size: 1.5rem; background: none; border: 0; min-height: 0; cursor: pointer; }
+button.walk-icon:hover { background: color-mix(in srgb, var(--text) 8%, transparent); }
+.positions .in-place { margin-top: 0.6rem; }
