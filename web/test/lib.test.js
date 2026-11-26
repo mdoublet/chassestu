@@ -486,5 +486,9 @@ describe('Ma chasse : journée à montrer', () => {
     expect(pickDay(days, '2026-11-26').id).toBe('b');
     expect(pickDay([...days, { id: 'e', status: 'en_cours', date: '2026-11-26' }], '2026-11-26').id).toBe('e');
     expect(pickDay([], '2026-11-26')).toBeNull();
+    // Gestion : toutes les journées, et à défaut le prochain brouillon.
+    expect(pickDay([...days, { id: 'f', status: 'brouillon', date: '2026-12-01' }], '2026-11-26', { manager: true }).id).toBe('c');
+    expect(pickDay([{ id: 'f', status: 'brouillon', date: '2026-12-01' }], '2026-11-26', { manager: true }).id).toBe('f');
+    expect(pickDay([{ id: 'f', status: 'brouillon', date: '2026-12-01' }], '2026-11-26')).toBeNull();
   });
 });

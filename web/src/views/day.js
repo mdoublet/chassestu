@@ -64,7 +64,7 @@ const timeOf = (iso) => new Date(iso).toLocaleTimeString('fr-FR', { hour: '2-dig
 const NAMES_KEY = 'chassestu.showPostNames';
 const POSTED_ROLES = ['poste', 'chef_de_ligne']; // le chef de ligne est un chasseur posté
 
-async function dayConsole(main, dayId) {
+export async function dayConsole(main, dayId) {
   ensureHatchPattern();
   const dv = {
     detail: null, hunt: null, territory: null, territoryId: null, carpool: null,
@@ -266,7 +266,9 @@ async function dayConsole(main, dayId) {
     const { day } = dv.detail;
     const go = (action, msg, confirmText) => async () => {
       if (confirmText && !(await confirmDialog(DAY_STATUS_LABELS[day.status], confirmText, 'Confirmer'))) return;
-      await act(() => api.post(`/days/${dayId}/actions/${action}`), msg);
+      const res = await act(() => api.post(`/days/${dayId}/actions/${action}`), msg);
+      // Journée commencée : on passe dans « Ma chasse », onglet Gestion (bascule facile vers En cours et Infos).
+      if (res && action === 'demarrer' && !location.hash.startsWith('#/chasse')) location.hash = '#/chasse/gestion';
     };
     const buttons = {
       brouillon: [h('button.primary', { onclick: go('convoquer', 'Convocations envoyées : les chasseurs sont prévenus dans l’application.') }, 'Envoyer les convocations'),

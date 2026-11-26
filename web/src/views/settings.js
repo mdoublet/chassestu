@@ -48,7 +48,7 @@ export async function settingsView(main, { refreshMe }) {
     ),
     field('departement', 'Département', { maxlength: 3, pattern: '([0-9]{2}|2A|2B|97[1-6])', placeholder: 'ex. 11' }),
     field('info_url', 'Page d’informations (dates, espèces, règles)', { type: 'url', maxlength: 500, pattern: 'https://.*', placeholder: 'https://…' },
-      'Affichée aux chasseurs dans « Ma chasse → Infos chasse ». Adresse https.')),
+      'Affichée dans « Ma chasse → Infos ». Adresse https.')),
     fold('Sécurité', { key: 'settings.safety', extra: `${tenant.buffer_distance_m} m des habitations` },
       field('buffer_distance_m', 'Distance des habitations (m)', { type: 'number', min: 50, max: 1000, required: true },
         '150 m en ACCA (L.422-10), parfois 200 m. Recalcule les zones non chassables.'),

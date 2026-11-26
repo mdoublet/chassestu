@@ -1,9 +1,9 @@
-// « Ma chasse » : l'écran simple du chasseur, en deux onglets.
-// - Journée : la vue chasseur de la journée en cours (ou de la prochaine
+// « Ma chasse » : l'écran simple, en onglets.
+// - En cours : la vue chasseur de la journée en cours (ou de la prochaine
 //   convocation) — poste, itinéraire, consignes, alertes.
-// - Infos chasse : la page d'informations de l'association (dates
-//   d'ouverture, espèces, règles), sinon les espèces et quotas de la saison.
-// Par défaut : Journée si une journée de chasse est démarrée, Infos sinon.
+// - Gestion (président, responsables) : la console de cette journée.
+// - Infos : dates d'ouverture, espèces, règles de l'association.
+// Par défaut : la journée démarrée (Gestion pour le président), Infos sinon.
 import { api } from '../api.js';
 import { state } from '../state.js';
 import { h, fill, errorMessage } from '../ui.js';
@@ -12,7 +12,10 @@ import { formatHuntDate } from '../lib/hunts.js';
 import { memberDayView } from './day-sheet.js';
 import { pickDay } from '../lib/pick-day.js';
 
+const MANAGERS = ['president', 'responsable'];
+
 export async function chasseView(main, tab = null) {
+  const manager = MANAGERS.includes(state.role);
   let days = [];
   try {
     days = (await api.get('/days')).days;
@@ -20,14 +23,19 @@ export async function chasseView(main, tab = null) {
     main.append(h('p.error', errorMessage(err)));
     return null;
   }
-  const day = pickDay(days, localToday());
+  const day = pickDay(days, localToday(), { manager });
   const running = day?.status === 'en_cours';
-  const current = tab ?? (running ? 'journee' : 'infos');
+  if (tab === 'journee') tab = 'encours'; // ancienne adresse
+  if (tab === 'gestion' && !manager) tab = null;
+  // Par défaut : la journée démarrée (Gestion pour le président), sinon les infos.
+  const current = tab ?? (running ? (manager ? 'gestion' : 'encours') : 'infos');
 
   const seg = (key, label, extra = null) => h('a.seg', { href: `#/chasse/${key}`, class: key === current ? 'active' : '', 'aria-current': key === current ? 'page' : null }, label, extra);
+  const dot = running ? h('span.live-dot', { title: 'Journée de chasse démarrée' }) : null;
   const switcher = h('nav.seg-switch', { 'aria-label': 'Ma chasse' },
-    seg('journee', '🎯 Journée', running ? h('span.live-dot', { title: 'Journée de chasse démarrée' }) : null),
-    seg('infos', '📅 Infos chasse'));
+    seg('encours', '🎯 En cours', dot),
+    manager ? seg('gestion', '⚙ Gestion') : null,
+    seg('infos', '📅 Infos'));
   const body = h('div.chasse-body');
   main.append(h('div.chasse', switcher, body));
 
@@ -37,14 +45,18 @@ export async function chasseView(main, tab = null) {
   }
   if (!day) {
     fill(body, h('div.card',
-      h('p', 'Aucune journée de chasse en cours ni prévue pour vous.'),
-      h('p.small.muted', 'Vous recevrez une notification à la prochaine convocation.'),
-      h('a', { href: '#/journees' }, 'Toutes les journées →')));
+      h('p', manager ? 'Aucune journée de chasse en cours ni prévue.' : 'Aucune journée de chasse en cours ni prévue pour vous.'),
+      manager ? null : h('p.small.muted', 'Vous recevrez une notification à la prochaine convocation.'),
+      h('a', { href: '#/journees' }, manager ? 'Journées : en créer une →' : 'Toutes les journées →')));
     return null;
   }
   if (!running) body.append(h('p.small.muted.chasse-next', `Prochaine journée : ${formatHuntDate(day.date)}`));
-  const view = h('div.chasse-day');
+  const view = h(`div.hunt-body.${current === 'gestion' ? 'gestion' : 'chasseur'}`);
   body.append(view);
+  if (current === 'gestion') {
+    const { dayConsole } = await import('./day.js');
+    return dayConsole(view, day.id);
+  }
   return memberDayView(view, day.id);
 }
 

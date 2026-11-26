@@ -270,8 +270,8 @@ migration sont rattachées à un « Plan principal ». Les anciennes routes
 chasse du territoire).
 
 **Ma chasse** (`#/chasse`, migration 0031) : écran d'arrivée du chasseur, en
-deux onglets. « 🎯 Journée » : la vue chasseur de la journée en cours (ou de la
-prochaine convocation) ; « 📅 Infos chasse » : la page d'informations de
+onglets. « 🎯 En cours » : la vue chasseur de la journée en cours (ou de la
+prochaine convocation) ; « ⚙ Gestion » (président, responsables) : la console de la journée, où l’on bascule après « Commencer la journée » ; « 📅 Infos » : la page d'informations de
 l'association (dates d'ouverture, espèces, règles), dont le président donne
 l'adresse https dans Paramètres → Association (affichée dans un cadre isolé),
 sinon les espèces et quotas de la saison. Onglet par défaut : Journée quand une
