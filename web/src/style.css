@@ -770,10 +770,11 @@ ul.people li { padding: 0.15rem 0; }
 .assign-table tr.free .post-no b { background: #f08c00; color: #1d2420; }
 .assign-table .post-name { display: block; font-size: 0.75rem; color: var(--muted); max-width: 6rem; }
 .assign-table .post-diff { width: 1%; white-space: nowrap; font-size: 0.85rem; }
-.assign-select { width: 100%; min-width: 8rem; }
+.assign-select { width: 100%; min-width: 7rem; font-size: 0.85rem; min-height: 34px; padding: 0.2rem 0.4rem; }
 .assign-select.empty { color: var(--muted); font-style: italic; }
 .chef-cell { width: 1%; }
 .chef-cell button.icon { font-size: 1.2rem; color: #adb5bd; }
 .chef-cell button.icon.on { color: #f08c00; }
 ul.role-list li { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; padding: 0.25rem 0; border-bottom: 1px solid var(--border); }
-ul.role-list select { width: auto; }
+ul.role-list select { width: auto; font-size: 0.85rem; min-height: 34px; padding: 0.2rem 0.4rem; }
+ul.role-list li { font-size: 0.9rem; }
