@@ -761,3 +761,19 @@ ul.people li { padding: 0.15rem 0; }
 .people-fold > summary { cursor: pointer; font-weight: 600; margin: 0.4rem 0; }
 .role-bar { display: flex; align-items: center; gap: 0.35rem; flex-wrap: wrap; padding: 0.4rem; background: color-mix(in srgb, var(--primary) 8%, transparent); border-radius: 8px; margin: 0.3rem 0; }
 .assign-row.beaters { opacity: 0.9; }
+/* Attribution des postes : tableau poste → chasseur */
+.assign-table { width: 100%; border-collapse: collapse; margin: 0.4rem 0; }
+.assign-table td { padding: 0.3rem 0.25rem; border-bottom: 1px solid var(--border); vertical-align: middle; }
+.assign-table tr.line-head td { background: color-mix(in srgb, var(--primary) 7%, transparent); font-size: 0.88rem; padding: 0.35rem 0.5rem; }
+.assign-table .post-no { width: 1%; white-space: nowrap; }
+.assign-table .post-no b { display: inline-grid; place-items: center; min-width: 1.9rem; height: 1.9rem; border-radius: 50%; background: #2f9e44; color: #fff; }
+.assign-table tr.free .post-no b { background: #f08c00; color: #1d2420; }
+.assign-table .post-name { display: block; font-size: 0.75rem; color: var(--muted); max-width: 6rem; }
+.assign-table .post-diff { width: 1%; white-space: nowrap; font-size: 0.85rem; }
+.assign-select { width: 100%; min-width: 8rem; }
+.assign-select.empty { color: var(--muted); font-style: italic; }
+.chef-cell { width: 1%; }
+.chef-cell button.icon { font-size: 1.2rem; color: #adb5bd; }
+.chef-cell button.icon.on { color: #f08c00; }
+ul.role-list li { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; padding: 0.25rem 0; border-bottom: 1px solid var(--border); }
+ul.role-list select { width: auto; }

@@ -716,83 +716,81 @@ export async function dayConsole(main, dayId, { prep = false } = {}) {
    * Toucher un nom puis un poste le déplace (échange si le poste est occupé) ;
    * « Sans poste » le retire. Les postes s'ajoutent ou se retirent sur la carte.
    */
+  /**
+   * Postes et chasseurs, en tableau : une ligne par poste avec un menu pour
+   * choisir son chasseur (échange si celui-ci était ailleurs ; un traqueur
+   * choisi devient posté). ★ : chef de ligne. En dessous, ceux sans poste et
+   * les traqueurs, avec leur rôle. Les postes s'ajoutent ou se retirent sur la carte.
+   */
   function assignmentSection() {
     const { participants, proposal, day_post_ids, hunt } = dv.hunt;
     const editable = !hunt.started_at;
     const postsById = new Map(dv.territory.posts.map((p) => [p.id, p]));
     const dayPosts = day_post_ids.map((id) => postsById.get(id)).filter(Boolean).sort((a, b) => a.number - b.number);
-    const posted = participants.filter((p) => p.present && POSTED_ROLES.includes(p.role));
-    const beaters = participants.filter((p) => p.present && !POSTED_ROLES.includes(p.role));
-    const picked = participants.find((p) => p.id === dv.picked && p.present) ?? null;
-    if (!picked) dv.picked = null;
-    // Rôle du participant touché : posté, chef de ligne ou traqueur (un traqueur n'a pas de poste).
-    const setRole = (p, role) => { dv.picked = role === 'traqueur' ? null : p.id; return act(() => api.patch(`/hunts/${hunt.id}/participants/${p.id}`, { role })); };
-    const roleBar = picked && editable
-      ? h('div.role-bar', h('b', `${picked.name} : `),
-          [['poste', 'Posté'], ['chef_de_ligne', '★ Chef de ligne'], ['traqueur', 'Traqueur']].map(([r, l]) =>
-            h('button.small', { type: 'button', class: picked.role === r ? 'primary' : '', disabled: picked.role === r, onclick: () => setRole(picked, r) }, l)),
-          POSTED_ROLES.includes(picked.role) ? h('span.small.muted', ' puis touchez un poste') : null)
-      : null;
-    const sameAsProposal = proposal && proposal.post_ids.length === day_post_ids.length && proposal.post_ids.every((id) => day_post_ids.includes(id));
-
-    const moveTo = async (post) => {
-      const p = picked;
-      dv.picked = null;
-      if (!post) return act(() => api.del(`/hunts/${hunt.id}/assignments/${p.id}`));
-      // Un traqueur placé sur un poste redevient posté.
-      if (!POSTED_ROLES.includes(p.role)) {
-        await act(() => api.patch(`/hunts/${hunt.id}/participants/${p.id}`, { role: 'poste' }));
-        return act(() => api.put(`/hunts/${hunt.id}/assignments`, { participant_id: p.id, post_id: post.id, mode: 'move' }));
-      }
-      if (p.post_id === post.id) return render();
-      const occupied = participants.some((x) => x.post_id === post.id && x.id !== p.id);
-      act(() => api.put(`/hunts/${hunt.id}/assignments`, { participant_id: p.id, post_id: post.id, mode: occupied && dv.allowDouble ? 'double' : 'move' }));
-    };
-    const chip = (p, post) => h('button.chip', {
-      type: 'button',
-      disabled: !editable,
-      class: `${p.id === dv.picked ? 'picked' : ''} ${post && !canReach(post.difficulty, p.walking_ability) ? 'too-hard' : ''}`,
-      title: post && !canReach(post.difficulty, p.walking_ability) ? 'Poste plus difficile que sa marche' : '',
-      onclick: (e) => {
-        e.stopPropagation();
-        // Traqueur : on le sélectionne (rôle à changer), jamais une cible de déplacement.
-        if (!dv.picked || !POSTED_ROLES.includes(p.role)) { dv.picked = dv.picked === p.id ? null : p.id; return render(); }
-        if (dv.picked === p.id) { dv.picked = null; return render(); }
-        moveTo(post);
-      },
-    }, p.role === 'chef_de_ligne' ? h('span.chef', { title: 'Chef de ligne' }, '★ ') : null, p.name, p.walking_ability ? h('span.walk', ` 🥾${p.walking_ability}`) : null, post && !canReach(post.difficulty, p.walking_ability) ? ' ⚠' : '');
-    const row = (post, people, label, extra) => h('li.assign-row', {
-      class: picked ? 'target' : '',
-      onclick: () => picked && moveTo(post),
-    }, h('span.post-label', label, extra ? h('small', extra) : null), h('span.chips', people.map((p) => chip(p, post))));
-
+    const present = participants.filter((p) => p.present);
+    const posted = present.filter((p) => POSTED_ROLES.includes(p.role));
     const unassigned = posted.filter((p) => !p.post_id);
-    return step('postes', '2. Postes', `${dayPosts.length} pour ${posted.length} posté(s)${hunt.assignments_published_at ? ' · publiés' : ''}`, true,
+    const beaters = present.filter((p) => !POSTED_ROLES.includes(p.role));
+    const sameAsProposal = proposal && proposal.post_ids.length === day_post_ids.length && proposal.post_ids.every((id) => day_post_ids.includes(id));
+    const postNo = new Map(dayPosts.map((p) => [p.id, p.number]));
+    const sorted = [...present].sort((a, b) => a.name.localeCompare(b.name, 'fr'));
+
+    // Choisir le chasseur d'un poste (ou le libérer).
+    const assign = async (post, occupant, pid) => {
+      if (!pid) return occupant ? act(() => api.del(`/hunts/${hunt.id}/assignments/${occupant.id}`)) : null;
+      const p = present.find((x) => x.id === pid);
+      if (!POSTED_ROLES.includes(p.role)) await act(() => api.patch(`/hunts/${hunt.id}/participants/${p.id}`, { role: 'poste' }));
+      return act(() => api.put(`/hunts/${hunt.id}/assignments`, { participant_id: pid, post_id: post.id, mode: 'move' }));
+    };
+    const setRole = (p, role) => act(() => api.patch(`/hunts/${hunt.id}/participants/${p.id}`, { role }));
+
+    const who = (post, occupant) => h('select.assign-select', {
+      'aria-label': `Chasseur du poste ${post.number}`, disabled: !editable, class: occupant ? '' : 'empty',
+      onchange: (e) => assign(post, occupant, e.target.value),
+    },
+      h('option', { value: '', selected: !occupant }, '— libre —'),
+      sorted.map((p) => h('option', { value: p.id, selected: occupant?.id === p.id },
+        `${p.name}${p.walking_ability ? ` 🥾${p.walking_ability}` : ''}${p.id !== occupant?.id ? (p.post_id ? ` (poste ${postNo.get(p.post_id) ?? '?'})` : !POSTED_ROLES.includes(p.role) ? ' (traqueur)' : ' (sans poste)') : ''}`)));
+
+    const postRow = (post) => {
+      const people = participants.filter((p) => p.post_id === post.id);
+      const first = people[0] ?? null;
+      const hard = first && !canReach(post.difficulty, first.walking_ability);
+      return h('tr', { class: first ? '' : 'free' },
+        h('td.post-no', h('b', String(post.number)), dv.showPostNames && post.name ? h('span.post-name', post.name) : null),
+        h('td.post-diff', post.difficulty ? `⛰${post.difficulty}` : '', post.parking_id ? '' : h('span.small.muted', ' sans P')),
+        h('td', who(post, first), hard ? h('span.warn-text', { title: 'Poste plus difficile que sa marche' }, ' ⚠') : null,
+          people.slice(1).map((x) => h('span.small', ` + ${x.name}`))),
+        h('td.chef-cell', first && post.line_id
+          ? h('button.icon', { type: 'button', disabled: !editable, class: first.role === 'chef_de_ligne' ? 'on' : '',
+              title: first.role === 'chef_de_ligne' ? 'Chef de ligne (toucher pour retirer)' : 'Faire chef de ligne', 'aria-pressed': String(first.role === 'chef_de_ligne'),
+              onclick: () => setRole(first, first.role === 'chef_de_ligne' ? 'poste' : 'chef_de_ligne') }, '★')
+          : null));
+    };
+
+    const roleSelect = (p) => h('select.small', { 'aria-label': `Rôle de ${p.name}`, disabled: !editable, onchange: (e) => setRole(p, e.target.value) },
+      [['poste', 'Posté'], ['chef_de_ligne', 'Chef de ligne'], ['traqueur', 'Traqueur']].map(([r, l]) => h('option', { value: r, selected: p.role === r }, l)));
+
+    return step('postes', '2. Postes', `${posted.filter((p) => p.post_id).length}/${posted.length} placé(s)${beaters.length ? ` · ${beaters.length} traqueur(s)` : ''}${hunt.assignments_published_at ? ' · publiés' : ''}`, true,
       editable && proposal?.post_ids.length && !sameAsProposal
         ? h('button', { onclick: async () => {
             const nobodyPlaced = !participants.some((x) => x.post_id);
             if (await act(() => api.put(`/hunts/${hunt.id}/posts`, { post_ids: proposal.post_ids }), 'Postes du plan choisis.') && nobodyPlaced) await autoPlace();
           } },
-            proposal.plan_count ? `Prendre les postes du plan « ${hunt.hunt_plan_name} » à ${proposal.plan_count} chasseurs (${proposal.post_ids.length})` : `Prendre la proposition (${proposal.post_ids.length} postes)`)
+            proposal.plan_count ? `Prendre les postes du plan « ${hunt.hunt_plan_name} » (${proposal.post_ids.length})` : `Prendre la proposition (${proposal.post_ids.length} postes)`)
         : null,
-      editable ? (picked ? roleBar
-        : keepOpen(h('details.legend.small.muted', h('summary', 'ⓘ Aide'), 'Touchez un nom : changer son rôle, ou toucher un poste pour l’y placer (échange si occupé). Postes : ajout et retrait sur la carte. ⛰ difficulté d’accès · 🥾 marche · ★ chef de ligne.'), 'day.assignHelp')) : null,
-      h('label.check.small', h('input', { type: 'checkbox', checked: dv.showPostNames, onchange: (e) => {
-        dv.showPostNames = e.target.checked;
-        try { localStorage.setItem(NAMES_KEY, e.target.checked ? '1' : '0'); } catch { /* rien */ }
-        render();
-      } }), 'Noms des postes'),
-      dayPosts.length || unassigned.length
-        ? h('ul.plain.assign-list',
+      dayPosts.length
+        ? h('table.assign-table', h('tbody',
             groupByLine(dayPosts).map(({ line, posts: lp }) => [
-              line || (dv.territory.lines ?? []).length ? h('li.line-head', lineHeader(line, lp, participants)) : null,
-              lp.map((post) => row(post, participants.filter((p) => p.post_id === post.id),
-                [String(post.number), dv.showPostNames && post.name ? h('span.post-name', ` ${post.name}`) : null],
-                `${post.difficulty ? ` ⛰${post.difficulty}` : ''}${post.parking_id ? '' : ' · sans P'}`)),
-            ]),
-            unassigned.length || (picked && POSTED_ROLES.includes(picked.role)) ? row(null, unassigned, 'Sans poste', '') : null,
-            beaters.length ? h('li.assign-row.beaters', h('span.post-label', 'Traqueurs'), h('span.chips', beaters.map((p) => chip(p, null)))) : null)
-        : h('p.muted', 'Choisissez les postes sur la carte.'),
+              line || (dv.territory.lines ?? []).length ? h('tr.line-head', h('td', { colSpan: 4 }, lineHeader(line, lp, participants))) : null,
+              lp.map(postRow),
+            ])))
+        : h('p.muted', 'Choisissez les postes sur la carte (ou prenez ceux du plan).'),
+      unassigned.length || beaters.length
+        ? h('ul.plain.role-list',
+            unassigned.map((p) => h('li', h('span', h('b', p.name), h('span.warn-text', ' · sans poste')), roleSelect(p))),
+            beaters.map((p) => h('li', h('span', h('b', p.name)), roleSelect(p))))
+        : null,
       editable && dayPosts.length
         ? h('div.buttons',
             unassigned.length ? h('button', { onclick: () => autoPlace(), title: 'Rotation : chacun évite ses postes récents' }, `Placer les ${unassigned.length} sans poste`) : null,
@@ -800,7 +798,11 @@ export async function dayConsole(main, dayId, { prep = false } = {}) {
               if (await confirmDialog('Tout replacer', 'Refaire tout le placement (rotation des postes) ? Les placements faits à la main seront perdus.', 'Tout replacer')) autoPlace(true);
             }, title: 'Rotation : chacun évite ses postes récents' }, '🔄 Tout replacer') : null,
             participants.some((p) => p.post_id) ? h('button.link', { onclick: () => act(() => api.del(`/hunts/${hunt.id}/assignments`)) }, 'Tout effacer') : null,
-            proposal?.kind === 'too_many' ? h('label.check', h('input', { type: 'checkbox', checked: dv.allowDouble, onchange: (e) => { dv.allowDouble = e.target.checked; } }), 'Doublons') : null)
+            h('label.check.small', h('input', { type: 'checkbox', checked: dv.showPostNames, onchange: (e) => {
+              dv.showPostNames = e.target.checked;
+              try { localStorage.setItem(NAMES_KEY, e.target.checked ? '1' : '0'); } catch { /* rien */ }
+              render();
+            } }), 'Noms des postes'))
         : null,
       hunt.status === 'brouillon'
         ? [h('button.primary', { disabled: !dayPosts.length || !!running() || dv.detail.day.status !== 'en_cours', title: running() ? `Après la fin de la battue n° ${running().number}` : '',
