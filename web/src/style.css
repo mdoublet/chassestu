@@ -778,3 +778,10 @@ ul.people li { padding: 0.15rem 0; }
 ul.role-list li { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; padding: 0.25rem 0; border-bottom: 1px solid var(--border); }
 ul.role-list select { width: auto; font-size: 0.85rem; min-height: 34px; padding: 0.2rem 0.4rem; }
 ul.role-list li { font-size: 0.9rem; }
+/* Noms des postes et des lignes sur les cartes (cases du menu de la carte) */
+.leaflet-container .leaflet-marker-icon.map-post-name, .leaflet-container .leaflet-marker-icon.map-line-name { display: none; }
+.leaflet-container.show-posts-names .leaflet-marker-icon.map-post-name, .leaflet-container.show-lines-names .leaflet-marker-icon.map-line-name { display: block; }
+.map-post-name span, .map-line-name span { position: absolute; transform: translateX(-50%); white-space: nowrap; pointer-events: none; }
+.map-post-name span { font: 600 11px/1.2 system-ui, sans-serif; color: #1d2420; background: rgb(255 255 255 / 0.85); padding: 0 4px; border-radius: 4px; }
+.map-line-name span { font: 700 13px/1.2 system-ui, sans-serif; color: #1c5fb8; text-shadow: 0 0 3px #fff, 0 0 3px #fff, 0 0 2px #fff; letter-spacing: .02em; }
+.label-toggles label { display: block; }

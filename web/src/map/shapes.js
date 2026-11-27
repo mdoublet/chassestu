@@ -94,3 +94,29 @@ export function placeMarker(p, symbol) {
     keyboard: false, bubblingMouseEvents: true,
   }).bindTooltip(escapeHtml(p.name), { direction: 'top', offset: [0, -12] });
 }
+
+/**
+ * Étiquettes des noms de postes (sous le poste) et de lignes (au centre de
+ * leurs postes), non cliquables ; affichées selon les cases du menu de la
+ * carte (classes show-posts-names / show-lines-names).
+ */
+export function nameLabels(posts, lines = []) {
+  const out = [];
+  for (const p of posts) {
+    if (!p.name) continue;
+    out.push(L.marker(toLatLng(p.geom.coordinates), {
+      interactive: false, keyboard: false,
+      icon: L.divIcon({ className: 'map-post-name', html: `<span>${escapeHtml(p.name)}</span>`, iconSize: [0, 0], iconAnchor: [0, -16] }),
+    }));
+  }
+  for (const l of lines) {
+    const pts = posts.filter((p) => p.line_id === l.id).map((p) => p.geom.coordinates);
+    if (!pts.length) continue;
+    const c = [pts.reduce((a, x) => a + x[0], 0) / pts.length, pts.reduce((a, x) => a + x[1], 0) / pts.length];
+    out.push(L.marker(toLatLng(c), {
+      interactive: false, keyboard: false, zIndexOffset: -100,
+      icon: L.divIcon({ className: 'map-line-name', html: `<span>${escapeHtml(l.name)}</span>`, iconSize: [0, 0], iconAnchor: [0, 24] }),
+    }));
+  }
+  return out;
+}

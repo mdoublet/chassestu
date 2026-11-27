@@ -177,14 +177,15 @@ cartoRoutes.get('/territories', (c) =>
  */
 cartoRoutes.get('/territories/overview', (c) =>
   tenantTx(c, null, async (tx) => {
-    const [territories, reserves, posts, exclusions, places] = await Promise.all([
+    const [territories, reserves, posts, exclusions, places, lines] = await Promise.all([
       tx.query(`SELECT id, name, ${geomOut('geom')} FROM territories ORDER BY name`),
       tx.query(`SELECT territory_id, name, ${geomOut('geom')} FROM reserve_zones`),
-      tx.query(`SELECT id, territory_id, number, name, active, invalid_reason, ${geomOut('geom')} FROM posts ORDER BY number`),
+      tx.query(`SELECT id, territory_id, number, name, active, invalid_reason, line_id, ${geomOut('geom')} FROM posts ORDER BY number`),
       tx.query(`SELECT territory_id, ${geomOut('geom')} FROM exclusion_zones WHERE geom IS NOT NULL`),
       loadPlaces(tx, null),
+      tx.query('SELECT id, territory_id, name FROM post_lines ORDER BY lower(name)'),
     ]);
-    return c.json({ territories, reserves, posts, exclusions, places });
+    return c.json({ territories, reserves, posts, exclusions, places, lines });
   }),
 );
 

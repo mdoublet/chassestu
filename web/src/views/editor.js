@@ -6,7 +6,7 @@ import L from '../map/leaflet.js';
 import '@geoman-io/leaflet-geoman-free';
 import '@geoman-io/leaflet-geoman-free/dist/leaflet-geoman.css';
 import { addBasemaps } from '../map/basemap.js';
-import { escapeHtml, toLatLng, ensureHatchPattern, postIcon, parkingIcon, placeMarker } from '../map/shapes.js';
+import { escapeHtml, toLatLng, ensureHatchPattern, postIcon, parkingIcon, placeMarker, nameLabels } from '../map/shapes.js';
 import { kindIcon, kindLabel, kindBadge } from './place-picker.js';
 import { openPlaceSheet } from './place-sheet.js';
 import { api } from '../api.js';
@@ -119,7 +119,7 @@ export async function editorView(main, start) {
 
   const map = L.map(mapEl, { zoomControl: true }).setView([46.6, 2.4], 6);
   if (import.meta.env.DEV) window.__map = map; // tests de bout en bout (jamais en production)
-  addBasemaps(map, { zones: true });
+  addBasemaps(map, { zones: true, labels: true });
   map.pm.setLang('fr');
   map.pm.setGlobalOptions({ snappable: true, snapDistance: 20, allowSelfIntersection: false });
 
@@ -501,6 +501,7 @@ export async function editorView(main, start) {
       });
       groups.posts.addLayer(m);
     }
+    for (const l of nameLabels(posts, ed.data.lines ?? [])) groups.posts.addLayer(l);
 
     if (!ed.fitted) {
       ed.fitted = true;

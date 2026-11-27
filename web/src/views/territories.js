@@ -3,7 +3,7 @@
 // carte du territoire (« Ouvrir la carte »).
 import L from '../map/leaflet.js';
 import { addBasemaps } from '../map/basemap.js';
-import { toLatLng, escapeHtml, postIcon, ensureHatchPattern, placeMarker } from '../map/shapes.js';
+import { toLatLng, escapeHtml, postIcon, ensureHatchPattern, placeMarker, nameLabels } from '../map/shapes.js';
 import { kindIcon, kindLabel, kindBadge } from './place-picker.js';
 import { openPlaceSheet } from './place-sheet.js';
 import { api } from '../api.js';
@@ -22,7 +22,7 @@ export async function territoriesView(main) {
       canEdit ? h('a.button.primary', { href: '#/carte/nouveau' }, '+ Nouveau territoire') : null),
     mapEl, shown, list);
   const map = L.map(mapEl, { zoomControl: true }).setView([46.6, 2.4], 6);
-  addBasemaps(map, { zones: true });
+  addBasemaps(map, { zones: true, labels: true });
   const layer = L.featureGroup().addTo(map);
   let territories = [];
   let offSeason = [];
@@ -83,6 +83,7 @@ export async function territoriesView(main) {
       layer.addLayer(L.marker(toLatLng(p.geom.coordinates), { icon: postIcon(p.number, p.invalid_reason ? 'invalid-static' : '') })
         .bindTooltip(escapeHtml(`${t?.name ?? ''} · poste ${p.number}${p.name ? ` · ${p.name}` : ''}`), { direction: 'top', offset: [0, -12] }));
     }
+    for (const l of nameLabels((overview?.posts ?? []).filter((x) => visible(x.territory_id)), overview?.lines ?? [])) layer.addLayer(l);
     for (const t of territories.filter((x) => visible(x.id))) {
       const poly = L.polygon(t.geom.coordinates.map((r) => r.map(toLatLng)), {
         color: t.id === highlighted ? '#e8590c' : '#1f5130', weight: t.id === highlighted ? 4 : 2, fillOpacity: 0.08,

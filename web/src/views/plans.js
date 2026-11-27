@@ -8,7 +8,7 @@ import L from '../map/leaflet.js';
 import '@geoman-io/leaflet-geoman-free';
 import '@geoman-io/leaflet-geoman-free/dist/leaflet-geoman.css';
 import { addBasemaps } from '../map/basemap.js';
-import { escapeHtml, toLatLng, ensureHatchPattern, postIcon, traqueIcon, traqueLayers, placeMarker } from '../map/shapes.js';
+import { escapeHtml, toLatLng, ensureHatchPattern, postIcon, traqueIcon, traqueLayers, placeMarker, nameLabels } from '../map/shapes.js';
 import { kindIcon } from './place-picker.js';
 import { liveWind } from '../map/wind-control.js';
 import { COMPASS, sectorDeg, compassName, polygonCenter, rangeLabel, windInRange, windPhrase } from '../lib/wind.js';
@@ -58,7 +58,7 @@ export async function plansView(main, territoryId, huntPlanId) {
   main.append(h('div.editor', mapEl, resizer, panel));
 
   const map = L.map(mapEl, { zoomControl: true }).setView([46.6, 2.4], 6);
-  addBasemaps(map, { zones: true });
+  addBasemaps(map, { zones: true, labels: true });
   map.pm.setLang('fr');
   if (import.meta.env.DEV) window.__plansMap = map; // tests de bout en bout (jamais en production)
   const layers = { base: L.featureGroup().addTo(map), traque: L.featureGroup().addTo(map), posts: L.featureGroup().addTo(map) };
@@ -132,6 +132,7 @@ export async function plansView(main, territoryId, huntPlanId) {
       layers.posts.addLayer(m);
       markers.set(p.id, m);
     }
+    for (const l of nameLabels(posts(), ps.data.lines ?? [])) layers.posts.addLayer(l);
     renderTraque();
     if (!ps.fitted) {
       ps.fitted = true;

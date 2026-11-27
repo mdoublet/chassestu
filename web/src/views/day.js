@@ -9,7 +9,7 @@ import L from '../map/leaflet.js';
 import { addBasemaps } from '../map/basemap.js';
 import { liveWind } from '../map/wind-control.js';
 import { polygonCenter, rankPlans, rangeLabel, windPhrase, compassName } from '../lib/wind.js';
-import { escapeHtml, toLatLng, ensureHatchPattern, postIcon, traqueLayers } from '../map/shapes.js';
+import { escapeHtml, toLatLng, ensureHatchPattern, postIcon, traqueLayers, nameLabels } from '../map/shapes.js';
 import { api } from '../api.js';
 import { state } from '../state.js';
 import { h, fill, toast, errorMessage, confirmDialog, copyText, modal, fold, keepOpen } from '../ui.js';
@@ -68,7 +68,7 @@ export async function dayConsole(main, dayId, { prep = false } = {}) {
   main.append(layout);
   let watcher = null;
   const map = L.map(mapEl, { zoomControl: true }).setView([46.6, 2.4], 6);
-  addBasemaps(map, { zones: true });
+  addBasemaps(map, { zones: true, labels: true });
   const layers = { base: L.featureGroup().addTo(map), posts: L.featureGroup().addTo(map) };
   // Vent : territoire de la battue en cours, sinon celui choisi pour la prochaine.
   const windTerritory = () => (running() && dv.territory?.territory) || dv.territories?.find((t) => t.id === dv.newBattue.territory_id) || dv.territory?.territory || null;
@@ -227,6 +227,7 @@ export async function dayConsole(main, dayId, { prep = false } = {}) {
             .bindTooltip(escapeHtml(`Poste ${p.number}${p.name ? ` · ${p.name}` : ''}`), { direction: 'top', offset: [0, -14] }));
         }
         if (plan) for (const l of traqueLayers(plan)) layers.base.addLayer(l);
+        for (const l of nameLabels(pt.posts, pt.lines ?? [])) layers.posts.addLayer(l);
       }
     }
     const t = !creating && dv.hunt && dv.territory;
@@ -248,6 +249,7 @@ export async function dayConsole(main, dayId, { prep = false } = {}) {
         if (editable) m.on('click', () => toggleDayPost(p, available));
         layers.posts.addLayer(m);
       }
+      for (const l of nameLabels(t.posts, t.lines ?? [])) layers.posts.addLayer(l);
     }
     if (t && dv.hunt?.hunt_plan) for (const l of traqueLayers(dv.hunt.hunt_plan)) layers.base.addLayer(l);
     if (day.meeting_point) layers.base.addLayer(L.circleMarker(toLatLng(day.meeting_point.coordinates), { radius: 8, color: '#0b6bcb', fillOpacity: 0.9 }).bindTooltip('Rendez-vous'));

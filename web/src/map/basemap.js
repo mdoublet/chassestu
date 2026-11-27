@@ -60,7 +60,7 @@ function tileLayer(def, extra = {}) {
  * Ajoute les fonds IGN et le sélecteur de couches ; renvoie les couches.
  * `zones` : ajoute au sélecteur le curseur d'intensité des zones non chassables.
  */
-export function addBasemaps(map, { zones = false } = {}) {
+export function addBasemaps(map, { zones = false, labels = false } = {}) {
   const plan = tileLayer(IGN_LAYERS.plan);
   const ortho = tileLayer(IGN_LAYERS.ortho);
   const cadastre = tileLayer(IGN_LAYERS.cadastre, { opacity: 0.8 });
@@ -89,7 +89,9 @@ export function addBasemaps(map, { zones = false } = {}) {
       { position: 'topright', collapsed: true },
     )
     .addTo(map);
-  if (zones) control.getContainer().querySelector('.leaflet-control-layers-list')?.append(zoneSlider());
+  const list = control.getContainer().querySelector('.leaflet-control-layers-list');
+  if (labels) list?.append(labelToggles(map));
+  if (zones) list?.append(zoneSlider());
   L.control.scale({ imperial: false }).addTo(map);
   return { plan, ortho, cadastre, routes };
 }
@@ -108,5 +110,34 @@ function zoneSlider() {
   // Glisser le curseur ne déplace pas la carte.
   L.DomEvent.disableClickPropagation(box);
   for (const ev of ['pointerdown', 'mousedown', 'touchstart']) L.DomEvent.on(input, ev, L.DomEvent.stopPropagation);
+  return box;
+}
+
+/**
+ * Cases « Noms des lignes » et « Noms des postes » (décochées par défaut,
+ * mémorisées sur l'appareil) : les étiquettes sont toujours dessinées et
+ * s'affichent selon une classe de la carte.
+ */
+const LABEL_KEYS = { lines: 'chassestu.mapLineNames', posts: 'chassestu.mapPostNames' };
+function labelToggles(map) {
+  const box = L.DomUtil.create('div', 'label-toggles');
+  box.append(Object.assign(document.createElement('div'), { className: 'leaflet-control-layers-separator' }));
+  const el = map.getContainer();
+  for (const [kind, text] of [['lines', 'Noms des lignes'], ['posts', 'Noms des postes']]) {
+    let on = false;
+    try { on = localStorage.getItem(LABEL_KEYS[kind]) === '1'; } catch { /* rien */ }
+    el.classList.toggle(`show-${kind}-names`, on);
+    const label = document.createElement('label');
+    const input = Object.assign(document.createElement('input'), { type: 'checkbox', className: 'leaflet-control-layers-selector', checked: on });
+    input.addEventListener('change', () => {
+      el.classList.toggle(`show-${kind}-names`, input.checked);
+      try { localStorage.setItem(LABEL_KEYS[kind], input.checked ? '1' : '0'); } catch { /* rien */ }
+    });
+    const span = document.createElement('span');
+    span.textContent = ` ${text}`;
+    label.append(input, span);
+    box.append(label);
+  }
+  L.DomEvent.disableClickPropagation(box);
   return box;
 }
